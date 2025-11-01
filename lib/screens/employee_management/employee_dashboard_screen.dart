@@ -1,6 +1,8 @@
+// lib/screens/employee_management/employee_dashboard_screen.dart
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:assetarchiverflutter/widgets/reusableglasscard.dart';
+// import 'package:assetarchiverflutter/widgets/reusableglasscard.dart'; // <-- REMOVED
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
@@ -21,18 +23,17 @@ class EmployeeDashboardScreen extends StatefulWidget {
 }
 
 class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with WidgetsBindingObserver {
+  // --- (All your logic is unchanged) ---
   final ApiService _apiService = ApiService();
   late Future<List<Pjp>> _pjpFuture;
   bool _isCheckingIn = false;
   bool _isCheckingOut = false;
-
   String _greeting = 'Good Morning';
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-
     _setGreeting();
     refreshData();
   }
@@ -56,10 +57,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
     }
   }
 
-  // --- NEW: A dedicated refresh handler for the RefreshIndicator ---
-  // This ensures the indicator's spinner waits for the data to be fetched.
   Future<void> _handleRefresh() async {
-    // We create a new future here and assign it within setState
     final newPjpFuture = _apiService.fetchPjpsForUser(
       int.parse(widget.employee.id),
       status: 'pending',
@@ -69,7 +67,6 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
         _pjpFuture = newPjpFuture;
       });
     }
-    // Awaiting the future here makes the refresh indicator spin until data is loaded
     await newPjpFuture;
   }
 
@@ -134,27 +131,23 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
     }
   }
 
-
   Future<void> _handleCheckIn() async {
+    // ... (Your Check In logic is unchanged) ...
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     setState(() => _isCheckingIn = true);
-
     try {
       final position = await _getCurrentPosition();
       if (position == null) {
         if(mounted) setState(() => _isCheckingIn = false);
         return;
       }
-
       final imageFile = await _captureImage();
       if (imageFile == null) {
         if(mounted) setState(() => _isCheckingIn = false);
         return;
       }
-
       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Uploading image...')));
       final imageUrl = await _apiService.uploadImageToR2(imageFile);
-
       final checkInData = {
         'userId': int.parse(widget.employee.id),
         'attendanceDate': DateTime.now().toIso8601String(),
@@ -164,9 +157,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
         'inTimeImageUrl': imageUrl,
         'inTimeImageCaptured': true,
       };
-
       await _apiService.checkIn(checkInData);
-
       scaffoldMessenger.showSnackBar(
         const SnackBar(content: Text('Checked in successfully!'), backgroundColor: Colors.green),
       );
@@ -180,25 +171,22 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
   }
   
   Future<void> _handleCheckOut() async {
+    // ... (Your Check Out logic is unchanged) ...
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     setState(() => _isCheckingOut = true);
-
     try {
       final position = await _getCurrentPosition();
       if (position == null) {
          if(mounted) setState(() => _isCheckingOut = false);
         return;
       }
-
       final imageFile = await _captureImage();
       if (imageFile == null) {
         if(mounted) setState(() => _isCheckingOut = false);
         return;
       }
-      
       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Uploading image...')));
       final imageUrl = await _apiService.uploadImageToR2(imageFile);
-      
       final checkOutData = {
         'userId': int.parse(widget.employee.id),
         'attendanceDate': DateTime.now().toIso8601String(),
@@ -207,9 +195,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
         'outTimeLatitude': position.latitude,
         'outTimeLongitude': position.longitude,
       };
-      
       await _apiService.checkOut(checkOutData);
-
       scaffoldMessenger.showSnackBar(
         const SnackBar(content: Text('Checked out successfully!'), backgroundColor: Colors.blue),
       );
@@ -221,131 +207,182 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
       if (mounted) setState(() => _isCheckingOut = false);
     }
   }
-
-
+  
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0D47A1), Color.fromARGB(255, 2, 10, 103)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          // --- UPDATED: Wrapped the ListView in a RefreshIndicator ---
-          child: RefreshIndicator(
-            onRefresh: _handleRefresh,
-            color: Colors.white,
-            backgroundColor: theme.primaryColor,
-            child: ListView(
-              padding: const EdgeInsets.all(16.0),
-              children: [
-                LiquidGlassCard(
-                  child: Column(
-                    children: [
-                      Text(_greeting, style: textTheme.bodyLarge?.copyWith(color: Colors.white70)),
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.employee.displayName,
-                        style: textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
-                        textAlign: TextAlign.center,
+    return SafeArea(
+      child: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: theme.colorScheme.onPrimary,
+        backgroundColor: theme.colorScheme.primary,
+        child: ListView(
+          padding: const EdgeInsets.all(16.0),
+          children: [
+            Card(
+              color: theme.brightness == Brightness.light 
+                     ? theme.colorScheme.primary  // Light mode = Blue card
+                     : theme.colorScheme.surface, // Dark mode = Lighter blue card
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _greeting, 
+                      style: textTheme.bodyLarge?.copyWith(
+                        color: theme.brightness == Brightness.light
+                               ? theme.colorScheme.onPrimary.withOpacity(0.8)
+                               : theme.colorScheme.onSurface.withOpacity(0.7)
+                      )
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.employee.displayName,
+                      style: textTheme.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.bold, 
+                        color: theme.brightness == Brightness.light
+                               ? theme.colorScheme.onPrimary
+                               : theme.colorScheme.onSurface
                       ),
-                      if (widget.employee.companyName != null && widget.employee.companyName!.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4.0),
-                          child: Text(
-                            widget.employee.companyName!,
-                            style: textTheme.bodyMedium?.copyWith(color: Colors.white70),
+                      textAlign: TextAlign.start,
+                    ),
+                    if (widget.employee.companyName != null && widget.employee.companyName!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4.0),
+                        child: Text(
+                          widget.employee.companyName!,
+                          style: textTheme.bodyMedium?.copyWith(
+                            color: theme.brightness == Brightness.light
+                               ? theme.colorScheme.onPrimary.withOpacity(0.8)
+                               : theme.colorScheme.onSurface.withOpacity(0.7)
                           ),
                         ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                LiquidGlassCard(
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: _isCheckingIn ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.login, size: 18),
-                          label: const Text('Check In'),
-                          onPressed: _isCheckingIn || _isCheckingOut ? null : _handleCheckIn,
-                        ),
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          icon: _isCheckingOut ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.logout, size: 18),
-                          label: const Text('Check Out'),
-                          onPressed: _isCheckingIn || _isCheckingOut ? null : _handleCheckOut,
-                        ),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-                const SizedBox(height: 24),
-                FutureBuilder<List<Pjp>>(
-                  future: _pjpFuture,
-                  builder: (context, snapshot) {
-                    // While refreshing, the old data (if any) is still visible, which is good UX.
-                    // The indicator provides the loading feedback.
-                    // We only show a centered loader on the very first load.
-                    if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-                      return const LiquidGlassCard(
-                        child: Center(
-                          child: Padding(padding: EdgeInsets.all(32.0), child: CircularProgressIndicator(color: Colors.white)),
-                        ),
-                      );
-                    }
-                    
-                    if (snapshot.hasError) {
-                      return LiquidGlassCard(
-                        child: Center(child: Text('Error fetching PJPs: ${snapshot.error}', style: const TextStyle(color: Colors.yellowAccent))),
-                      );
-                    }
-
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      return LiquidGlassCard(
-                         child: Padding(
-                           padding: const EdgeInsets.all(16.0),
-                           child: Center(child: Text('No active PJPs found.', style: TextStyle(color: Colors.white70))),
-                         ),
-                      );
-                    }
-
-                    final pjps = snapshot.data!;
-
-                    return LiquidGlassCard(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Active & Upcoming PJPs (${pjps.length})",
-                            style: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
-                          ),
-                          const SizedBox(height: 16),
-                          ...pjps.map((pjp) => ListTile(
-                                leading: const Icon(Icons.route, color: Colors.white70),
-                                title: Text('Plan for: ${pjp.planDate.toLocal().toString().split(' ')[0]}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                                subtitle: Text('Status: ${pjp.status}', style: const TextStyle(color: Colors.white70)),
-                              )),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ]
-                  .animate(interval: 100.ms)
-                  .fadeIn(duration: 500.ms)
-                  .slideY(begin: 0.3),
+              ),
             ),
-          ),
+            const SizedBox(height: 24), // Increased spacing
+
+            // --- ✅ THE FIX ---
+            // Replaced Row with a Column and removed Expanded
+            Column(
+              children: [
+                SizedBox(
+                  width: double.infinity, // Make button full-width
+                  child: ElevatedButton.icon(
+                    icon: _isCheckingIn 
+                        ? const SizedBox(width: 18, height: 45, child: CircularProgressIndicator(strokeWidth: 2)) 
+                        // Match the icon from your "idea" screenshot
+                        : const Icon(Icons.arrow_forward, size: 50), 
+                    label: const Text('Check In'),
+                    onPressed: _isCheckingIn || _isCheckingOut ? null : _handleCheckIn,
+                  ),
+                ),
+                const SizedBox(height: 16), // Spacing between buttons
+                SizedBox(
+                  width: double.infinity, // Make button full-width
+                  child: ElevatedButton.icon(
+                    icon: _isCheckingOut 
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) 
+                        // Match the icon from your "idea" screenshot
+                        : const Icon(Icons.arrow_back, size: 50),
+                    label: const Text('Check Out'),
+                    onPressed: _isCheckingIn || _isCheckingOut ? null : _handleCheckOut,
+                  ),
+                ),
+              ],
+            ),
+            // --- END FIX ---
+
+            const SizedBox(height: 24),
+
+            FutureBuilder<List<Pjp>>(
+              future: _pjpFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                  return Card(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32.0), 
+                        child: CircularProgressIndicator(color: theme.colorScheme.primary)
+                      ),
+                    ),
+                  );
+                }
+                
+                if (snapshot.hasError) {
+                  return Card(
+                    color: theme.colorScheme.errorContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Center(
+                        child: Text(
+                          'Error fetching PJPs: ${snapshot.error}', 
+                          style: TextStyle(color: theme.colorScheme.onErrorContainer)
+                        )
+                      ),
+                    ),
+                  );
+                }
+
+                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                  return Card(
+                     child: Padding(
+                       padding: const EdgeInsets.all(24.0), // More padding
+                       child: Center(
+                        child: Text(
+                          'No active PJPs found.', 
+                          style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7))
+                        )
+                      ),
+                     ),
+                  );
+                }
+
+                final pjps = snapshot.data!;
+
+                return Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Active & Upcoming PJPs (${pjps.length})",
+                          style: textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold, 
+                            color: theme.colorScheme.onSurface
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ...pjps.map((pjp) => ListTile(
+                              leading: Icon(Icons.route, color: theme.colorScheme.onSurface.withOpacity(0.7)),
+                              title: Text(
+                                'Plan for: ${pjp.planDate.toLocal().toString().split(' ')[0]}', 
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurface, 
+                                  fontWeight: FontWeight.bold
+                                )
+                              ),
+                              subtitle: Text(
+                                'Status: ${pjp.status}', 
+                                style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7))
+                              ),
+                            )),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ]
+              .animate(interval: 100.ms)
+              .fadeIn(duration: 500.ms)
+              .slideY(begin: 0.3),
         ),
       ),
     );

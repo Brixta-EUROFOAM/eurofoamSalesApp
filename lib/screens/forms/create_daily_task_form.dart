@@ -69,7 +69,10 @@ class _CreateDailyTaskScreenState extends State<CreateDailyTaskScreen> {
     }
   }
 
-  Future<void> _showAddPjpFormAndRefresh() async {
+Future<void> _showAddPjpFormAndRefresh() async {
+    // 1. Get the theme from the current context.
+    final theme = Theme.of(context);
+
     // This function shows the PJP form and waits for it to close.
     // We pass a callback that will refresh our PJP list.
     await showModalBottomSheet(
@@ -81,6 +84,7 @@ class _CreateDailyTaskScreenState extends State<CreateDailyTaskScreen> {
         onPjpCreated: () {
           _fetchTodaysPjps();
         },
+        theme: theme, // <-- 2. Pass the theme here
       ),
     );
   }

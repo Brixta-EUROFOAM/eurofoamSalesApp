@@ -1,4 +1,3 @@
-// lib/screens/employee_management/employee_salesorder_screen.dart
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -8,7 +7,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 
 part 'employee_salesorder_screen.g.dart';
 
-// --- CRITICAL FIX: The Hive model class is now PUBLIC (no underscore) ---
 @HiveType(typeId: 0)
 class ChatMessage extends HiveObject {
   @HiveField(0)
@@ -29,7 +27,7 @@ class SalesOrderScreen extends StatefulWidget {
 }
 
 class _SalesOrderScreenState extends State<SalesOrderScreen> {
-  // --- UPDATED: All references now use the public ChatMessage class ---
+  // --- (All your logic remains unchanged) ---
   final TextEditingController _textController = TextEditingController();
   final List<ChatMessage> _messages = [];
   final ScrollController _scrollController = ScrollController();
@@ -47,19 +45,15 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
   }
 
   Future<void> _initializeChat() async {
-    // --- CRITICAL FIX: Register the now PUBLIC ChatMessageAdapter ---
     if (!Hive.isAdapterRegistered(0)) {
        Hive.registerAdapter(ChatMessageAdapter());
     }
-    
     _chatBox = await Hive.openBox<ChatMessage>('sales_order_chat');
-    
     if (mounted) {
       setState(() {
         _messages.addAll(_chatBox.values.toList().reversed);
       });
     }
-
     _connectToSocket();
   }
 
@@ -70,22 +64,17 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
       'transports': ['websocket', 'polling'], 
       'autoConnect': false,
     });
-
     _socket.connect();
-
     _socket.onConnect((_) {
       debugPrint('Socket connected');
       if(mounted) setState(() => _isConnected = true);
     });
-
     _socket.onDisconnect((_) {
       debugPrint('Socket disconnected');
       if(mounted) setState(() => _isConnected = false);
     });
-
     _socket.on('connect_error', (data) => debugPrint('Connect Error: $data'));
     _socket.on('error', (data) => debugPrint('Socket Error: $data'));
-    
     _socket.on('ready', (_) {
        if (_messages.isEmpty) {
          _addMessage(
@@ -94,13 +83,11 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
          );
        }
     });
-
     _socket.on('status', (data) {
       if (data is Map && data['typing'] is bool) {
         if(mounted) setState(() => _isLoading = data['typing']);
       }
     });
-    
     _socket.on('bot_message', (data) {
       if (data is Map && data['text'] is String) {
         _addMessage(text: data['text'], role: 'assistant');
@@ -110,7 +97,6 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
   }
 
   void _addMessage({required String text, required String role}) {
-    // --- UPDATED: Uses the public ChatMessage class ---
     final message = ChatMessage(text: text, role: role);
     _chatBox.add(message);
     if (mounted) {
@@ -125,7 +111,6 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
     if (text.trim().isEmpty || !_isConnected) return;
     _textController.clear();
     _addMessage(text: text, role: 'user');
-    
     if(mounted) {
       setState(() {
         _isLoading = true;
@@ -145,51 +130,53 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
   }
 
   @override
+  void dispose() {
+    _textController.dispose();
+    _scrollController.dispose();
+    _socket.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Color(0xFF0D47A1), Color.fromARGB(255, 2, 10, 103)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+    return SafeArea(
+      child: Column(
+        children: [
+          _buildStatusBanner(),
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              reverse: true,
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              itemCount: _messages.length,
+              itemBuilder: (_, int index) => _ChatMessageBubble(message: _messages[index]),
+            ),
           ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildStatusBanner(),
-              Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  reverse: true,
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                  itemCount: _messages.length,
-                  itemBuilder: (_, int index) => _ChatMessageBubble(message: _messages[index]),
-                ),
-              ),
-              if (_isLoading) const _TypingIndicator(),
-              _buildTextComposer(),
-            ],
-          ),
-        ),
+          if (_isLoading) const _TypingIndicator(),
+          _buildTextComposer(),
+          
+          // This padding adds space for your floating nav bar
+          const SizedBox(height: 80), 
+        ],
       ),
     );
   }
 
-  // All other widgets below remain unchanged...
   Widget _buildStatusBanner() {
+    final theme = Theme.of(context);
+    
+    // --- ✅ CRITIQUE #1: Using primary color (2-shade) ---
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
-      color: Colors.black.withOpacity(0.2),
+      color: theme.colorScheme.primary, 
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.support_agent, color: Colors.white, size: 16),
+          Icon(Icons.support_agent, color: theme.colorScheme.onPrimary, size: 16),
           const SizedBox(width: 8),
-          const Text(
+          Text(
             "CemTemBot Status:",
-            style: TextStyle(color: Colors.white70, fontSize: 12),
+            style: TextStyle(color: theme.colorScheme.onPrimary.withOpacity(0.8), fontSize: 12),
           ),
           const SizedBox(width: 8),
           Container(
@@ -197,14 +184,15 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
             height: 8,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: _isConnected ? Colors.greenAccent : Colors.redAccent,
+              // --- ✅ CRITIQUE #8: Softer Colors ---
+              color: _isConnected ? const Color(0xFF4CAF50) : const Color(0xFFE57373),
             ),
           ),
           const SizedBox(width: 4),
           Text(
             _isConnected ? "Connected" : "Disconnected",
             style: TextStyle(
-                color: _isConnected ? Colors.greenAccent : Colors.redAccent,
+                color: _isConnected ? const Color(0xFF4CAF50) : const Color(0xFFE57373),
                 fontSize: 12,
                 fontWeight: FontWeight.bold),
           ),
@@ -214,52 +202,57 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
   }
 
   Widget _buildTextComposer() {
+    final theme = Theme.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.black.withOpacity(0.2),
+      color: theme.scaffoldBackgroundColor, 
+      child: Card(
+        // --- ✅ CRITIQUE #5: Create a single capsule ---
+        // We use a Card as the capsule container
+        elevation: 0,
+        color: theme.colorScheme.surface,
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(30.0),
+          side: theme.brightness == Brightness.light
+              ? BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.1))
+              : BorderSide.none
         ),
+        clipBehavior: Clip.antiAlias,
         child: Row(
           children: [
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.only(left: 20.0),
-                child: TextField(
-                  controller: _textController,
-                  onSubmitted: _handleSubmitted,
-                  decoration: InputDecoration(
-                    hintText: _isConnected ? 'Type your order...' : 'Connecting...',
-                    hintStyle: const TextStyle(color: Colors.white70),
-                    border: InputBorder.none,
-                  ),
-                  style: const TextStyle(color: Colors.white),
-                  enabled: _isConnected,
+              child: TextField(
+                controller: _textController,
+                onSubmitted: _handleSubmitted,
+                decoration: InputDecoration(
+                  hintText: _isConnected ? 'Type your order...' : 'Connecting...',
+                  hintStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5)),
+                  // Remove all internal borders
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  filled: false, // The card handles the fill
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                 ),
+                style: TextStyle(color: theme.colorScheme.onSurface),
+                enabled: _isConnected,
               ),
             ),
             IconButton(
-              icon: Icon(Icons.send, color: _isConnected ? Theme.of(context).colorScheme.primary : Colors.grey),
+              // --- ✅ CRITIQUE #6: Use filled icon ---
+              icon: Icon(Icons.send, 
+                color: _isConnected ? theme.colorScheme.secondary : theme.disabledColor
+              ),
               onPressed: _isConnected ? () => _handleSubmitted(_textController.text) : null,
             ),
           ],
         ),
       ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _textController.dispose();
-    _scrollController.dispose();
-    _socket.dispose();
-    super.dispose();
+    ).animate().slide(begin: const Offset(0, 0.5), duration: 200.ms, curve: Curves.easeOut);
   }
 }
 
 class _ChatMessageBubble extends StatelessWidget {
-  // --- UPDATED: Uses the public ChatMessage class ---
   final ChatMessage message;
   const _ChatMessageBubble({required this.message});
 
@@ -267,38 +260,52 @@ class _ChatMessageBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isUser = message.role == 'user';
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5.0),
+      // --- ✅ CRITIQUE #10: Consistent spacing ---
+      padding: const EdgeInsets.symmetric(vertical: 10.0),
+      // --- END FIX ---
       child: Row(
         mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          if (!isUser) const CircleAvatar(child: Icon(Icons.support_agent)),
+          if (!isUser)
+            CircleAvatar(
+              backgroundColor: theme.colorScheme.surface, 
+              child: Icon(Icons.support_agent, color: theme.colorScheme.onSurface),
+            ),
           const SizedBox(width: 8),
           Flexible(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+                // --- ✅ CRITIQUE #4: Add +4px padding ---
+                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
                 decoration: BoxDecoration(
                   color: isUser
                       ? theme.colorScheme.primary
-                      : Colors.white.withOpacity(0.15),
+                      : theme.colorScheme.surface,
+                  // --- ✅ CRITIQUE #9: Consistent 16px corners ---
                   borderRadius: isUser
                       ? const BorderRadius.only(
-                          topLeft: Radius.circular(20.0),
-                          bottomLeft: Radius.circular(20.0),
-                          topRight: Radius.circular(20.0),
+                          topLeft: Radius.circular(16.0),
+                          bottomLeft: Radius.circular(16.0),
+                          topRight: Radius.circular(16.0),
                         )
                       : const BorderRadius.only(
-                          topRight: Radius.circular(20.0),
-                          bottomRight: Radius.circular(20.0),
-                          topLeft: Radius.circular(20.0),
+                          topRight: Radius.circular(16.0),
+                          bottomRight: Radius.circular(16.0),
+                          topLeft: Radius.circular(16.0),
                         ),
                 ),
                 child: Text(
                   message.text,
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  style: TextStyle(
+                    color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+                    fontSize: 16,
+                    // --- ✅ CRITIQUE #3: Increased line height ---
+                    height: 1.4,
+                  ),
                 ),
               ),
             ),
@@ -306,8 +313,8 @@ class _ChatMessageBubble extends StatelessWidget {
           if (isUser) ...[
             const SizedBox(width: 8),
             CircleAvatar(
-              backgroundColor: theme.colorScheme.secondaryContainer,
-              child: const Icon(Icons.person),
+              backgroundColor: theme.colorScheme.secondary,
+              child: Icon(Icons.person, color: theme.colorScheme.onSecondary),
             ),
           ]
         ],
@@ -321,30 +328,36 @@ class _TypingIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 16.0),
       child: Row(
         children: [
-          const CircleAvatar(child: Icon(Icons.support_agent)),
+          CircleAvatar(
+            backgroundColor: theme.colorScheme.surface,
+            child: Icon(Icons.support_agent, color: theme.colorScheme.onSurface),
+          ),
           const SizedBox(width: 12),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.15),
+              color: theme.colorScheme.surface,
+              // --- ✅ CRITIQUE #9: Consistent 16px corners ---
               borderRadius: const BorderRadius.only(
-                topRight: Radius.circular(20.0),
-                bottomRight: Radius.circular(20.0),
-                topLeft: Radius.circular(20.0),
+                topRight: Radius.circular(16.0),
+                bottomRight: Radius.circular(16.0),
+                topLeft: Radius.circular(16.0),
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildDot(0),
+                _buildDot(0, theme),
                 const SizedBox(width: 5),
-                _buildDot(1),
+                _buildDot(1, theme),
                 const SizedBox(width: 5),
-                _buildDot(2),
+                _buildDot(2, theme),
               ],
             ),
           ),
@@ -353,12 +366,12 @@ class _TypingIndicator extends StatelessWidget {
     ).animate(onComplete: (c) => c.repeat()).shimmer(duration: 1200.ms);
   }
 
-  Widget _buildDot(int index) {
+  Widget _buildDot(int index, ThemeData theme) {
     return Container(
       width: 8,
       height: 8,
-      decoration: const BoxDecoration(
-        color: Colors.white70,
+      decoration: BoxDecoration(
+        color: theme.colorScheme.onSurface.withOpacity(0.7),
         shape: BoxShape.circle,
       ),
     ).animate().scaleY(

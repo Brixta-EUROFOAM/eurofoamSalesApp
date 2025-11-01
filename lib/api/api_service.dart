@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'dart:developer' as dev; // <-- THIS LINE WAS MISSING
+import 'dart:developer' as dev;
 import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
@@ -19,7 +19,7 @@ import '../models/competition_report_model.dart';
 class ApiService {
   static const String _baseUrl = 'https://myserverbymycoco.onrender.com';
 
-  // --- GENERIC HELPERS (Unchanged) ...
+  // --- GENERIC HELPERS (Unchanged) ---
   Future<T> _get<T>(String endpoint, T Function(dynamic json) fromJson) async {
     final url = Uri.parse('$_baseUrl/api/$endpoint');
     dev.log('GET: $url', name: 'ApiService');
@@ -28,7 +28,8 @@ class ApiService {
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 200) {
         if (jsonData['success'] == true && jsonData['data'] != null) {
-          return fromJson(jsonData['data']);
+          // The fromJson function receives ONLY the 'data' property
+          return fromJson(jsonData['data']); 
         } else {
           throw Exception(jsonData['error'] ?? 'API returned success: false');
         }
@@ -62,6 +63,7 @@ class ApiService {
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 201 || response.statusCode == 200) {
         if (jsonData['success'] == true && jsonData['data'] != null) {
+          // The fromJson function receives ONLY the 'data' property
           return fromJson(jsonData['data']);
         } else {
           throw Exception(jsonData['error'] ?? 'API returned success: false');
@@ -98,6 +100,7 @@ class ApiService {
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 200) {
         if (jsonData['success'] == true && jsonData['data'] != null) {
+          // The fromJson function receives ONLY the 'data' property
           return fromJson(jsonData['data']);
         } else {
           throw Exception(jsonData['error'] ?? 'API returned success: false');
@@ -114,7 +117,8 @@ class ApiService {
     }
   }
 
-  Future<void> _delete(String endpoint) async {
+  // ... (delete, uploadImage, geoTracking, reverseGeocode are all correct) ...
+    Future<void> _delete(String endpoint) async {
     final url = Uri.parse('$_baseUrl/api/$endpoint');
     dev.log('DELETE: $url', name: 'ApiService');
     try {
@@ -171,7 +175,6 @@ class ApiService {
     }
   }
 
-  // --- NEW: GEO-TRACKING METHOD (POST) ---
   Future<void> sendGeoTrackingPoint(GeoTrackingPoint point) async {
     final url = Uri.parse('$_baseUrl/api/geotracking');
     final body = point.toJson();
@@ -249,7 +252,9 @@ class ApiService {
     }
   }
 
-  // --- DEALER METHODS ---
+
+  // --- DEALER METHODS (FIXED) ---
+
   Future<List<Dealer>> fetchDealers({
     String? region,
     String? area,
@@ -262,41 +267,71 @@ class ApiService {
       if (type != null) 'type': type,
       if (userId != null) 'userId': userId.toString(),
     };
+    // Note: The /dealers route returns { success: true, data: [...] }
+    // The _get helper passes the `data` property (the list) to the parser.
     final endpoint = Uri(
       path: 'dealers',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
+    
+    // --- ✅ THE FIX ---
+    // 'json' *is* the list, because _get already returned jsonData['data']
     return _get(
       endpoint,
-      (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
+      (json) => (json as List) 
+          .map((item) => Dealer.fromJson(item))
+          .toList(),
     );
+    // --- END FIX ---
   }
 
   Future<Dealer> fetchDealerById(String dealerId) {
-    return _get('dealers/$dealerId', (json) => Dealer.fromJson(json));
+    // --- ✅ THE FIX ---
+    // 'json' *is* the dealer object, because _get already returned jsonData['data']
+    return _get(
+      'dealers/$dealerId',
+      (json) => Dealer.fromJson(json),
+    );
+    // --- END FIX ---
   }
 
   Future<Dealer> createDealer(
     Dealer dealer, {
-    required double latitude,
-    required double longitude,
+    double? radius,
   }) async {
     final body = dealer.toJson();
-    body['latitude'] = latitude.toString();
-    body['longitude'] = longitude.toString();
-    return _post('dealers', body, (json) => Dealer.fromJson(json));
+    if (radius != null) {
+      body['radius'] = radius.toString();
+    }
+    
+    // --- ✅ THE FIX ---
+    // 'json' *is* the new dealer object
+    return _post(
+      'dealers',
+      body,
+      (json) => Dealer.fromJson(json),
+    );
+    // --- END FIX ---
   }
 
   Future<Dealer> updateDealer(
     String dealerId,
     Map<String, dynamic> data,
   ) async {
-    return _patch('dealers/$dealerId', data, (json) => Dealer.fromJson(json));
+    // --- ✅ THE FIX ---
+    // 'json' *is* the updated dealer object
+    return _patch(
+      'dealers/$dealerId',
+      data,
+      (json) => Dealer.fromJson(json),
+    );
+    // --- END FIX ---
   }
 
   Future<void> deleteDealer(String dealerId) => _delete('dealers/$dealerId');
-
-  // --- OTHER METHODS ---
+  
+  
+  // --- OTHER METHODS (These were already correct) ---
   Future<List<Pjp>> fetchPjpsForUser(
     int userId, {
     String? startDate,
@@ -312,6 +347,7 @@ class ApiService {
       path: 'pjp/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
+    // This one was already correct
     return _get(
       endpoint,
       (json) => (json as List).map((item) => Pjp.fromJson(item)).toList(),
@@ -343,6 +379,7 @@ class ApiService {
       path: 'daily-tasks/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
+    // This one was already correct
     return _get(
       endpoint,
       (json) => (json as List).map((item) => DailyTask.fromJson(item)).toList(),
@@ -364,6 +401,7 @@ class ApiService {
       path: 'leave-applications/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
+    // This one was already correct
     return _get(
       endpoint,
       (json) => (json as List)
@@ -385,6 +423,7 @@ class ApiService {
       path: 'attendance/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
+    // This one was already correct
     return _get(
       endpoint,
       (json) =>
@@ -416,6 +455,7 @@ class ApiService {
       path: 'daily-visit-reports/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
+    // This one was already correct
     return _get(
       endpoint,
       (json) => (json as List)
@@ -441,6 +481,7 @@ class ApiService {
       path: 'technical-visit-reports/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
+    // This one was already correct
     return _get(
       endpoint,
       (json) => (json as List)
@@ -508,8 +549,7 @@ class ApiService {
       (json) => CompetitionReport.fromJson(json),
     );
   }
-  // In api_service.dart
-
+  
   Future<void> deleteDailyTask(String taskId) => _delete('daily-tasks/$taskId');
   Future<void> deleteDvr(String dvrId) => _delete('daily-visit-reports/$dvrId');
   Future<void> deleteTvr(String tvrId) =>

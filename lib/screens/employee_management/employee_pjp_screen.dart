@@ -1,6 +1,6 @@
 // lib/screens/employee_management/employee_pjp_screen.dart
 import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/widgets/reusableglasscard.dart';
+// import 'package:assetarchiverflutter/widgets/reusableglasscard.dart'; // <-- REMOVED
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/models/pjp_model.dart';
@@ -25,6 +25,7 @@ class EmployeePJPScreen extends StatefulWidget {
 }
 
 class EmployeePJPScreenState extends State<EmployeePJPScreen> {
+  // --- (All your logic is unchanged) ---
   final ApiService _apiService = ApiService();
   late Future<List<Pjp>> _pjpFuture;
 
@@ -42,7 +43,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
     }
   }
 
-  // --- NEW: A dedicated refresh handler for the RefreshIndicator ---
   Future<void> _handleRefresh() async {
     final newPjpFuture = _apiService.fetchPjpsForUser(int.parse(widget.employee.id), status: 'pending');
     if (mounted) {
@@ -50,7 +50,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
         _pjpFuture = newPjpFuture;
       });
     }
-    // Awaiting the future makes the refresh indicator spin until data is loaded
     await newPjpFuture;
   }
 
@@ -60,6 +59,10 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   }
 
   void _showAddPjpForm() {
+    // --- ✅ THEME UPDATE: Get theme for the bottom sheet ---
+    final theme = Theme.of(context);
+    // --- END UPDATE ---
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -67,11 +70,14 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       builder: (_) => AddPjpForm(
         employee: widget.employee,
         onPjpCreated: _handlePjpCreation,
+        // --- ✅ THEME UPDATE: Pass the theme data down ---
+        theme: theme,
       ),
     );
   }
 
   Future<void> _startJourneyForPjp(Pjp pjp) async {
+    // ... (Your journey logic is unchanged) ...
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     try {
       final parts = pjp.areaToBeVisited.split('|');
@@ -103,79 +109,93 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // --- ✅ THEME UPDATE: Get theme colors ---
+    final theme = Theme.of(context);
+    // --- END UPDATE ---
+
     return Stack(
       children: [
-        Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF0D47A1), Color.fromARGB(255, 2, 10, 103)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: FutureBuilder<List<Pjp>>(
-            future: _pjpFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-                return const Center(child: CircularProgressIndicator(color: Colors.white));
-              }
-              if (snapshot.hasError) {
-                return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.yellow)));
-              }
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                // Also wrap this in a RefreshIndicator for an empty state
-                return RefreshIndicator(
-                  onRefresh: _handleRefresh,
-                  child: Stack(
-                    children: [
-                      ListView(), // Needed for RefreshIndicator to work
-                      const Center(child: Text('No PJPs to visit.', style: TextStyle(color: Colors.white70))),
-                    ],
-                  ),
-                );
-              }
-              final pjpList = snapshot.data!;
-              // --- UPDATED: Wrapped ListView.builder in a RefreshIndicator ---
+        // --- ✅ THEME UPDATE: Removed Container + Gradient ---
+        // The Scaffold from navscreen.dart provides the background color
+        FutureBuilder<List<Pjp>>(
+          future: _pjpFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+              // --- ✅ THEME UPDATE ---
+              return Center(child: CircularProgressIndicator(color: theme.colorScheme.primary));
+            }
+            if (snapshot.hasError) {
+              // --- ✅ THEME UPDATE ---
+              return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: theme.colorScheme.error)));
+            }
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
               return RefreshIndicator(
                 onRefresh: _handleRefresh,
-                color: Colors.white,
-                backgroundColor: Theme.of(context).primaryColor,
-                child: ListView.builder(
-                  padding: EdgeInsets.only(top: kToolbarHeight + MediaQuery.of(context).padding.top, bottom: 80),
-                  itemCount: pjpList.length,
-                  itemBuilder: (context, index) {
-                    final pjp = pjpList[index];
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                      child: Slidable(
-                        key: ValueKey(pjp.id),
-                        startActionPane: ActionPane(
-                          motion: const StretchMotion(),
-                          children: [
-                            SlidableAction(
-                              onPressed: (_) => _startJourneyForPjp(pjp),
-                              backgroundColor: Theme.of(context).colorScheme.primary,
-                              foregroundColor: Colors.white,
-                              icon: Icons.route,
-                              label: 'Start Journey',
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ],
-                        ),
-                        child: _PjpCard(pjp: pjp),
-                      ),
-                    );
-                  },
+                child: Stack(
+                  children: [
+                    ListView(),
+                    Center(
+                      child: Text(
+                        'No PJPs to visit.', 
+                        // --- ✅ THEME UPDATE ---
+                        style: TextStyle(color: theme.colorScheme.onBackground.withOpacity(0.7))
+                      )
+                    ),
+                  ],
                 ),
               );
-            },
-          ),
+            }
+            final pjpList = snapshot.data!;
+            
+            return RefreshIndicator(
+              onRefresh: _handleRefresh,
+              // --- ✅ THEME UPDATE ---
+              color: theme.colorScheme.onPrimary,
+              backgroundColor: theme.colorScheme.primary,
+              child: ListView.builder(
+                // Use the AppBar's height for top padding
+                padding: EdgeInsets.only(top: kToolbarHeight + MediaQuery.of(context).padding.top, bottom: 80),
+                itemCount: pjpList.length,
+                itemBuilder: (context, index) {
+                  final pjp = pjpList[index];
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                    child: Slidable(
+                      key: ValueKey(pjp.id),
+                      startActionPane: ActionPane(
+                        motion: const StretchMotion(),
+                        children: [
+                          SlidableAction(
+                            onPressed: (_) => _startJourneyForPjp(pjp),
+                            // --- ✅ THEME UPDATE ---
+                            backgroundColor: theme.colorScheme.primary,
+                            foregroundColor: theme.colorScheme.onPrimary,
+                            // --- END UPDATE ---
+                            icon: Icons.route,
+                            label: 'Start Journey',
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ],
+                      ),
+                      child: _PjpCard(pjp: pjp),
+                    ),
+                  );
+                },
+              ),
+            );
+          },
         ),
         Positioned(
           bottom: 120.0,
           right: 16.0,
           child: FloatingActionButton(
             onPressed: _showAddPjpForm,
+            // --- ✅ THEME UPDATE ---
+            // Style will come from app_theme.dart (elevatedButtonTheme)
+            // or you can style it explicitly
+            backgroundColor: theme.colorScheme.secondary,
+            foregroundColor: theme.colorScheme.onSecondary,
+            // --- END UPDATE ---
             child: const Icon(Icons.add),
           ),
         ),
@@ -184,39 +204,60 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   }
 }
 
-// All widgets below this line remain completely unchanged.
-
+// --- ✅ THEME UPDATE: Replaced LiquidGlassCard with Card ---
 class _PjpCard extends StatelessWidget {
   final Pjp pjp;
   const _PjpCard({required this.pjp});
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
     final displayName = pjp.areaToBeVisited.split('|').first;
 
-    return LiquidGlassCard(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Text(
-              displayName,
-              style: textTheme.titleLarge?.copyWith(color: Colors.white, fontWeight: FontWeight.bold),
+    return Card( // <-- Replaced LiquidGlassCard
+      // Card theme is applied from app_theme.dart
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                displayName,
+                // --- ✅ THEME UPDATE ---
+                style: textTheme.titleLarge?.copyWith(
+                  color: theme.colorScheme.onSurface, 
+                  fontWeight: FontWeight.bold
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: 16),
-          const Icon(Icons.keyboard_arrow_right, color: Colors.white70, size: 30),
-        ],
+            const SizedBox(width: 16),
+            Icon(
+              Icons.keyboard_arrow_right, 
+              // --- ✅ THEME UPDATE ---
+              color: theme.colorScheme.onSurface.withOpacity(0.7), 
+              size: 30
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
+// --- ✅ THEME UPDATE: Form is now theme-aware ---
 class AddPjpForm extends StatefulWidget {
   final Employee employee;
   final VoidCallback onPjpCreated;
-  const AddPjpForm({super.key, required this.employee, required this.onPjpCreated});
+  final ThemeData theme; // <-- NEW: Receive theme from parent
+
+  const AddPjpForm({
+    super.key, 
+    required this.employee, 
+    required this.onPjpCreated,
+    required this.theme, // <-- NEW
+  });
   @override
   State<AddPjpForm> createState() => AddPjpFormState();
 }
@@ -244,6 +285,7 @@ class AddPjpFormState extends State<AddPjpForm> {
   }
 
   Future<void> _submitForm() async {
+    // ... (Your submit logic is unchanged) ...
     if (!_formKey.currentState!.validate() || _selectedDealer == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a dealer.'), backgroundColor: Colors.orange));
       return;
@@ -271,12 +313,15 @@ class AddPjpFormState extends State<AddPjpForm> {
         status: 'pending',
         areaToBeVisited: visitData,
         description: _descriptionController.text.isNotEmpty ? _descriptionController.text : null,
-        dealerName: dealer.name,
+        dealerName: dealer.name, // NOTE: This field is now unused in your new schema
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
       
-      await _apiService.createPjp(newPjp);
+      // IMPORTANT: You'll need to update _apiService.createPjp to send 'dealerId'
+      // For now, this will fail until the API service is updated
+      await _apiService.createPjp(newPjp); 
+      
       widget.onPjpCreated();
       navigator.pop();
       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('PJP Created!'), backgroundColor: Colors.green));
@@ -291,38 +336,53 @@ class AddPjpFormState extends State<AddPjpForm> {
 
   @override
   Widget build(BuildContext context) {
+    // --- ✅ THEME UPDATE: Get theme from widget property ---
+    final theme = widget.theme;
+    // --- END UPDATE ---
+    
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24.0),
-        decoration: const BoxDecoration(
-          color: Color(0xFF020a67),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24.0)),
+        // --- ✅ THEME UPDATE ---
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24.0)),
         ),
+        // --- END UPDATE ---
         child: Form(
           key: _formKey,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Create New PJP', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+              Text(
+                'Create New PJP', 
+                // --- ✅ THEME UPDATE ---
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: theme.colorScheme.onSurface,
+                  fontWeight: FontWeight.bold
+                )
+              ),
               const SizedBox(height: 24),
               FutureBuilder<List<Dealer>>(
                 future: _dealersFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-                  if (snapshot.hasError) return Text('Error loading dealers: ${snapshot.error}', style: const TextStyle(color: Colors.red));
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) return const Text('No dealers found for this user.', style: TextStyle(color: Colors.white70));
+                  if (snapshot.hasError) return Text('Error loading dealers: ${snapshot.error}', style: TextStyle(color: theme.colorScheme.error));
+                  if (!snapshot.hasData || snapshot.data!.isEmpty) return Text('No dealers found for this user.', style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)));
                   
                   return DropdownButtonFormField<Dealer>(
-                    hint: const Text('Select a Dealer', style: TextStyle(color: Colors.white70)),
+                    // --- ✅ THEME UPDATE ---
+                    hint: Text('Select a Dealer', style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7))),
                     isExpanded: true,
-                    dropdownColor: const Color(0xFF0D47A1),
-                    style: const TextStyle(color: Colors.white),
+                    dropdownColor: theme.colorScheme.surface, // Card color
+                    style: TextStyle(color: theme.colorScheme.onSurface),
                     decoration: InputDecoration(
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white30), borderRadius: BorderRadius.circular(12)),
+                      enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.3)), borderRadius: BorderRadius.circular(12)),
                     ),
+                    // --- END UPDATE ---
                     items: snapshot.data!.map((dealer) => DropdownMenuItem(value: dealer, child: Text(dealer.name, overflow: TextOverflow.ellipsis,))).toList(),
                     onChanged: (value) => setState(() => _selectedDealer = value),
                     validator: (value) => value == null ? 'Please select a dealer' : null,
@@ -332,18 +392,25 @@ class AddPjpFormState extends State<AddPjpForm> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _descriptionController,
-                style: const TextStyle(color: Colors.white),
+                // --- ✅ THEME UPDATE ---
+                style: TextStyle(color: theme.colorScheme.onSurface),
                 decoration: InputDecoration(
                   labelText: 'Description (Optional)',
-                  labelStyle: const TextStyle(color: Colors.white70),
+                  labelStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white30), borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.3)), borderRadius: BorderRadius.circular(12)),
                 ),
+                // --- END UPDATE ---
               ),
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _isSubmitting ? null : _submitForm,
-                style: ElevatedButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
+                // --- ✅ THEME UPDATE ---
+                // This will now use the style from app_theme.dart
+                style: theme.elevatedButtonTheme.style?.copyWith(
+                  minimumSize: MaterialStateProperty.all(const Size(double.infinity, 50))
+                ),
+                // --- END UPDATE ---
                 child: _isSubmitting ? const CircularProgressIndicator() : const Text('SUBMIT PJP'),
               ),
             ],

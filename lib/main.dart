@@ -4,18 +4,21 @@ import 'package:assetarchiverflutter/api/auth_service.dart';
 import 'package:assetarchiverflutter/screens/auth/login_screen.dart';
 import 'package:assetarchiverflutter/screens/nav_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+// import 'package:google_fonts/google_fonts.dart'; Font logic nelaage ru..app theme . dart ot ase
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
-// --- NEW: IMPORT HIVE LIBRARY ---
 import 'package:hive_flutter/hive_flutter.dart';
+
+// --- NEW IMPORTS ---
+import 'package:provider/provider.dart';
+import 'package:assetarchiverflutter/widgets/app_theme.dart';
+import 'package:assetarchiverflutter/widgets/theme_provider.dart';
+// --- END NEW IMPORTS ---
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: ".env");
-
-  // --- NEW: INITIALIZE HIVE FOR LOCAL STORAGE ---
   await Hive.initFlutter();
 
   final radarPublishableKey = dotenv.env['RADAR_API_KEY'];
@@ -28,7 +31,14 @@ Future<void> main() async {
   
   final Employee? loggedInEmployee = await AuthService().tryAutoLogin();
 
-  runApp(MyApp(loggedInEmployee: loggedInEmployee));
+  // --- UPDATED: Wrap your app in the ThemeProvider ---
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => ThemeProvider(),
+      child: MyApp(loggedInEmployee: loggedInEmployee),
+    ),
+  );
+  // --- END UPDATE ---
 }
 
 class MyApp extends StatelessWidget {
@@ -37,18 +47,22 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final modernBlue = const Color.fromARGB(255, 35, 103, 251);
+    // This line "listens" to the ThemeProvider for changes
+    final themeProvider = Provider.of<ThemeProvider>(context);
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Modern App',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: modernBlue, brightness: Brightness.dark,),
-        textTheme: GoogleFonts.robotoTextTheme(ThemeData.dark().textTheme),
-        inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: Colors.white.withAlpha(26), border: OutlineInputBorder(borderRadius: BorderRadius.circular(16.0), borderSide: BorderSide(color: Colors.white.withAlpha(51),),), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16.0), borderSide: BorderSide(color: Colors.white.withAlpha(51),),), prefixIconColor: Colors.white.withAlpha(179),),
-        elevatedButtonTheme: ElevatedButtonThemeData(style: ElevatedButton.styleFrom(backgroundColor: modernBlue, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 18), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0),), textStyle: GoogleFonts.roboto(fontSize: 16, fontWeight: FontWeight.bold,),),),
-        useMaterial3: true,
-      ),
+
+      // --- UPDATED: This is the magic! ---
+      // We now provide both themes and let the provider
+      // choose which one to show.
+      theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeProvider.themeMode,
+      // --- END UPDATE ---
+
+      // Your existing logic is perfect and remains unchanged
       initialRoute: loggedInEmployee != null ? '/home' : '/login',
       routes: {
         '/login': (context) => const LoginScreen(),
