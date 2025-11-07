@@ -126,3 +126,12 @@ class Pjp {
     };
   }
 }
+class PjpData {
+  final List<Pjp> pendingPjps;
+  final List<Pjp> verifiedPjps; // We use 'verified' to match your new ApiService function
+
+  PjpData({
+    required this.pendingPjps,
+    required this.verifiedPjps,
+  });
+}

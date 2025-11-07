@@ -448,6 +448,51 @@ class ApiService {
     );
   }
 
+  // --- ✅ NEWLY ADDED FUNCTION ---
+  /// Fetches PJPs that are 'PENDING' OR 'VERIFIED' in parallel.
+  /// Also passes along any optional date or dealer filters.
+  Future<PjpData> fetchPendingAndVerifiedPjps({
+  // --- ✅ ADD THIS REQUIRED PARAMETER ---
+  required int userId,
+  // ---
+  String? startDate,
+  String? endDate,
+  String? dealerId,
+}) async {
+  try {
+    // --- ✅ WE MUST USE fetchPjpsForUser TO FILTER BY USER ---
+    final List<List<Pjp>> results = await Future.wait([
+      fetchPjpsForUser(
+        userId,
+        status: 'PENDING', // Use the new backend status
+        startDate: startDate,
+        endDate: endDate,
+        dealerId: dealerId,
+      ),
+      fetchPjpsForUser(
+        userId,
+        status: 'VERIFIED', // Use the new backend status
+        startDate: startDate,
+        endDate: endDate,
+        dealerId: dealerId,
+      ),
+    ]);
+
+    // 2. 'results' is [ [pending_pjps], [verified_pjps] ]
+    //    Package them into the PjpData object.
+    return PjpData(
+      pendingPjps: results[0],  // The 'PENDING' list
+      verifiedPjps: results[1], // The 'VERIFIED' list
+    );
+
+  } catch (e) {
+    // Handle any errors
+    dev.log('Failed to fetch PENDING and VERIFIED PJPs: $e', name: 'ApiService');
+    // Return empty data on failure
+    return PjpData(pendingPjps: [], verifiedPjps: []);
+  }
+}
+  // --- END NEWLY ADDED FUNCTION ---
 
   Future<Pjp> createPjp(Pjp pjp) async {
     // This now correctly uses the updated Pjp.toJson()
@@ -528,7 +573,6 @@ class ApiService {
   }
 
   Future<void> deletePjp(String pjpId) => _delete('pjp/$pjpId');
-
   // --- (All other methods for Tasks, Leave, DVR, etc. are UNCHANGED) ---
   Future<List<DailyTask>> fetchDailyTasksForUser(
     int userId, {
