@@ -3,12 +3,9 @@
 // --- (All imports needed for this form) ---
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'dart:async';
+import 'dart:async'; // <-- Import for Timer (debounce)
 import 'package:geolocator/geolocator.dart';
-// Note: Make sure this import matches your pubspec.yaml
 import 'package:flutter_radar/flutter_radar.dart'; 
-
-// --- (Use '..' to go up one directory from 'forms' to 'models'/'services') ---
 import '../../models/employee_model.dart';
 import '../../models/dealer_model.dart';
 import '../../api/api_service.dart';
@@ -16,7 +13,7 @@ import '../../api/api_service.dart';
 // --- (Class is public: "AddDealerForm") ---
 class AddDealerForm extends StatefulWidget {
   final Employee employee;
-  const AddDealerForm({Key? key, required this.employee}) : super(key: key);
+  const AddDealerForm({super.key, required this.employee});
 
   @override
   // --- (State class is private, but attached to the public widget) ---
@@ -40,7 +37,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
   List<Dealer> _parentDealers = [];
   Dealer? _selectedParentDealer;
 
-  // --- (Controllers for old fields) ---
+  // --- (All Form Controllers) ---
   final _nameController = TextEditingController();
   final _regionController = TextEditingController();
   final _areaController = TextEditingController();
@@ -52,25 +49,17 @@ class _AddDealerFormState extends State<AddDealerForm> {
   final _brandSellingController = TextEditingController();
   final _feedbacksController = TextEditingController();
   final _remarksController = TextEditingController();
-
-  // --- (NEW Controllers for all new fields) ---
-
-  // Primary Details
   final _whatsappNoController = TextEditingController();
   final _emailIdController = TextEditingController();
-  final _businessTypeController = TextEditingController(); // The *new* field
+  final _businessTypeController = TextEditingController();
   final _dateOfBirthController = TextEditingController();
   final _anniversaryDateController = TextEditingController();
   DateTime? _selectedDateOfBirth;
   DateTime? _selectedAnniversaryDate;
-
-  // Identification
   final _gstinNoController = TextEditingController();
   final _panNoController = TextEditingController();
   final _tradeLicNoController = TextEditingController();
   final _aadharNoController = TextEditingController();
-
-  // Godown
   final _godownSizeSqFtController = TextEditingController();
   final _godownCapacityMTBagsController = TextEditingController();
   final _godownAddressLineController = TextEditingController();
@@ -79,50 +68,53 @@ class _AddDealerFormState extends State<AddDealerForm> {
   final _godownAreaController = TextEditingController();
   final _godownRegionController = TextEditingController();
   final _godownPinCodeController = TextEditingController();
-
-  // Residential
   final _resAddressLineController = TextEditingController();
   final _resLandMarkController = TextEditingController();
   final _resDistrictController = TextEditingController();
   final _resAreaController = TextEditingController();
   final _resRegionController = TextEditingController();
   final _resPinCodeController = TextEditingController();
-
-  // Bank
   final _bankAccountNameController = TextEditingController();
   final _bankNameController = TextEditingController();
   final _bankBranchAddressController = TextEditingController();
   final _bankAccountNumberController = TextEditingController();
   final _bankIfscCodeController = TextEditingController();
-
-  // Sales & Promoter
   final _brandNameController = TextEditingController();
   final _monthlySaleMTController = TextEditingController();
   final _noOfDealersController = TextEditingController();
   final _areaCoveredController = TextEditingController();
   final _projectedMonthlySalesBestCementMTController = TextEditingController();
   final _noOfEmployeesInSalesController = TextEditingController();
-
-  // Declaration
   final _declarationNameController = TextEditingController();
   final _declarationPlaceController = TextEditingController();
   final _declarationDateController = TextEditingController();
   DateTime? _selectedDeclarationDate;
-
-  // Geofence
-  final _radiusController = TextEditingController(text: '25'); // Default 25m
-
-  // Document URLs
+  final _radiusController = TextEditingController(text: '25');
   final _tradeLicencePicUrlController = TextEditingController();
   final _shopPicUrlController = TextEditingController();
   final _dealerPicUrlController = TextEditingController();
   final _blankChequePicUrlController = TextEditingController();
   final _partnershipDeedPicUrlController = TextEditingController();
 
+  // --- (NEW State Variables for Photon Autocomplete) ---
+  Timer? _godownDebounce;
+  Timer? _resDebounce;
+  List<dynamic> _godownSuggestions = [];
+  List<dynamic> _resSuggestions = [];
+  bool _isSearchingGodown = false;
+  bool _isSearchingRes = false;
+  final FocusNode _godownFocusNode = FocusNode();
+  final FocusNode _resFocusNode = FocusNode();
+
+
   @override
   void initState() {
     super.initState();
     _fetchParentDealers();
+    
+    // --- (NEW) Add focus listeners to hide suggestion lists
+    _godownFocusNode.addListener(_onGodownFocusChange);
+    _resFocusNode.addListener(_onResFocusChange);
   }
 
   @override
@@ -139,8 +131,6 @@ class _AddDealerFormState extends State<AddDealerForm> {
     _brandSellingController.dispose();
     _feedbacksController.dispose();
     _remarksController.dispose();
-
-    // --- (Dispose NEW controllers) ---
     _whatsappNoController.dispose();
     _emailIdController.dispose();
     _businessTypeController.dispose();
@@ -185,6 +175,14 @@ class _AddDealerFormState extends State<AddDealerForm> {
     _blankChequePicUrlController.dispose();
     _partnershipDeedPicUrlController.dispose();
 
+    // --- (NEW) Dispose timers and focus nodes
+    _godownDebounce?.cancel();
+    _resDebounce?.cancel();
+    _godownFocusNode.removeListener(_onGodownFocusChange);
+    _resFocusNode.removeListener(_onResFocusChange);
+    _godownFocusNode.dispose();
+    _resFocusNode.dispose();
+
     super.dispose();
   }
 
@@ -217,85 +215,119 @@ class _AddDealerFormState extends State<AddDealerForm> {
 
   /// Gets the device's current location and uses reverse geocoding to populate address fields.
   Future<void> _fetchLocationAndAddress() async {
+    // --- 1. START ---
+    debugPrint("➡️ _fetchLocationAndAddress: STARTING");
     setState(() => _isFetchingLocation = true);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    StreamSubscription<Position>? positionStreamSubscription;
 
     try {
-      // 1. Permissions
+      // --- 2. PERMISSIONS ---
+      debugPrint("➡️ _fetchLocationAndAddress: Checking permissions...");
       String? status = await Radar.getPermissionsStatus();
+      debugPrint("➡️ _fetchLocationAndAddress: Initial permission status: $status");
+
       if (status == 'DENIED' || status == 'NOT_DETERMINED') {
+        debugPrint("➡️ _fetchLocationAndAddress: Requesting permissions...");
         status = await Radar.requestPermissions(true);
+        debugPrint("➡️ _fetchLocationAndAddress: New permission status: $status");
       }
       if (status != 'GRANTED_BACKGROUND' && status != 'GRANTED_FOREGROUND') {
+        // --- 2a. PERMISSION FAILED ---
+        debugPrint("❌ _fetchLocationAndAddress: Permissions not granted.");
         throw Exception('Location permissions are required.');
       }
+      debugPrint("✅ _fetchLocationAndAddress: Permissions OK.");
 
-      // 2. Service Check
+      // --- 3. SERVICE CHECK ---
+      debugPrint("➡️ _fetchLocationAndAddress: Checking if location service is enabled...");
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) throw Exception('Location services are disabled.');
-
-      // 3. Listen to stream for 5 seconds
-      List<Position> positions = [];
-      const LocationSettings locationSettings = LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 0,
-      );
-
-      positionStreamSubscription =
-          Geolocator.getPositionStream(locationSettings: locationSettings)
-              .listen((Position position) {
-        debugPrint("Received location reading: Accuracy ${position.accuracy}");
-        positions.add(position);
-      });
-
-      await Future.delayed(const Duration(seconds: 5));
-      await positionStreamSubscription.cancel();
-      positionStreamSubscription = null;
-
-      if (positions.isEmpty) {
-        throw Exception('Failed to get any location readings in 5 seconds.');
+      if (!serviceEnabled) {
+        // --- 3a. SERVICE FAILED ---
+        debugPrint("❌ _fetchLocationAndAddress: Location services are disabled.");
+        throw Exception('Location services are disabled.');
       }
+      debugPrint("✅ _fetchLocationAndAddress: Location service is enabled.");
 
-      final Position bestPosition = positions.last;
-      debugPrint("Using position with accuracy: ${bestPosition.accuracy}");
+      // --- 4. GET POSITION ---
+      debugPrint("📡 _fetchLocationAndAddress: Calling Geolocator.getCurrentPosition() (max 15s)...");
+      final Position bestPosition = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 15), // <-- More realistic timeout
+      );
+      debugPrint(
+          "✅ _fetchLocationAndAddress: Got position! Lat: ${bestPosition.latitude}, Lon: ${bestPosition.longitude}, Acc: ${bestPosition.accuracy}");
 
-      // 4. Reverse Geocode
+      // --- 5. REVERSE GEOCODE ---
+      debugPrint("📡 _fetchLocationAndAddress: Calling reverseGeocodeWithRadar...");
       final addressDetails = await _apiService.reverseGeocodeWithRadar(
         latitude: bestPosition.latitude,
         longitude: bestPosition.longitude,
       );
+      debugPrint(
+          "✅ _fetchLocationAndAddress: Got address details: ${addressDetails['address']}");
 
-      // 5. Update UI
+      // --- 6. UPDATE UI ---
       if (mounted) {
+        debugPrint("➡️ _fetchLocationAndAddress: Updating UI with controllers...");
         setState(() {
           _currentPosition = bestPosition;
-          _addressController.text = addressDetails['address']!;
-          _regionController.text = addressDetails['region']!;
-          _areaController.text = addressDetails['area']!;
-          _pinCodeController.text = addressDetails['pinCode']!;
+          
+          // --- ✅ FIX: POPULATE ALL 3 ADDRESS BLOCKS ---
+          final String address = addressDetails['address'] ?? '';
+          final String region = addressDetails['region'] ?? '';
+          final String area = addressDetails['area'] ?? '';
+          final String pinCode = addressDetails['pinCode'] ?? '';
+          final String district = addressDetails['district'] ?? '';
+          final String landmark = addressDetails['landmark'] ?? '';
+
+          // 1. Main Address
+          _addressController.text = address;
+          _regionController.text = region;
+          _areaController.text = area;
+          _pinCodeController.text = pinCode;
+
+          // 2. Godown Address (auto-fill)
+          _godownAddressLineController.text = address;
+          _godownLandMarkController.text = landmark;
+          _godownDistrictController.text = district;
+          _godownAreaController.text = area;
+          _godownRegionController.text = region;
+          _godownPinCodeController.text = pinCode;
+
+          // 3. Residential Address (auto-fill)
+          _resAddressLineController.text = address;
+          _resLandMarkController.text = landmark;
+          _resDistrictController.text = district;
+          _resAreaController.text = area;
+          _resRegionController.text = region;
+          _resPinCodeController.text = pinCode;
         });
+        debugPrint("✅ _fetchLocationAndAddress: UI updated.");
+      } else {
+        debugPrint(
+            "⚠️ _fetchLocationAndAddress: Widget was unmounted before UI update.");
       }
     } catch (e) {
-      if (positionStreamSubscription != null) {
-        await positionStreamSubscription.cancel();
-      }
+      // --- 7. ERROR HANDLER ---
+      debugPrint("❌ _fetchLocationAndAddress: ERROR caught: $e");
       scaffoldMessenger.showSnackBar(
         SnackBar(
             content: Text('Error getting location/address: $e'),
             backgroundColor: Colors.red),
       );
     } finally {
+      // --- 8. FINALLY BLOCK (ALWAYS RUNS) ---
       if (mounted) {
+        debugPrint(
+            "➡️ _fetchLocationAndAddress: FINALLY block. Setting _isFetchingLocation = false.");
         setState(() => _isFetchingLocation = false);
+      } else {
+        debugPrint("➡️ _fetchLocationAndAddress: FINALLY block. Widget unmounted.");
       }
     }
   }
-
   /// Validates and submits the form data to create a new dealer.  
   Future<void> _submitForm() async {
-    // --- (UPDATED SUBMIT LOGIC) ---
-
     // Pre-submission checks
     if (_currentPosition == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -306,6 +338,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
       );
       return;
     }
+    
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -345,8 +378,8 @@ class _AddDealerFormState extends State<AddDealerForm> {
         pinCode: _text(_pinCodeController), // From location fetch
         latitude: _currentPosition!.latitude, // From location fetch
         longitude: _currentPosition!.longitude, // From location fetch
-        dateOfBirth: _selectedDateOfBirth,
-        anniversaryDate: _selectedAnniversaryDate,
+        dateOfBirth: _selectedDateOfBirth, // Required
+        anniversaryDate: _selectedAnniversaryDate, // Optional
         totalPotential: _double(_totalPotentialController) ?? 0.0,
         bestPotential: _double(_bestPotentialController) ?? 0.0,
         brandSelling: _brandSellingController.text
@@ -355,19 +388,19 @@ class _AddDealerFormState extends State<AddDealerForm> {
             .where((s) => s.isNotEmpty)
             .toList(),
         feedbacks: _feedbacksController.text,
-        remarks: _text(_remarksController),
+        remarks: _text(_remarksController), // Optional
 
         // NEW FIELDS
         verificationStatus: 'PENDING',
-        whatsappNo: _text(_whatsappNoController),
-        emailId: _text(_emailIdController),
-        businessType: _text(_businessTypeController),
-        gstinNo: _text(_gstinNoController),
-        panNo: _text(_panNoController),
-        tradeLicNo: _text(_tradeLicNoController),
-        aadharNo: _text(_aadharNoController),
+        whatsappNo: _text(_whatsappNoController), // Optional
+        emailId: _text(_emailIdController), // Optional
+        businessType: _text(_businessTypeController), // Required
+        gstinNo: _text(_gstinNoController), // Required
+        panNo: _text(_panNoController), // Required
+        tradeLicNo: _text(_tradeLicNoController), // Required
+        aadharNo: _text(_aadharNoController), // Required
 
-        // Godown
+        // Godown (All Required)
         godownSizeSqFt: _int(_godownSizeSqFtController),
         godownCapacityMTBags: _text(_godownCapacityMTBagsController),
         godownAddressLine: _text(_godownAddressLineController),
@@ -377,7 +410,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
         godownRegion: _text(_godownRegionController),
         godownPinCode: _text(_godownPinCodeController),
 
-        // Residential
+        // Residential (All Required)
         residentialAddressLine: _text(_resAddressLineController),
         residentialLandMark: _text(_resLandMarkController),
         residentialDistrict: _text(_resDistrictController),
@@ -385,14 +418,14 @@ class _AddDealerFormState extends State<AddDealerForm> {
         residentialRegion: _text(_resRegionController),
         residentialPinCode: _text(_resPinCodeController),
 
-        // Bank
+        // Bank (All Required)
         bankAccountName: _text(_bankAccountNameController),
         bankName: _text(_bankNameController),
         bankBranchAddress: _text(_bankBranchAddressController),
         bankAccountNumber: _text(_bankAccountNumberController),
         bankIfscCode: _text(_bankIfscCodeController),
 
-        // Sales & Promoter
+        // Sales & Promoter (All Required)
         brandName: _text(_brandNameController),
         monthlySaleMT: _double(_monthlySaleMTController),
         noOfDealers: _int(_noOfDealersController),
@@ -401,17 +434,23 @@ class _AddDealerFormState extends State<AddDealerForm> {
             _double(_projectedMonthlySalesBestCementMTController),
         noOfEmployeesInSales: _int(_noOfEmployeesInSalesController),
 
-        // Declaration
+        // Declaration (All Required)
         declarationName: _text(_declarationNameController),
         declarationPlace: _text(_declarationPlaceController),
         declarationDate: _selectedDeclarationDate,
 
-        // Docs
+        // Docs (All Required)
         tradeLicencePicUrl: _text(_tradeLicencePicUrlController),
         shopPicUrl: _text(_shopPicUrlController),
         dealerPicUrl: _text(_dealerPicUrlController),
         blankChequePicUrl: _text(_blankChequePicUrlController),
         partnershipDeedPicUrl: _text(_partnershipDeedPicUrlController),
+
+        // --- ADDED MISSING FIELDS from your schema (as null) ---
+        dealerDevelopmentStatus: null,
+        dealerDevelopmentObstacle: null,
+        salesGrowthPercentage: null,
+        noOfPJP: null,
       );
 
       // Get optional radius
@@ -475,7 +514,10 @@ class _AddDealerFormState extends State<AddDealerForm> {
               surface: const Color(0xFF020a67),
               onSurface: Colors.white,
             ),
-            dialogBackgroundColor: const Color(0xFF0D47A1),
+            // --- THE FIX: Use DialogThemeData, not DialogTheme ---
+            dialogTheme: const DialogThemeData(
+              backgroundColor: Color(0xFF0D47A1),
+            ),
           ),
           child: child!,
         );
@@ -489,8 +531,121 @@ class _AddDealerFormState extends State<AddDealerForm> {
     }
   }
 
+  // --- (NEW) PHOTON Autocomplete Handlers ---
+
+  void _onGodownFocusChange() {
+    // Hide suggestions when the text field loses focus
+    if (!_godownFocusNode.hasFocus) {
+      setState(() => _godownSuggestions = []);
+    }
+  }
+
+  void _onResFocusChange() {
+    // Hide suggestions when the text field loses focus
+    if (!_resFocusNode.hasFocus) {
+      setState(() => _resSuggestions = []);
+    }
+  }
+
+  void _onGodownAddressChanged(String query) {
+    if (_godownDebounce?.isActive ?? false) _godownDebounce!.cancel();
+    _godownDebounce = Timer(const Duration(milliseconds: 500), () async {
+      if (query.length < 3) {
+        setState(() {
+          _godownSuggestions = [];
+          _isSearchingGodown = false;
+        });
+        return;
+      }
+      setState(() => _isSearchingGodown = true);
+      try {
+        final suggestions = await _apiService.searchPhotonAddress(query);
+        if (mounted) {
+          setState(() {
+            _godownSuggestions = suggestions;
+            _isSearchingGodown = false;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error searching godown address: $e');
+        if (mounted) setState(() => _isSearchingGodown = false);
+      }
+    });
+  }
+
+  void _onResAddressChanged(String query) {
+    if (_resDebounce?.isActive ?? false) _resDebounce!.cancel();
+    _resDebounce = Timer(const Duration(milliseconds: 500), () async {
+      if (query.length < 3) {
+        setState(() {
+          _resSuggestions = [];
+          _isSearchingRes = false;
+        });
+        return;
+      }
+      setState(() => _isSearchingRes = true);
+      try {
+        final suggestions = await _apiService.searchPhotonAddress(query);
+        if (mounted) {
+          setState(() {
+            _resSuggestions = suggestions;
+            _isSearchingRes = false;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error searching residential address: $e');
+        if (mounted) setState(() => _isSearchingRes = false);
+      }
+    });
+  }
+
+  void _onGodownSuggestionTapped(dynamic feature) {
+    final props = feature['properties'];
+    
+    // Helper to build a clean address line
+    String name = props['name'] ?? '';
+    String street = props['street'] ?? '';
+    String addressLine = '$name, $street'.replaceAll(RegExp(r'^, |,$'), '').trim();
+    if(addressLine.isEmpty) addressLine = '${props['city'] ?? ''}, ${props['state'] ?? ''}'.trim();
+    if(addressLine == ',') addressLine = 'Unknown Address';
+
+
+    setState(() {
+      _godownAddressLineController.text = addressLine;
+      _godownLandMarkController.text = props['street'] ?? '';
+      _godownDistrictController.text = props['county'] ?? props['city'] ?? '';
+      _godownAreaController.text = props['city'] ?? props['state'] ?? '';
+      _godownRegionController.text = props['state'] ?? '';
+      _godownPinCodeController.text = props['postcode'] ?? '';
+      _godownSuggestions = [];
+    });
+    _godownFocusNode.unfocus();
+  }
+  
+  void _onResSuggestionTapped(dynamic feature) {
+    final props = feature['properties'];
+
+    String name = props['name'] ?? '';
+    String street = props['street'] ?? '';
+    String addressLine = '$name, $street'.replaceAll(RegExp(r'^, |,$'), '').trim();
+    if(addressLine.isEmpty) addressLine = '${props['city'] ?? ''}, ${props['state'] ?? ''}'.trim();
+    if(addressLine == ',') addressLine = 'Unknown Address';
+
+    setState(() {
+      _resAddressLineController.text = addressLine;
+      _resLandMarkController.text = props['street'] ?? '';
+      _resDistrictController.text = props['county'] ?? props['city'] ?? '';
+      _resAreaController.text = props['city'] ?? props['state'] ?? '';
+      _resRegionController.text = props['state'] ?? '';
+      _resPinCodeController.text = props['postcode'] ?? '';
+      _resSuggestions = [];
+    });
+    _resFocusNode.unfocus();
+  }
+
+
   /// Helper function to create consistent styling for input fields.
-  InputDecoration _inputDecoration(String label, {bool readOnly = false}) {
+  InputDecoration _inputDecoration(String label, {bool readOnly = false, Widget? suffixIcon}) {
     return InputDecoration(
       labelText: label,
       labelStyle: const TextStyle(color: Colors.white70),
@@ -505,6 +660,16 @@ class _AddDealerFormState extends State<AddDealerForm> {
         borderSide: const BorderSide(color: Colors.amber), // Use amber to focus
         borderRadius: BorderRadius.circular(12),
       ),
+      // --- ADDED: Error styling for clarity ---
+      errorBorder: OutlineInputBorder(
+        borderSide: const BorderSide(color: Colors.redAccent),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderSide: const BorderSide(color: Colors.redAccent, width: 2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      suffixIcon: suffixIcon, // <-- Use the passed suffixIcon
       suffixIconColor: Colors.amber,
     );
   }
@@ -516,8 +681,10 @@ class _AddDealerFormState extends State<AddDealerForm> {
     bool readOnly = false,
     TextInputType? keyboardType,
     String? Function(String?)? validator,
-    Icon? suffixIcon,
+    Widget? suffixIcon, // <-- Changed to Widget
     VoidCallback? onTap,
+    FocusNode? focusNode, // <-- Added
+    void Function(String)? onChanged, // <-- Added
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -526,21 +693,23 @@ class _AddDealerFormState extends State<AddDealerForm> {
         readOnly: readOnly,
         keyboardType: keyboardType,
         style: const TextStyle(color: Colors.white),
-        decoration: _inputDecoration(label, readOnly: readOnly).copyWith(
-          suffixIcon: suffixIcon,
-        ),
+        decoration: _inputDecoration(label, readOnly: readOnly, suffixIcon: suffixIcon),
         validator: validator,
         onTap: onTap,
+        focusNode: focusNode, // <-- Added
+        onChanged: onChanged, // <-- Added
       ),
     );
   }
 
   /// Helper to build a date picker field
+  /// --- UPDATED: Now accepts a validator ---
   Widget _buildDatePicker(
     TextEditingController controller,
     String label,
-    Function(DateTime) onDateSelected,
-  ) {
+    Function(DateTime) onDateSelected, {
+    String? Function(String?)? validator,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: _buildTextField(
@@ -548,6 +717,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
         label,
         readOnly: true,
         suffixIcon: const Icon(Icons.calendar_today),
+        validator: validator, // Pass validator through
         onTap: () => _selectDate(
           context,
           controller: controller,
@@ -561,7 +731,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
   Widget _buildSection({
     required String title,
     required List<Widget> children,
-    bool initiallyExpanded = false,
+    bool initiallyExpanded = false, // Default is now false
   }) {
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -618,7 +788,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
                         ),
                       )
                     : const Icon(Icons.my_location),
-                label: const Text('Get Current Location & Address'),
+                label: const Text('Get Current Location & Address*'),
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 50),
                   backgroundColor: Colors.amber,
@@ -631,7 +801,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // --- (Location fields - Unchanged) ---
+                      // --- (Location fields - Unchanged but required via logic) ---
                       _buildTextField(_addressController, 'Address*',
                           readOnly: true),
                       _buildTextField(_regionController, 'Region*',
@@ -701,7 +871,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
 
                       // --- Primary Details ---
                       _buildSection(
-                        title: 'Primary Details',
+                        title: 'Primary Details*',
                         initiallyExpanded: true,
                         children: [
                           _buildTextField(
@@ -720,7 +890,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
                               ),
                               dropdownColor: const Color(0xFF0D47A1),
                               style: const TextStyle(color: Colors.white),
-                              decoration: _inputDecoration('Dealer Type'),
+                              decoration: _inputDecoration('Dealer Type*'),
                               items: [
                                 'Wholesaler',
                                 'Retailer',
@@ -764,14 +934,20 @@ class _AddDealerFormState extends State<AddDealerForm> {
                               return null;
                             },
                           ),
+                          // --- VALIDATOR ADDED ---
                           _buildTextField(
                             _businessTypeController,
-                            'Business Type (Optional)',
+                            'Business Type*',
+                            validator: (v) =>
+                                v!.isEmpty ? 'Business Type is required' : null,
                           ),
+                          // --- VALIDATOR ADDED ---
                           _buildDatePicker(
                             _dateOfBirthController,
-                            'Date of Birth (Optional)',
+                            'Date of Birth*',
                             (date) => _selectedDateOfBirth = date,
+                            validator: (v) =>
+                                v!.isEmpty ? 'Date of Birth is required' : null,
                           ),
                           _buildDatePicker(
                             _anniversaryDateController,
@@ -783,7 +959,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
 
                       // --- Business Vitals ---
                       _buildSection(
-                        title: 'Business Vitals',
+                        title: 'Business Vitals*',
                         initiallyExpanded: true,
                         children: [
                           _buildTextField(
@@ -822,108 +998,287 @@ class _AddDealerFormState extends State<AddDealerForm> {
                         ],
                       ),
 
-                      // --- Optional Sections ---
+                      // --- REQUIRED Sections ---
                       _buildSection(
-                        title: 'Identification (Optional)',
+                        title: 'Identification*',
+                        initiallyExpanded: true,
                         children: [
-                          _buildTextField(_gstinNoController, 'GSTIN No.'),
-                          _buildTextField(_panNoController, 'PAN No.'),
+                          _buildTextField(_gstinNoController, 'GSTIN No.*',
+                              validator: (v) =>
+                                  v!.isEmpty ? 'GSTIN No. is required' : null),
+                          _buildTextField(_panNoController, 'PAN No.*',
+                              validator: (v) =>
+                                  v!.isEmpty ? 'PAN No. is required' : null),
                           _buildTextField(
-                              _tradeLicNoController, 'Trade License No.'),
-                          _buildTextField(_aadharNoController, 'Aadhar No.'),
+                              _tradeLicNoController, 'Trade License No.*',
+                              validator: (v) => v!.isEmpty
+                                  ? 'Trade License No. is required'
+                                  : null),
+                          _buildTextField(_aadharNoController, 'Aadhar No.*',
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Aadhar No. is required' : null),
                         ],
                       ),
+                      
+                      // --- (NEW) GODOWN SECTION with Autocomplete ---
                       _buildSection(
-                        title: 'Godown Details (Optional)',
+                        title: 'Godown Details*',
+                        initiallyExpanded: true,
                         children: [
                           _buildTextField(
-                              _godownSizeSqFtController, 'Godown Size (sq. ft.)',
-                              keyboardType: TextInputType.number),
+                              _godownSizeSqFtController, 'Godown Size (sq. ft.)*',
+                              keyboardType: TextInputType.number,
+                              validator: (v) => v!.isEmpty
+                                  ? 'Godown Size is required'
+                                  : null),
                           _buildTextField(_godownCapacityMTBagsController,
-                              'Godown Capacity (MT/Bags)'),
+                              'Godown Capacity (MT/Bags)*',
+                              validator: (v) => v!.isEmpty
+                                  ? 'Godown Capacity is required'
+                                  : null),
+                          
+                          // --- Autocomplete Text Field ---
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Column(
+                              children: [
+                                TextFormField(
+                                  controller: _godownAddressLineController,
+                                  focusNode: _godownFocusNode,
+                                  style: const TextStyle(color: Colors.white),
+                                  decoration: _inputDecoration(
+                                    'Godown Address* (Type to search...)',
+                                    suffixIcon: _isSearchingGodown
+                                      ? const SizedBox(height: 20, width: 20, child: Padding(
+                                          padding: EdgeInsets.all(14.0), // Adjust padding
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+                                        ))
+                                      : null,
+                                  ),
+                                  onChanged: _onGodownAddressChanged,
+                                  validator: (v) => v!.isEmpty
+                                    ? 'Godown Address is required'
+                                    : null,
+                                ),
+                                if (_isSearchingGodown && _godownSuggestions.isEmpty)
+                                  const LinearProgressIndicator(backgroundColor: Colors.amber),
+                                // --- Suggestion List ---
+                                if (_godownSuggestions.isNotEmpty)
+                                  Container(
+                                    height: 150,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.1),
+                                      borderRadius: const BorderRadius.only(
+                                        bottomLeft: Radius.circular(12),
+                                        bottomRight: Radius.circular(12),
+                                      ),
+                                    ),
+                                    child: ListView.builder(
+                                      itemCount: _godownSuggestions.length,
+                                      itemBuilder: (context, index) {
+                                        final suggestion = _godownSuggestions[index];
+                                        final props = suggestion['properties'];
+                                        final title = props['name'] ?? props['street'] ?? 'Unknown';
+                                        final subtitle = '${props['city'] ?? ''}, ${props['state'] ?? ''} ${props['postcode'] ?? ''}'.trim();
+                                        
+                                        return ListTile(
+                                          leading: const Icon(Icons.location_on_outlined, color: Colors.white70),
+                                          title: Text(title, style: const TextStyle(color: Colors.white)),
+                                          subtitle: Text(subtitle, style: const TextStyle(color: Colors.white70)),
+                                          onTap: () => _onGodownSuggestionTapped(suggestion),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          // --- Other Godown Fields ---
                           _buildTextField(
-                              _godownAddressLineController, 'Godown Address'),
+                              _godownLandMarkController, 'Godown Landmark*'),
                           _buildTextField(
-                              _godownLandMarkController, 'Godown Landmark'),
+                              _godownDistrictController, 'Godown District*'),
+                          _buildTextField(_godownAreaController, 'Godown Area*'),
                           _buildTextField(
-                              _godownDistrictController, 'Godown District'),
-                          _buildTextField(_godownAreaController, 'Godown Area'),
+                              _godownRegionController, 'Godown Region*'),
                           _buildTextField(
-                              _godownRegionController, 'Godown Region'),
-                          _buildTextField(
-                              _godownPinCodeController, 'Godown PIN Code',
+                              _godownPinCodeController, 'Godown PIN Code*',
                               keyboardType: TextInputType.number),
                         ],
                       ),
+                      
+                      // --- (NEW) RESIDENTIAL SECTION with Autocomplete ---
                       _buildSection(
-                        title: 'Residential Address (Optional)',
+                        title: 'Residential Address*',
+                        initiallyExpanded: true,
                         children: [
+                          // --- Autocomplete Text Field ---
+                           Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Column(
+                              children: [
+                                TextFormField(
+                                  controller: _resAddressLineController,
+                                  focusNode: _resFocusNode,
+                                  style: const TextStyle(color: Colors.white),
+                                  decoration: _inputDecoration(
+                                    'Residential Address* (Type to search...)',
+                                    suffixIcon: _isSearchingRes
+                                      ? const SizedBox(height: 20, width: 20, child: Padding(
+                                          padding: EdgeInsets.all(14.0), // Adjust padding
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+                                        ))
+                                      : null,
+                                  ),
+                                  onChanged: _onResAddressChanged,
+                                  validator: (v) => v!.isEmpty
+                                    ? 'Residential Address is required'
+                                    : null,
+                                ),
+                                if (_isSearchingRes && _resSuggestions.isEmpty)
+                                  const LinearProgressIndicator(backgroundColor: Colors.amber),
+                                // --- Suggestion List ---
+                                if (_resSuggestions.isNotEmpty)
+                                  Container(
+                                    height: 150,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.1),
+                                      borderRadius: const BorderRadius.only(
+                                        bottomLeft: Radius.circular(12),
+                                        bottomRight: Radius.circular(12),
+                                      ),
+                                    ),
+                                    child: ListView.builder(
+                                      itemCount: _resSuggestions.length,
+                                      itemBuilder: (context, index) {
+                                        final suggestion = _resSuggestions[index];
+                                        final props = suggestion['properties'];
+                                        final title = props['name'] ?? props['street'] ?? 'Unknown';
+                                        final subtitle = '${props['city'] ?? ''}, ${props['state'] ?? ''} ${props['postcode'] ?? ''}'.trim();
+                                        
+                                        return ListTile(
+                                          leading: const Icon(Icons.location_on_outlined, color: Colors.white70),
+                                          title: Text(title, style: const TextStyle(color: Colors.white)),
+                                          subtitle: Text(subtitle, style: const TextStyle(color: Colors.white70)),
+                                          onTap: () => _onResSuggestionTapped(suggestion),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          // --- Other Residential Fields ---
                           _buildTextField(
-                              _resAddressLineController, 'Residential Address'),
+                              _resLandMarkController, 'Residential Landmark*'),
                           _buildTextField(
-                              _resLandMarkController, 'Residential Landmark'),
+                              _resDistrictController, 'Residential District*'),
                           _buildTextField(
-                              _resDistrictController, 'Residential District'),
-                          _buildTextField(_resAreaController, 'Residential Area'),
+                              _resAreaController, 'Residential Area*'),
                           _buildTextField(
-                              _resRegionController, 'Residential Region'),
+                              _resRegionController, 'Residential Region*'),
                           _buildTextField(
-                              _resPinCodeController, 'Residential PIN Code',
+                              _resPinCodeController, 'Residential PIN Code*',
                               keyboardType: TextInputType.number),
                         ],
                       ),
+
                       _buildSection(
-                        title: 'Bank Details (Optional)',
+                        title: 'Bank Details*',
+                        initiallyExpanded: true,
                         children: [
                           _buildTextField(
-                              _bankAccountNameController, 'Bank Account Name'),
-                          _buildTextField(_bankNameController, 'Bank Name'),
+                              _bankAccountNameController, 'Bank Account Name*',
+                              validator: (v) => v!.isEmpty
+                                  ? 'Bank Account Name is required'
+                                  : null),
+                          _buildTextField(_bankNameController, 'Bank Name*',
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Bank Name is required' : null),
+                          // --- ✅ THE FIX: Corrected 'vB' to 'v' ---
                           _buildTextField(_bankBranchAddressController,
-                              'Bank Branch Address'),
+                              'Bank Branch Address*',
+                              validator: (v) => v!.isEmpty
+                                  ? 'Bank Branch Address is required'
+                                  : null),
                           _buildTextField(_bankAccountNumberController,
-                              'Bank Account Number',
-                              keyboardType: TextInputType.number),
+                              'Bank Account Number*',
+                              keyboardType: TextInputType.number,
+                              validator: (v) => v!.isEmpty
+                                  ? 'Bank Account Number is required'
+                                  : null),
                           _buildTextField(
-                              _bankIfscCodeController, 'Bank IFSC Code'),
+                              _bankIfscCodeController, 'Bank IFSC Code*',
+                              validator: (v) => v!.isEmpty
+                                  ? 'Bank IFSC Code is required'
+                                  : null),
                         ],
                       ),
                       _buildSection(
-                        title: 'Sales & Promoter (Optional)',
+                        title: 'Sales & Promoter*',
+                        initiallyExpanded: true,
                         children: [
-                          _buildTextField(_brandNameController, 'Brand Name'),
+                          _buildTextField(_brandNameController, 'Brand Name*',
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Brand Name is required' : null),
                           _buildTextField(
-                              _monthlySaleMTController, 'Monthly Sale (MT)',
-                              keyboardType: TextInputType.number),
+                              _monthlySaleMTController, 'Monthly Sale (MT)*',
+                              keyboardType: TextInputType.number,
+                              validator: (v) => v!.isEmpty
+                                  ? 'Monthly Sale is required'
+                                  : null),
                           _buildTextField(
-                              _noOfDealersController, 'No. of Dealers',
-                              keyboardType: TextInputType.number),
+                              _noOfDealersController, 'No. of Dealers*',
+                              keyboardType: TextInputType.number,
+                              validator: (v) => v!.isEmpty
+                                  ? 'No. of Dealers is required'
+                                  : null),
                           _buildTextField(
-                              _areaCoveredController, 'Area Covered'),
+                              _areaCoveredController, 'Area Covered*',
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Area Covered is required' : null),
                           _buildTextField(
                               _projectedMonthlySalesBestCementMTController,
-                              'Projected Monthly Sales (Best Cement MT)',
-                              keyboardType: TextInputType.number),
+                              'Projected Monthly Sales (Best Cement MT)*',
+                              keyboardType: TextInputType.number,
+                              validator: (v) => v!.isEmpty
+                                  ? 'Projected Sales are required'
+                                  : null),
                           _buildTextField(_noOfEmployeesInSalesController,
-                              'No. of Sales Employees',
-                              keyboardType: TextInputType.number),
+                              'No. of Sales Employees*',
+                              keyboardType: TextInputType.number,
+                              validator: (v) => v!.isEmpty
+                                  ? 'No. of Employees is required'
+                                  : null),
                         ],
                       ),
                       _buildSection(
-                        title: 'Declaration (Optional)',
+                        title: 'Declaration*',
+                        initiallyExpanded: true,
                         children: [
                           _buildTextField(
-                              _declarationNameController, 'Declaration Name'),
+                              _declarationNameController, 'Declaration Name*',
+                              validator: (v) => v!.isEmpty
+                                  ? 'Declaration Name is required'
+                                  : null),
                           _buildTextField(
-                              _declarationPlaceController, 'Declaration Place'),
+                              _declarationPlaceController, 'Declaration Place*',
+                              validator: (v) => v!.isEmpty
+                                  ? 'Declaration Place is required'
+                                  : null),
                           _buildDatePicker(
                             _declarationDateController,
-                            'Declaration Date',
+                            'Declaration Date*',
                             (date) => _selectedDeclarationDate = date.toUtc(),
+                            validator: (v) => v!.isEmpty
+                                ? 'Declaration Date is required'
+                                : null,
                           ),
                         ],
                       ),
                       _buildSection(
                         title: 'Geofence (Optional)',
+                        initiallyExpanded: false, // This one is still optional
                         children: [
                           _buildTextField(_radiusController,
                               'Geofence Radius (meters)',
@@ -932,25 +1287,40 @@ class _AddDealerFormState extends State<AddDealerForm> {
                             if (v == null || v.isEmpty) return null;
                             final r = double.tryParse(v);
                             if (r == null) return 'Must be a number';
-                            if (r < 10 || r > 10000)
+                            if (r < 10 || r > 10000) {
                               return 'Must be between 10 and 10000';
+                            }
                             return null;
                           }),
                         ],
                       ),
                       _buildSection(
-                        title: 'Document URLs (Optional)',
+                        title: 'Document URLs*',
+                        initiallyExpanded: true,
                         children: [
                           _buildTextField(_tradeLicencePicUrlController,
-                              'Trade License Pic URL'),
+                              'Trade License Pic URL*',
+                              validator: (v) => v!.isEmpty
+                                  ? 'Trade License URL is required'
+                                  : null),
                           _buildTextField(
-                              _shopPicUrlController, 'Shop Pic URL'),
+                              _shopPicUrlController, 'Shop Pic URL*',
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Shop URL is required' : null),
                           _buildTextField(
-                              _dealerPicUrlController, 'Dealer Pic URL'),
+                              _dealerPicUrlController, 'Dealer Pic URL*',
+                              validator: (v) =>
+                                  v!.isEmpty ? 'Dealer URL is required' : null),
                           _buildTextField(_blankChequePicUrlController,
-                              'Blank Cheque Pic URL'),
+                              'Blank Cheque Pic URL*',
+                              validator: (v) => v!.isEmpty
+                                  ? 'Blank Cheque URL is required'
+                                  : null),
                           _buildTextField(_partnershipDeedPicUrlController,
-                              'Partnership Deed Pic URL'),
+                              'Partnership Deed Pic URL*',
+                              validator: (v) => v!.isEmpty
+                                  ? 'Partnership Deed URL is required'
+                                  : null),
                         ],
                       ),
                       const SizedBox(height: 32),
@@ -965,6 +1335,10 @@ class _AddDealerFormState extends State<AddDealerForm> {
                     : _submitForm,
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 50),
+                  // --- UPDATED: Disable button if location is not yet fetched ---
+                  disabledBackgroundColor: _currentPosition == null 
+                    ? Colors.grey.withOpacity(0.5) 
+                    : null,
                 ),
                 child: _isSubmitting
                     ? const CircularProgressIndicator(color: Colors.white)
@@ -977,3 +1351,4 @@ class _AddDealerFormState extends State<AddDealerForm> {
     );
   }
 }
+

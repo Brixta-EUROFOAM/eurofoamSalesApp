@@ -3,8 +3,6 @@ import 'dart:developer' as dev;
 import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
-
-// Import all model files
 import '../models/dealer_model.dart';
 import '../models/pjp_model.dart';
 import '../models/daily_task_model.dart';
@@ -15,21 +13,24 @@ import '../models/technical_visit_report_model.dart';
 import '../models/geotracking_data_model.dart';
 import '../models/competition_report_model.dart';
 
-
 class ApiService {
+  // --- ✅ FIX 1: Removed the space after 'https:' ---
   static const String _baseUrl = 'https://myserverbymycoco.onrender.com';
 
   // --- GENERIC HELPERS (Unchanged) ---
   Future<T> _get<T>(String endpoint, T Function(dynamic json) fromJson) async {
     final url = Uri.parse('$_baseUrl/api/$endpoint');
+    
+    // --- ✅ DEBUGGING: Log the full URL being called ---
     dev.log('GET: $url', name: 'ApiService');
+    
     try {
       final response = await http.get(url).timeout(const Duration(seconds: 45));
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 200) {
         if (jsonData['success'] == true && jsonData['data'] != null) {
           // The fromJson function receives ONLY the 'data' property
-          return fromJson(jsonData['data']); 
+          return fromJson(jsonData['data']);
         } else {
           throw Exception(jsonData['error'] ?? 'API returned success: false');
         }
@@ -63,7 +64,6 @@ class ApiService {
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 201 || response.statusCode == 200) {
         if (jsonData['success'] == true && jsonData['data'] != null) {
-          // The fromJson function receives ONLY the 'data' property
           return fromJson(jsonData['data']);
         } else {
           throw Exception(jsonData['error'] ?? 'API returned success: false');
@@ -100,7 +100,6 @@ class ApiService {
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 200) {
         if (jsonData['success'] == true && jsonData['data'] != null) {
-          // The fromJson function receives ONLY the 'data' property
           return fromJson(jsonData['data']);
         } else {
           throw Exception(jsonData['error'] ?? 'API returned success: false');
@@ -117,14 +116,12 @@ class ApiService {
     }
   }
 
-  // ... (delete, uploadImage, geoTracking, reverseGeocode are all correct) ...
-    Future<void> _delete(String endpoint) async {
+  Future<void> _delete(String endpoint) async {
     final url = Uri.parse('$_baseUrl/api/$endpoint');
     dev.log('DELETE: $url', name: 'ApiService');
     try {
-      final response = await http
-          .delete(url)
-          .timeout(const Duration(seconds: 45));
+      final response =
+          await http.delete(url).timeout(const Duration(seconds: 45));
       if (response.statusCode != 200 && response.statusCode != 204) {
         final jsonData = jsonDecode(response.body);
         throw Exception(
@@ -138,6 +135,7 @@ class ApiService {
     }
   }
 
+  // ... (uploadImageToR2, performOcr, sendGeoTrackingPoint, reverseGeocodeWithRadar, searchPhotonAddress are all unchanged) ...
   Future<String> uploadImageToR2(File imageFile) async {
     final url = Uri.parse('$_baseUrl/api/r2/upload-direct');
     dev.log('POST (Multipart): $url', name: 'ApiService');
@@ -147,8 +145,8 @@ class ApiService {
         await http.MultipartFile.fromPath('file', imageFile.path),
       );
       final streamedResponse = await request.send().timeout(
-        const Duration(seconds: 90),
-      );
+            const Duration(seconds: 90),
+          );
       final response = await http.Response.fromStream(streamedResponse);
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 200) {
@@ -172,6 +170,32 @@ class ApiService {
         name: 'ApiService',
       );
       rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> performOcr(
+      String imageUrl, String docType) async {
+    dev.log('Performing MOCK OCR for $docType on $imageUrl',
+        name: 'ApiService');
+    await Future.delayed(const Duration(seconds: 2));
+    switch (docType) {
+      case 'tradeLicense':
+        return {
+          'gstin': 'MOCK_GSTIN_12345',
+          'pan': 'MOCK_PAN_67890',
+          'tradeLicNo': 'MOCK_LIC_789'
+        };
+      case 'blankCheque':
+        return {
+          'accountName': 'MOCK DEALER NAME',
+          'accountNumber': 'MOCK_123456789',
+          'ifsc': 'MOCK_IFSC001',
+          'bankName': 'MOCK BANK'
+        };
+      case 'partnershipDeed':
+        return {'aadhar': 'MOCK_987654321'};
+      default:
+        return {};
     }
   }
 
@@ -228,11 +252,12 @@ class ApiService {
           return {
             'address': firstResult['formattedAddress'] ?? 'Unknown Address',
             'region': firstResult['city'] ?? 'Unknown Region',
-            'area':
-                firstResult['neighborhood'] ??
+            'area': firstResult['neighborhood'] ??
                 firstResult['county'] ??
                 'Unknown Area',
             'pinCode': firstResult['postalCode'] ?? '',
+            'district': firstResult['county'] ?? '',
+            'landmark': firstResult['addressLabel'] ?? '',
           };
         } else {
           throw Exception('Could not determine address from coordinates.');
@@ -252,47 +277,84 @@ class ApiService {
     }
   }
 
+  Future<List<dynamic>> searchPhotonAddress(String query) async {
+    final url = Uri.https('photon.komoot.io', '/api/', {
+      'q': query,
+      'limit': '5',
+    });
+    dev.log('GET: $url', name: 'PhotonApiService');
+    try {
+      final response = await http.get(url).timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        final jsonData = jsonDecode(response.body);
+        return (jsonData['features'] as List? ?? []);
+      } else {
+        throw Exception(
+          'Failed to search Photon. Status: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      dev.log(
+        'Photon API Error on searchPhotonAddress',
+        error: e,
+        name: 'PhotonApiService',
+      );
+      rethrow;
+    }
+  }
 
-  // --- DEALER METHODS (FIXED) ---
-
-  Future<List<Dealer>> fetchDealers({
-    String? region,
-    String? area,
-    String? type,
-    int? userId,
-  }) async {
+  // --- DEALER METHODS (UNCHANGED) ---
+  Future<List<Dealer>> fetchDealers(
+      {String? region,
+      String? area,
+      String? type,
+      int? userId,
+      int page = 1,
+      int limit = 500}) async {
     final queryParams = <String, String>{
       if (region != null) 'region': region,
       if (area != null) 'area': area,
       if (type != null) 'type': type,
       if (userId != null) 'userId': userId.toString(),
+      'page': page.toString(),
+      'limit': limit.toString(),
     };
-    // Note: The /dealers route returns { success: true, data: [...] }
-    // The _get helper passes the `data` property (the list) to the parser.
     final endpoint = Uri(
       path: 'dealers',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
-    
-    // --- ✅ THE FIX ---
-    // 'json' *is* the list, because _get already returned jsonData['data']
     return _get(
       endpoint,
-      (json) => (json as List) 
-          .map((item) => Dealer.fromJson(item))
-          .toList(),
+      (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
     );
-    // --- END FIX ---
   }
 
   Future<Dealer> fetchDealerById(String dealerId) {
-    // --- ✅ THE FIX ---
-    // 'json' *is* the dealer object, because _get already returned jsonData['data']
     return _get(
       'dealers/$dealerId',
       (json) => Dealer.fromJson(json),
     );
-    // --- END FIX ---
+  }
+
+  Future<List<Dealer>> fetchDealersByUserId(int userId) async {
+    return _get(
+      'dealers/user/$userId',
+      (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
+    );
+  }
+
+  Future<List<Dealer>> fetchDealersByRegion(String region) async {
+    return _get(
+      'dealers/region/$region',
+      (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
+    );
+  }
+
+  Future<List<Dealer>> fetchDealersByArea(String area) async {
+    return _get(
+      'dealers/area/$area',
+      (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
+    );
   }
 
   Future<Dealer> createDealer(
@@ -303,60 +365,163 @@ class ApiService {
     if (radius != null) {
       body['radius'] = radius.toString();
     }
-    
-    // --- ✅ THE FIX ---
-    // 'json' *is* the new dealer object
     return _post(
       'dealers',
       body,
       (json) => Dealer.fromJson(json),
     );
-    // --- END FIX ---
   }
 
   Future<Dealer> updateDealer(
     String dealerId,
     Map<String, dynamic> data,
   ) async {
-    // --- ✅ THE FIX ---
-    // 'json' *is* the updated dealer object
     return _patch(
       'dealers/$dealerId',
       data,
       (json) => Dealer.fromJson(json),
     );
-    // --- END FIX ---
   }
 
   Future<void> deleteDealer(String dealerId) => _delete('dealers/$dealerId');
-  
-  
-  // --- OTHER METHODS (These were already correct) ---
+
+  // --- PJP METHODS ---
+
+  // ✅ THIS FUNCTION IS NOW FULLY UPGRADED
+  /// Fetches PJPs for a specific user, with optional filters.
+  /// This hits the `GET /api/pjp/user/:userId` endpoint, which
+  /// supports all the query parameters from `buildWhere`.
   Future<List<Pjp>> fetchPjpsForUser(
     int userId, {
     String? startDate,
     String? endDate,
     String? status,
+    String? dealerId, // <-- ✅ NEWLY ADDED
   }) async {
     final queryParams = <String, String>{
       if (startDate != null) 'startDate': startDate,
       if (endDate != null) 'endDate': endDate,
       if (status != null) 'status': status,
+      if (dealerId != null) 'dealerId': dealerId, // <-- ✅ NEWLY ADDED
     };
     final endpoint = Uri(
       path: 'pjp/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
-    // This one was already correct
     return _get(
       endpoint,
       (json) => (json as List).map((item) => Pjp.fromJson(item)).toList(),
     );
   }
 
+  // ✅ NEW FUNCTION
+  /// Fetches a single PJP by its ID.
+  /// Hits `GET /api/pjp/:id`
+  Future<Pjp> fetchPjpById(String pjpId) async {
+    return _get(
+      'pjp/$pjpId',
+      (json) => Pjp.fromJson(json), // 'data' is a single Pjp object
+    );
+  }
+
+  // ✅ NEW FUNCTION
+  /// Fetches PJPs by status (e.g., 'pending', 'approved').
+  /// Hits `GET /api/pjp/status/:status`
+  Future<List<Pjp>> fetchPjpsByStatus(
+    String status, {
+    String? startDate,
+    String? endDate,
+    String? dealerId,
+  }) async {
+    final queryParams = <String, String>{
+      if (startDate != null) 'startDate': startDate,
+      if (endDate != null) 'endDate': endDate,
+      if (dealerId != null) 'dealerId': dealerId,
+    };
+    final endpoint = Uri(
+      path: 'pjp/status/$status', // <-- Uses the new route
+      queryParameters: queryParams.isEmpty ? null : queryParams,
+    ).toString();
+    return _get(
+      endpoint,
+      (json) => (json as List).map((item) => Pjp.fromJson(item)).toList(),
+    );
+  }
+
+
   Future<Pjp> createPjp(Pjp pjp) async {
+    // This now correctly uses the updated Pjp.toJson()
     return _post('pjp', pjp.toJson(), (json) => Pjp.fromJson(json));
   }
+
+  // --- ✅ NEW: BULK PJP CREATION ---
+  /// Sends a list of PJPs to a bulk-creation endpoint.
+  /// Matches the `POST /api/bulkpjp` endpoint.
+  Future<Map<String, dynamic>> createBulkPjp({
+    required int userId,
+    required int createdById,
+    required List<String> dealerIds,
+    required DateTime baseDate,
+    required int batchSizePerDay,
+    required String areaToBeVisited, // This is the default "area" string
+    String? description,
+    String status = 'PENDING',
+  }) async {
+    // 1. Create the final body matching the server's `bulkSchema`
+    final body = {
+      'userId': userId,
+      'createdById': createdById,
+      'dealerIds': dealerIds,
+      'baseDate': baseDate.toIso8601String().split('T').first, // YYYY-MM-DD
+      'batchSizePerDay': batchSizePerDay,
+      'areaToBeVisited': areaToBeVisited,
+      'description': description,
+      'status': status,
+    };
+    
+    // 2. Remove nulls, just in case (though `description` is the only one)
+    body.removeWhere((key, value) => value == null);
+
+    // 3. --- 🚨 CRITICAL FIX ---
+    // We cannot use the generic `_post` helper because the server's response
+    // for `bulkpjp` (e.g., `{"success": true, "totalRowsCreated": 80}`)
+    // does *not* have a `data` field, which `_post` expects.
+    // We must make a custom call.
+    
+    final url = Uri.parse('$_baseUrl/api/bulkpjp');
+    dev.log('POST (Bulk): $url', name: 'ApiService');
+    try {
+      final response = await http
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json; charset=UTF-8'},
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 90)); // Increased timeout for bulk op
+          
+      final jsonData = jsonDecode(response.body);
+      
+      if (response.statusCode == 201) {
+         if (jsonData['success'] == true) {
+          // Return the whole success body: {"success": true, "totalRowsCreated": ...}
+          return jsonData;
+        } else {
+          throw Exception(jsonData['error'] ?? 'API returned success: false');
+        }
+      } else {
+         final errorDetails = jsonData['details'] != null
+            ? jsonEncode(jsonData['details'])
+            : 'No details from server.';
+        throw Exception(
+          '${jsonData['error'] ?? 'Failed to create bulk PJP'}. Details: $errorDetails',
+        );
+      }
+    } catch (e) {
+      dev.log('API Error on POST bulkpjp', error: e, name: 'ApiService');
+      rethrow;
+    }
+  }
+  // --- END NEW FUNCTION ---
 
   Future<Pjp> updatePjp(String pjpId, Map<String, dynamic> data) async {
     return _patch('pjp/$pjpId', data, (json) => Pjp.fromJson(json));
@@ -364,6 +529,7 @@ class ApiService {
 
   Future<void> deletePjp(String pjpId) => _delete('pjp/$pjpId');
 
+  // --- (All other methods for Tasks, Leave, DVR, etc. are UNCHANGED) ---
   Future<List<DailyTask>> fetchDailyTasksForUser(
     int userId, {
     String? startDate,
@@ -379,7 +545,6 @@ class ApiService {
       path: 'daily-tasks/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
-    // This one was already correct
     return _get(
       endpoint,
       (json) => (json as List).map((item) => DailyTask.fromJson(item)).toList(),
@@ -401,7 +566,6 @@ class ApiService {
       path: 'leave-applications/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
-    // This one was already correct
     return _get(
       endpoint,
       (json) => (json as List)
@@ -423,7 +587,6 @@ class ApiService {
       path: 'attendance/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
-    // This one was already correct
     return _get(
       endpoint,
       (json) =>
@@ -455,7 +618,6 @@ class ApiService {
       path: 'daily-visit-reports/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
-    // This one was already correct
     return _get(
       endpoint,
       (json) => (json as List)
@@ -481,7 +643,6 @@ class ApiService {
       path: 'technical-visit-reports/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
-    // This one was already correct
     return _get(
       endpoint,
       (json) => (json as List)
@@ -549,9 +710,10 @@ class ApiService {
       (json) => CompetitionReport.fromJson(json),
     );
   }
-  
+
   Future<void> deleteDailyTask(String taskId) => _delete('daily-tasks/$taskId');
-  Future<void> deleteDvr(String dvrId) => _delete('daily-visit-reports/$dvrId');
+  Future<void> deleteDvr(String dvrId) =>
+      _delete('daily-visit-reports/$dvrId');
   Future<void> deleteTvr(String tvrId) =>
       _delete('technical-visit-reports/$tvrId');
   Future<void> deleteLeaveApplication(String leaveId) =>

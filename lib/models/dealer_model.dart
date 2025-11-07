@@ -1,6 +1,3 @@
-// models/dealer_model.dart
-
-
 class Dealer {
   final String? id; // Nullable for creation
   final int? userId;
@@ -21,10 +18,19 @@ class Dealer {
   final List<String> brandSelling;
   final String feedbacks;
   final String? remarks;
-  final DateTime? createdAt; // Nullable for creation
-  final DateTime? updatedAt; // Nullable for creation
+  
+  // --- Prisma Parity Fields ---
+  final String? dealerDevelopmentStatus;
+  final String? dealerDevelopmentObstacle;
+  final double? salesGrowthPercentage;
+  final int? noOfPJP;
 
-  // --- NEW FIELDS FROM ZOD SCHEMA ---
+  // --- ✅ NEW FIELDS ADDED ---
+  final String? nameOfFirm;
+  final String? underSalesPromoterName;
+  // --- END NEW FIELDS ---
+
+  // Verification & IDs
   final String? verificationStatus; // e.g., 'PENDING'
   final String? whatsappNo;
   final String? emailId;
@@ -34,7 +40,7 @@ class Dealer {
   final String? tradeLicNo;
   final String? aadharNo;
 
-  // Godown
+  // ... (all other fields like godown, residential, bank...)
   final int? godownSizeSqFt;
   final String? godownCapacityMTBags;
   final String? godownAddressLine;
@@ -43,41 +49,34 @@ class Dealer {
   final String? godownArea;
   final String? godownRegion;
   final String? godownPinCode;
-
-  // Residential
   final String? residentialAddressLine;
   final String? residentialLandMark;
   final String? residentialDistrict;
   final String? residentialArea;
   final String? residentialRegion;
   final String? residentialPinCode;
-
-  // Bank
   final String? bankAccountName;
   final String? bankName;
   final String? bankBranchAddress;
   final String? bankAccountNumber;
   final String? bankIfscCode;
-
-  // Sales & promoter
   final String? brandName;
   final double? monthlySaleMT;
   final int? noOfDealers;
   final String? areaCovered;
   final double? projectedMonthlySalesBestCementMT;
   final int? noOfEmployeesInSales;
-
-  // Declaration
   final String? declarationName;
   final String? declarationPlace;
   final DateTime? declarationDate;
-
-  // Document URLs
   final String? tradeLicencePicUrl;
   final String? shopPicUrl;
   final String? dealerPicUrl;
   final String? blankChequePicUrl;
   final String? partnershipDeedPicUrl;
+
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   Dealer({
     this.id,
@@ -102,7 +101,17 @@ class Dealer {
     this.createdAt,
     this.updatedAt,
 
-    // --- NEW FIELDS ---
+    // --- Prisma Parity Fields ---
+    this.dealerDevelopmentStatus,
+    this.dealerDevelopmentObstacle,
+    this.salesGrowthPercentage,
+    this.noOfPJP,
+
+    // --- ✅ NEW FIELDS ADDED ---
+    this.nameOfFirm,
+    this.underSalesPromoterName,
+    // --- END NEW FIELDS ---
+
     this.verificationStatus,
     this.whatsappNo,
     this.emailId,
@@ -146,16 +155,28 @@ class Dealer {
     this.partnershipDeedPicUrl,
   });
 
-  factory Dealer.fromJson(Map<String, dynamic> json) {
-    // Helper to safely parse dates
-    DateTime? _parseDate(String? dateStr) {
-      if (dateStr == null) return null;
-      return DateTime.tryParse(dateStr);
-    }
+  // Helper to safely parse dates
+  static DateTime? _parseDate(String? dateStr) {
+    if (dateStr == null) return null;
+    return DateTime.tryParse(dateStr);
+  }
+  
+  // Helper to safely parse doubles/ints from various inputs
+  static double? _parseDouble(dynamic val) {
+    if (val == null) return null;
+    return double.tryParse(val.toString());
+  }
+  
+  static int? _parseInt(dynamic val) {
+     if (val == null) return null;
+     return int.tryParse(val.toString());
+  }
 
+
+  factory Dealer.fromJson(Map<String, dynamic> json) {
     return Dealer(
       id: json['id']?.toString(),
-      userId: json['userId'],
+      userId: _parseInt(json['userId']),
       type: json['type'] ?? '',
       parentDealerId: json['parentDealerId'],
       name: json['name'] ?? '',
@@ -164,19 +185,28 @@ class Dealer {
       phoneNo: json['phoneNo'] ?? '',
       address: json['address'] ?? '',
       pinCode: json['pinCode'],
-      latitude: double.tryParse(json['latitude']?.toString() ?? ''),
-      longitude: double.tryParse(json['longitude']?.toString() ?? ''),
+      latitude: _parseDouble(json['latitude']),
+      longitude: _parseDouble(json['longitude']),
       dateOfBirth: _parseDate(json['dateOfBirth']),
       anniversaryDate: _parseDate(json['anniversaryDate']),
-      totalPotential: double.tryParse(json['totalPotential'].toString()) ?? 0.0,
-      bestPotential: double.tryParse(json['bestPotential'].toString()) ?? 0.0,
+      totalPotential: _parseDouble(json['totalPotential']) ?? 0.0,
+      bestPotential: _parseDouble(json['bestPotential']) ?? 0.0,
       brandSelling: List<String>.from(json['brandSelling'] ?? []),
       feedbacks: json['feedbacks'] ?? '',
       remarks: json['remarks'],
       createdAt: _parseDate(json['createdAt']),
       updatedAt: _parseDate(json['updatedAt']),
+      
+      dealerDevelopmentStatus: json['dealerDevelopmentStatus'],
+      dealerDevelopmentObstacle: json['dealerDevelopmentObstacle'],
+      salesGrowthPercentage: _parseDouble(json['salesGrowthPercentage']),
+      noOfPJP: _parseInt(json['noOfPJP']),
 
-      // --- NEW FIELDS ---
+      // --- ✅ NEW FIELDS ADDED ---
+      nameOfFirm: json['nameOfFirm'],
+      underSalesPromoterName: json['underSalesPromoterName'],
+      // --- END NEW FIELDS ---
+      
       verificationStatus: json['verificationStatus'],
       whatsappNo: json['whatsappNo'],
       emailId: json['emailId'],
@@ -185,7 +215,7 @@ class Dealer {
       panNo: json['panNo'],
       tradeLicNo: json['tradeLicNo'],
       aadharNo: json['aadharNo'],
-      godownSizeSqFt: json['godownSizeSqFt'],
+      godownSizeSqFt: _parseInt(json['godownSizeSqFt']),
       godownCapacityMTBags: json['godownCapacityMTBags'],
       godownAddressLine: json['godownAddressLine'],
       godownLandMark: json['godownLandMark'],
@@ -205,12 +235,11 @@ class Dealer {
       bankAccountNumber: json['bankAccountNumber'],
       bankIfscCode: json['bankIfscCode'],
       brandName: json['brandName'],
-      monthlySaleMT: double.tryParse(json['monthlySaleMT']?.toString() ?? ''),
-      noOfDealers: json['noOfDealers'],
+      monthlySaleMT: _parseDouble(json['monthlySaleMT']),
+      noOfDealers: _parseInt(json['noOfDealers']),
       areaCovered: json['areaCovered'],
-      projectedMonthlySalesBestCementMT: double.tryParse(
-          json['projectedMonthlySalesBestCementMT']?.toString() ?? ''),
-      noOfEmployeesInSales: json['noOfEmployeesInSales'],
+      projectedMonthlySalesBestCementMT: _parseDouble(json['projectedMonthlySalesBestCementMT']),
+      noOfEmployeesInSales: _parseInt(json['noOfEmployeesInSales']),
       declarationName: json['declarationName'],
       declarationPlace: json['declarationPlace'],
       declarationDate: _parseDate(json['declarationDate']),
@@ -223,11 +252,12 @@ class Dealer {
   }
 
   Map<String, dynamic> toJson() {
-    // Helper to send null for empty strings, matching Zod's `strOrNull`
-    String? _nullIfEmpty(String? s) => (s == null || s.trim().isEmpty) ? null : s;
+    // Helper to send null for empty strings
+    String? _nullIfEmpty(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
 
     return {
-      'id': _nullIfEmpty(id), // Include ID if it exists
+      // --- ✅ CRITICAL FIX: REMOVED fields the server generates ---
+      // 'id': _nullIfEmpty(id), // <-- REMOVED
       'userId': userId,
       'type': type,
       'parentDealerId': _nullIfEmpty(parentDealerId),
@@ -237,19 +267,29 @@ class Dealer {
       'phoneNo': phoneNo,
       'address': address,
       'pinCode': _nullIfEmpty(pinCode),
-      'latitude': latitude?.toString(), // Now included in toJson
-      'longitude': longitude?.toString(), // Now included in toJson
-      'dateOfBirth': dateOfBirth?.toIso8601String(),
-      'anniversaryDate': anniversaryDate?.toIso8601String(),
-      'totalPotential': totalPotential.toString(),
-      'bestPotential': bestPotential.toString(),
+      'latitude': latitude, 
+      'longitude': longitude,
+      'dateOfBirth': dateOfBirth?.toIso8601String().split('T')[0], // Send as YYYY-MM-DD
+      'anniversaryDate': anniversaryDate?.toIso8601String().split('T')[0],
+      'totalPotential': totalPotential,
+      'bestPotential': bestPotential,
       'brandSelling': brandSelling,
       'feedbacks': feedbacks,
       'remarks': _nullIfEmpty(remarks),
-      'createdAt': createdAt?.toIso8601String(),
-      'updatedAt': updatedAt?.toIso8601String(),
+      // 'createdAt': createdAt?.toIso8601String(), // <-- REMOVED
+      // 'updatedAt': updatedAt?.toIso8601String(), // <-- REMOVED
 
-      // --- NEW FIELDS ---
+      // --- Prisma Parity ---
+      'dealerDevelopmentStatus': _nullIfEmpty(dealerDevelopmentStatus),
+      'dealerDevelopmentObstacle': _nullIfEmpty(dealerDevelopmentObstacle),
+      'salesGrowthPercentage': salesGrowthPercentage,
+      'noOfPJP': noOfPJP,
+
+      // --- ✅ NEW FIELDS ADDED ---
+      'nameOfFirm': _nullIfEmpty(nameOfFirm),
+      'underSalesPromoterName': _nullIfEmpty(underSalesPromoterName),
+      // --- END NEW FIELDS ---
+
       'verificationStatus': _nullIfEmpty(verificationStatus),
       'whatsappNo': _nullIfEmpty(whatsappNo),
       'emailId': _nullIfEmpty(emailId),
@@ -285,7 +325,7 @@ class Dealer {
       'noOfEmployeesInSales': noOfEmployeesInSales,
       'declarationName': _nullIfEmpty(declarationName),
       'declarationPlace': _nullIfEmpty(declarationPlace),
-      'declarationDate': declarationDate?.toIso8601String(),
+      'declarationDate': declarationDate?.toIso8601String().split('T')[0],
       'tradeLicencePicUrl': _nullIfEmpty(tradeLicencePicUrl),
       'shopPicUrl': _nullIfEmpty(shopPicUrl),
       'dealerPicUrl': _nullIfEmpty(dealerPicUrl),
@@ -293,18 +333,5 @@ class Dealer {
       'partnershipDeedPicUrl': _nullIfEmpty(partnershipDeedPicUrl),
     };
   }
-
-  // --- Boilerplate ---
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is Dealer && runtimeType == other.runtimeType && id == other.id;
-
-  @override
-  int get hashCode => id.hashCode;
-
-  @override
-  String toString() {
-    return 'Dealer{id: $id, name: $name}';
-  }
 }
+
