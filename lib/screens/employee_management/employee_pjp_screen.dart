@@ -1,3 +1,5 @@
+// lib/screens/employee_management/employee_pjp_screen.dart
+
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
@@ -6,18 +8,12 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'dart:developer' as dev;
 
-// --- ✅ NEW IMPORTS ---
-// Import the widgets we moved
 import 'package:assetarchiverflutter/widgets/pjp_cards.dart';
-// Import the forms we moved
 import 'package:assetarchiverflutter/screens/forms/add_pjp_form.dart';
 import 'package:assetarchiverflutter/screens/employee_management/bulk_pjp_wizard_screen.dart';
-// --- END NEW IMPORTS ---
-
 
 const _log = 'EmployeePJPScreen';
 
-/// Uses public `PjpData` from pjp_model.dart (pending + verified)
 class EmployeePJPScreen extends StatefulWidget {
   final Employee employee;
   final Function(Map<String, dynamic> journeyData) onStartJourney;
@@ -37,6 +33,8 @@ class EmployeePJPScreen extends StatefulWidget {
 class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   final ApiService _apiService = ApiService();
   late Future<PjpData> _pjpDataFuture;
+  
+  PjpData? _currentPjpData;
 
   @override
   void initState() {
@@ -46,11 +44,12 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   }
 
   void refreshPjpList() {
-    // Employee.id is a String, but the API needs an int.
     final uid = int.tryParse(widget.employee.id);
     dev.log('refreshPjpList() → fetchPendingAndVerifiedPjps(userId=$uid)', name: _log);
+    
     if (mounted) {
       setState(() {
+        _currentPjpData = null;
         _pjpDataFuture = _apiService.fetchPendingAndVerifiedPjps(
           userId: uid ?? -1,
         );
@@ -61,8 +60,20 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   Future<void> _handleRefresh() async {
     final uid = int.tryParse(widget.employee.id);
     dev.log('onRefresh → fetchPendingAndVerifiedPjps(userId=$uid)', name: _log);
+    
     final fut = _apiService.fetchPendingAndVerifiedPjps(userId: uid ?? -1);
-    if (mounted) setState(() => _pjpDataFuture = fut);
+    
+    // --- ✅ THIS IS THE FIX ---
+    // 1. Added curly braces for the 'if' block.
+    // 2. Changed '=>' (returns a Set) to '() { ... }' (a function block).
+    if (mounted) {
+      setState(() { 
+        _currentPjpData = null; 
+        _pjpDataFuture = fut;
+      });
+    }
+    // --- END FIX ---
+    
     await fut;
   }
 
@@ -72,7 +83,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
     widget.onPjpCreated();
   }
 
-  // --- This function now just shows the options ---
+  // --- (No changes to _showPjpOptions, _showAddPjpForm, _showBulkPjpWizard) ---
   void _showPjpOptions() {
     final theme = Theme.of(context);
     showModalBottomSheet(
@@ -107,8 +118,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       },
     );
   }
-
-  // --- This function now calls the new form file ---
   void _showAddPjpForm() {
     dev.log('Open AddPjpForm', name: _log);
     final theme = Theme.of(context);
@@ -116,34 +125,31 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => AddPjpForm( // <-- Now opens the widget from the new file
+      builder: (_) => AddPjpForm(
         employee: widget.employee,
         onPjpCreated: _handlePjpCreation,
         theme: theme,
       ),
     );
   }
-
-  // --- This function now calls the new wizard file ---
   void _showBulkPjpWizard() {
     dev.log('Open BulkPjpWizardScreen', name: _log);
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (context) => BulkPjpWizardScreen( // <-- Opens the new file
+        builder: (context) => BulkPjpWizardScreen(
           employee: widget.employee,
           onPjpCreated: _handlePjpCreation,
         ),
       ),
     );
   }
+  // --- (End no changes) ---
 
 
-  // --- ✅ THIS IS THE FINAL, ROBUST FIX ---
   Future<void> _startJourneyForPjp(Pjp pjp) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     
-    // 1. Check if dealerId exists.
     if (pjp.dealerId == null || pjp.dealerId!.isEmpty) {
       scaffoldMessenger.showSnackBar(SnackBar(
           content: Text('Error: This PJP is not linked to a dealer.'),
@@ -154,38 +160,37 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
     try {
       dev.log('Start Journey: Fetching dealer details for id=${pjp.dealerId}', name: _log);
       
-      // 2. Fetch the dealer by its ID to get reliable coordinates
       final dealer = await _apiService.fetchDealerById(pjp.dealerId!);
 
-      // 3. Check if the fetched dealer has coordinates
       if (dealer.latitude == null || dealer.longitude == null) {
         throw FormatException('Dealer "${dealer.name}" has no location saved.');
       }
       
       final lat = dealer.latitude;
       final lon = dealer.longitude;
-      // Use the dealer's name, or fallback to the PJP's name
       final String displayName = dealer.name.isNotEmpty ? dealer.name : (pjp.dealerName ?? 'Dealer Visit');
 
       dev.log('Start Journey for PJP id=${pjp.id}, Dealer: ${dealer.name}', name: _log);
       
-      // 4. Update the PJP journey status
       await _apiService.updatePjp(pjp.id, {'status': 'started'});
+
+      if (mounted && _currentPjpData != null) {
+        setState(() {
+          _currentPjpData!.verifiedPjps.removeWhere((item) => item.id == pjp.id);
+        });
+      }
+
       scaffoldMessenger.showSnackBar(const SnackBar(
-          content: Text('Journey Planned, redirecting...'),
+          content: Text('Journey Started!'),
           backgroundColor: Colors.green));
 
-      refreshPjpList();
       widget.onPjpCreated();
 
-      // 5. THIS IS THE HANDOFF
-      // Send the *reliable* coordinates to the NavScreen
       widget.onStartJourney({
         'pjpId': pjp.id,
         'displayName': displayName,
         'destination': LatLng(lat!, lon!),
       });
-      // --- END OF HANDOFF ---
 
     } catch (e, st) {
       dev.log('Failed to start journey', name: _log, error: e, stackTrace: st);
@@ -195,7 +200,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
           backgroundColor: Colors.red));
     }
   }
-  // --- END OF FIX ---
 
 
   @override
@@ -207,12 +211,14 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
         FutureBuilder<PjpData>(
           future: _pjpDataFuture,
           builder: (context, snapshot) {
+            
             if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData) {
+                _currentPjpData == null) {
               return Center(
                   child: CircularProgressIndicator(
                       color: theme.colorScheme.primary));
             }
+
             if (snapshot.hasError) {
               dev.log('PJP Future error: ${snapshot.error}', name: _log);
               return Center(
@@ -222,16 +228,21 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                       style: TextStyle(color: theme.colorScheme.error)),
                 ),
               );
+              }
+            
+            if (snapshot.hasData) {
+              _currentPjpData = snapshot.data;
             }
-
-            final pjpData = snapshot.data;
-            if (pjpData == null) {
+            
+            if (_currentPjpData == null) {
               dev.log('Future completed but data==null', name: _log);
               return Center(
                 child: Text('No data received',
                     style: TextStyle(color: theme.colorScheme.error)),
               );
             }
+            
+            final pjpData = _currentPjpData!; 
 
             final pendingPjps = pjpData.pendingPjps;
             final verifiedPjps = pjpData.verifiedPjps;
@@ -241,7 +252,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                 onRefresh: _handleRefresh,
                 child: Stack(
                   children: [
-                    ListView(), // Allows pull-to-refresh on empty screen
+                    ListView(),
                     Center(
                         child: Text('No PJPs found.',
                             style: TextStyle(
@@ -252,32 +263,24 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
               );
             }
 
-            // --- Build the list with correct logic ---
-            List<Widget> listItems = []; // Start with an empty list
+            List<Widget> listItems = []; 
 
-            // 1. If there are PENDING items, add a header and the items
             if (pendingPjps.isNotEmpty) {
               listItems.add(
                 PjpSectionHeader(title: 'PENDING APPROVAL (${pendingPjps.length})')
               );
-
               listItems.addAll(pendingPjps.map((pjp) => Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                // This is the "Pending" card, it is NOT slidable
-                child: PendingPjpCard(pjp: pjp), // <-- Use PendingPjpCard
+                child: PendingPjpCard(pjp: pjp),
               )).toList());
             }
 
-
-            // 2. If there are VERIFIED items, add a header and the items
             if (verifiedPjps.isNotEmpty) {
               listItems.add(
                 PjpSectionHeader(title: 'VERIFIED VISITS (${verifiedPjps.length})')
               );
-
               listItems.addAll(verifiedPjps.map((pjp) => Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                // This is the "Verified" card, it IS slidable
                 child: Slidable(
                   key: ValueKey(pjp.id),
                   startActionPane: ActionPane(
@@ -297,7 +300,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                 ),
               )));
             }
-            // --- END OF LIST LOGIC ---
 
             return RefreshIndicator(
               onRefresh: _handleRefresh,
@@ -305,8 +307,8 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
               backgroundColor: theme.colorScheme.primary,
               child: ListView.builder(
                 padding: const EdgeInsets.only(
-                    top: 8.0, // Just a small top padding
-                    bottom: 120), // Padding for the FAB and Nav Bar
+                    top: 8.0,
+                    bottom: 120),
                 itemCount: listItems.length,
                 itemBuilder: (context, index) {
                   return listItems[index];
@@ -316,7 +318,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
           },
         ),
         Positioned(
-          bottom: 100.0, // Raised slightly to clear floating nav bar
+          bottom: 100.0,
           right: 16.0,
           child: FloatingActionButton(
             onPressed: _showPjpOptions,

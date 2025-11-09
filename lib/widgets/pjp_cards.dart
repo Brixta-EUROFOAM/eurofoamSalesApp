@@ -1,53 +1,185 @@
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/models/pjp_model.dart';
-// Unused import removed. This file only needs pjp_model.dart to get the Pjp class.
+import 'package:assetarchiverflutter/models/dealer_model.dart'; // <-- ✅ NEW IMPORT
+import 'package:assetarchiverflutter/api/api_service.dart'; // <-- ✅ NEW IMPORT
+import 'package:intl/intl.dart'; 
+import 'dart:developer' as dev; // <-- ✅ NEW IMPORT
 
-// --- ✅ NEW: This is the card for "Verified" PJPs ---
-class PjpCard extends StatelessWidget {
+// --- ✅ REDESIGNED: PjpCard is now a StatefulWidget ---
+class PjpCard extends StatefulWidget {
   final Pjp pjp;
-  final bool isVerified; // isVerified is true for this card
+  final bool isVerified;
 
   const PjpCard({super.key, required this.pjp, required this.isVerified});
+
+  @override
+  State<PjpCard> createState() => _PjpCardState();
+}
+
+class _PjpCardState extends State<PjpCard> {
+  final ApiService _apiService = ApiService();
+  
+  String? _displayName;
+  String? _subtitle;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveDisplayNames();
+  }
+
+  Future<void> _resolveDisplayNames() async {
+    final pjp = widget.pjp;
+    final dateString = DateFormat.yMMMd().format(pjp.planDate);
+
+    // --- ✅ THIS IS THE SMART LOGIC ---
+    
+    // 1. If dealerName is already in the PJP object, just use it.
+    if (pjp.dealerName != null && pjp.dealerName!.isNotEmpty) {
+      setState(() {
+        _displayName = pjp.dealerName!;
+        final area = pjp.areaToBeVisited.split('|').first.trim();
+        _subtitle = (area.isNotEmpty && area != _displayName) ? area : dateString;
+        _isLoading = false;
+      });
+      return;
+    }
+
+    // 2. If dealerName is missing, but we have a dealerId, fetch the dealer.
+    if (pjp.dealerId != null && pjp.dealerId!.isNotEmpty) {
+      if (!mounted) return;
+      setState(() { _isLoading = true; }); // Show loading
+      
+      try {
+        dev.log('PjpCard: Fetching details for dealerId=${pjp.dealerId}');
+        final Dealer dealer = await _apiService.fetchDealerById(pjp.dealerId!);
+        if (!mounted) return;
+        setState(() {
+          _displayName = dealer.name;
+          _subtitle = dealer.area; // Use the dealer's area as the subtitle
+          _isLoading = false;
+        });
+      } catch (e) {
+        dev.log('PjpCard: Failed to fetch dealer ${pjp.dealerId}', error: e);
+        // 3. If fetch fails, fall back to the PJP description.
+        if (!mounted) return;
+        setState(() {
+          _displayName = pjp.description ?? pjp.areaToBeVisited;
+          _subtitle = dateString;
+          _isLoading = false;
+        });
+      }
+      return;
+    }
+
+    // 4. If all else fails, fall back to description/area.
+    if (!mounted) return;
+    setState(() {
+      _displayName = (pjp.description != null && pjp.description!.isNotEmpty)
+          ? pjp.description!
+          : pjp.areaToBeVisited;
+      _subtitle = dateString;
+      _isLoading = false;
+    });
+    // --- END LOGIC ---
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
-
-    // --- ✅ FIX: Make the name logic smarter ---
-    // Prioritize the specific dealerName. Fall back to the area string.
-    // This fixes the "Monthly PJP Plan" bug.
-    final displayName = pjp.dealerName ?? pjp.areaToBeVisited.split('|').first;
-    // --- END FIX ---
+    
+    // Use the description as a temporary title while loading
+    final loadingTitle = (widget.pjp.description != null && widget.pjp.description!.isNotEmpty)
+          ? widget.pjp.description!
+          : "Loading Dealer...";
 
     return Card(
-      // This is the standard, theme-aware card
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(
-              Icons.check_circle, // <-- "Verified" icon
-              color: Colors.green,
-              size: 30,
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                displayName,
-                style: textTheme.titleLarge?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                    fontWeight: FontWeight.bold),
+            // --- 1. THE "LIVELY" ACTION BAR ---
+            Container(
+              width: 60,
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.swipe_right_alt,
+                    color: theme.colorScheme.onPrimary,
+                    size: 28,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 16),
-            
-            // --- ✅ FIX: Icon direction ---
-            // This now correctly hints at a left-to-right swipe
-            Icon(Icons.keyboard_arrow_right, // <-- Was keyboard_arrow_left
-                color: theme.colorScheme.onSurface.withOpacity(0.7), size: 30),
-            // --- END FIX ---
+
+            // --- 2. THE CONTENT (NOW HANDLES LOADING) ---
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center, 
+                  children: [
+                    Text(
+                      _isLoading ? loadingTitle : (_displayName ?? "Error"),
+                      style: textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.onSurface,
+                          fontWeight: FontWeight.bold),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    // Date or Area Subtitle
+                    Row(
+                      children: [
+                        if (_isLoading)
+                          Container(
+                            width: 12,
+                            height: 12,
+                            margin: const EdgeInsets.only(left: 1, right: 7),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary),
+                          )
+                        else
+                          Icon(
+                            // If subtitle is not the date, show a pin icon
+                            (_subtitle != null && _subtitle != DateFormat.yMMMd().format(widget.pjp.planDate))
+                               ? Icons.pin_drop_outlined
+                               : Icons.calendar_today_outlined,
+                            size: 14,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        Text(
+                          _isLoading 
+                              ? "Fetching details..." 
+                              : (_subtitle ?? ""),
+                          style: textTheme.bodyMedium?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // --- 3. THE STATUS ICON ---
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Icon(
+                Icons.check_circle,
+                color: Colors.green,
+                size: 24,
+              ),
+            ),
           ],
         ),
       ),
@@ -55,8 +187,8 @@ class PjpCard extends StatelessWidget {
   }
 }
 
-// --- ✅ NEW: This is the card for "Pending" PJPs ---
-// It is visually distinct and not slidable.
+// --- ✅ PendingPjpCard is now also SMARTER ---
+// It will never show "pending" as a title again.
 class PendingPjpCard extends StatelessWidget {
   final Pjp pjp;
 
@@ -67,57 +199,53 @@ class PendingPjpCard extends StatelessWidget {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
-    // --- ✅ FIX: Make the name logic smarter ---
-    final displayName = pjp.dealerName ?? pjp.areaToBeVisited.split('|').first;
-    // --- END FIX ---
+    // --- ✅ NEW, SMARTER LOGIC ---
+    final String displayName;
+    
+    // 1. Try to use dealerName if it exists (e.g., from a single PJP)
+    if (pjp.dealerName != null && pjp.dealerName!.isNotEmpty) {
+      displayName = pjp.dealerName!;
+    } else {
+    // 2. Fall back to description (e.g., "Monthly PJP Plan")
+      displayName = (pjp.description != null && pjp.description!.isNotEmpty)
+          ? pjp.description!
+          : pjp.areaToBeVisited; // 3. Last resort
+    }
+    // This logic ensures "pending" is never shown as the title.
+    // --- END NEW LOGIC ---
 
-    // --- ✅ THE MAIN FIX: This now checks the correct field ---
-    // It looks at 'verificationStatus' instead of 'status'.
-    final statusText = (pjp.verificationStatus == 'PENDING')
-        ? "Waiting for approval"
-        : "Status: ${pjp.verificationStatus ?? 'N/A'}"; // Use verificationStatus
-    // --- END FIX ---
-
-
-    // Use a more muted card color
-    final cardColor = theme.colorScheme.surface.withOpacity(0.6);
-    final textColor = theme.colorScheme.onSurface.withOpacity(0.6);
-    final iconColor = theme.colorScheme.onSurface.withOpacity(0.4);
+    final dateString = DateFormat.yMMMd().format(pjp.planDate);
+    final pendingColor = theme.colorScheme.secondary; 
 
     return Card(
-      color: cardColor,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 20.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.pending_actions, // <-- "Pending" icon
-              color: iconColor,
-              size: 30,
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayName,
-                    style: textTheme.titleLarge?.copyWith(
-                      color: textColor,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Text(
-                    statusText, // <-- Use the new fixed statusText variable
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: textColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+      elevation: 0, 
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: theme.colorScheme.outline.withOpacity(0.5),
+        ),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        leading: Icon(
+          Icons.hourglass_top, 
+          color: pendingColor,
+          size: 30,
+        ),
+        title: Text(
+          displayName, // <-- Uses new smart logic
+          style: textTheme.titleMedium?.copyWith(
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.w600,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          "Waiting for approval • $dateString",
+          style: textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
         ),
       ),
     );

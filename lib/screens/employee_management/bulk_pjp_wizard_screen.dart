@@ -6,10 +6,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'dart:developer' as dev;
 
-// --- ✅ FIX 1: Removed Unused Import ---
-// --- ❌ We must remove this import, it is not used ---
-// import 'package:assetarchiverflutter/models/pjp_model.dart';
-// ---
+// Unused import 'package:assetarchiverflutter/models/pjp_model.dart'; removed
 
 const _log = 'BulkPjpWizard';
 
@@ -121,21 +118,21 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
     }
 
     try {
-      // --- ✅ FIX 2: Correctly handle List<String?> ---
       final List<String> dealerIds = allDealersInPlan
-          .map((d) => d.id)       // This creates an Iterable<String?>
-          .whereType<String>() // This filters out all nulls & returns an Iterable<String>
-          .where((id) => id.isNotEmpty) // This is now safe to call
+          .map((d) => d.id)       
+          .whereType<String>() 
+          .where((id) => id.isNotEmpty) 
           .toList();
-      // --- END FIX ---
 
       dev.log(
           'Submitting bulk PJP: ${dealerIds.length} unique dealers, starting from $baseDate',
           name: _log);
       
       // --- ✅ THIS IS THE FIX ---
-      // This call now matches the reverted ApiService
-      // It will no longer crash.
+      // We now save a sensible string for the area and description.
+      // The server will use this.
+      const String planDescription = "Monthly PJP Plan";
+      
       final response = await _apiService.createBulkPjp(
         userId: int.parse(widget.employee.id),
         createdById: int.parse(widget.employee.id),
@@ -143,15 +140,14 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
         baseDate: baseDate,
         batchSizePerDay: minVisitsPerDay,
         
-        // This is the default JOURNEY status
-        areaToBeVisited: "pending", 
+        // This is the area/name fallback
+        areaToBeVisited: planDescription, // <-- WAS "pending"
         
-        // This is the default ADMIN APPROVAL status
+        // This is the ADMIN APPROVAL status
         status: 'PENDING',
         
         // This is the description
-        description: "Monthly PJP Plan"
-        // 'verificationStatus' is no longer sent
+        description: planDescription
       );
       // --- END FIX ---
 

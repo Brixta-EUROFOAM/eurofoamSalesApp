@@ -17,6 +17,7 @@ class ApiService {
   static const String _baseUrl = 'https://myserverbymycoco.onrender.com';
 
   // --- GENERIC HELPERS (Unchanged) ---
+  // _get expects a String, not a Uri
   Future<T> _get<T>(String endpoint, T Function(dynamic json) fromJson) async {
     final url = Uri.parse('$_baseUrl/api/$endpoint');
     dev.log('GET: $url', name: 'ApiService');
@@ -310,7 +311,7 @@ class ApiService {
     final endpoint = Uri(
       path: 'dealers',
       queryParameters: queryParams.isEmpty ? null : queryParams,
-    ).toString();
+    ).toString(); 
     return _get(
       endpoint,
       (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
@@ -375,20 +376,24 @@ class ApiService {
     String? startDate,
     String? endDate,
     String? status,
-    String? verificationStatus, // <-- ✅ UPGRADED
+    String? verificationStatus, // This param is now ignored, but kept for compatibility
     String? dealerId,
   }) async {
     final queryParams = <String, String>{
       if (startDate != null) 'startDate': startDate,
       if (endDate != null) 'endDate': endDate,
+      
+      // --- ✅ FIX: Only send 'status' ---
+      // The server only understands one 'status' column
       if (status != null) 'status': status,
-      if (verificationStatus != null) 'verificationStatus': verificationStatus, // <-- ✅ UPGRADED
+      // We IGNORE verificationStatus
+      
       if (dealerId != null) 'dealerId': dealerId,
     };
     final endpoint = Uri(
       path: 'pjp/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
-    ).toString();
+    ).toString(); 
     return _get(
       endpoint,
       (json) => (json as List).map((item) => Pjp.fromJson(item)).toList(),
@@ -433,30 +438,30 @@ class ApiService {
     String? dealerId,
   }) async {
     try {
-      // --- ✅ THIS IS THE FIX ---
-      // We now query by `verificationStatus` for both, as your
-      // server's `buildWhere` function supports it.
       final List<List<Pjp>> results = await Future.wait([
+        // --- ✅ FIX: Query 'status' column for 'PENDING' ---
         fetchPjpsForUser(
           userId,
-          verificationStatus: 'PENDING', // <-- ✅ CORRECT
+          status: 'PENDING', // Query the 'status' column
           startDate: startDate,
           endDate: endDate,
           dealerId: dealerId,
         ),
+        
+        // --- ✅ FIX: Query 'status' column for 'APPROVED' ---
+        // This is the status your admin panel sets (from WORKING2.md log)
         fetchPjpsForUser(
           userId,
-          verificationStatus: 'VERIFIED', // <-- ✅ CORRECT
+          status: 'APPROVED', // Query the 'status' column
           startDate: startDate,
           endDate: endDate,
           dealerId: dealerId,
         ),
       ]);
-      // --- END FIX ---
 
       return PjpData(
         pendingPjps: results[0],  // The 'PENDING' list
-        verifiedPjps: results[1], // The 'VERIFIED' list
+        verifiedPjps: results[1], // The 'APPROVED' list
       );
 
     } catch (e) {
@@ -467,8 +472,9 @@ class ApiService {
 
   /// Creates a single PJP (using POST /api/pjp)
   Future<Pjp> createPjp(Pjp pjp) async {
-    // This uses the model's toJson(), which correctly sends
-    // both 'status' and 'verificationStatus'
+    // This uses the model's toJson(), which should be reverted
+    // to only send 'status' if the server is old.
+    // For now, we assume pjp.toJson() is correct for the SINGLE create.
     return _post('pjp', pjp.toJson(), (json) => Pjp.fromJson(json));
   }
 
@@ -479,18 +485,12 @@ class ApiService {
     required List<String> dealerIds,
     required DateTime baseDate,
     required int batchSizePerDay,
-    
-    // --- ✅ THIS IS THE FIX ---
-    // We are reverting to match your LIVE server's schema
-    required String areaToBeVisited, // The live server requires this
+    required String areaToBeVisited,
     String? description,
-    String status = 'PENDING', // The live server accepts this
-    // 'verificationStatus' is REMOVED because the live server rejects it
-    // --- END FIX ---
+    String status = 'PENDING',
   }) async {
     
-    // --- ✅ THIS IS THE FIX ---
-    // This body now matches your server's LIVE (old) schema
+    // This body matches your reverted schema
     final body = {
       'userId': userId,
       'createdById': createdById,
@@ -501,8 +501,6 @@ class ApiService {
       'description': description,
       'status': status,
     };
-    // 'verificationStatus' is NOT sent
-    // --- END FIX ---
     
     body.removeWhere((key, value) => value == null);
     
@@ -541,6 +539,7 @@ class ApiService {
 
   /// Updates a PJP (e.g., changing its journey status to 'started')
   Future<Pjp> updatePjp(String pjpId, Map<String, dynamic> data) async {
+    // This is fine, as it's just sending a generic map
     return _patch('pjp/$pjpId', data, (json) => Pjp.fromJson(json));
   }
 
@@ -562,7 +561,7 @@ class ApiService {
     final endpoint = Uri(
       path: 'attendance/user/$userId',
       queryParameters: queryParams.isEmpty ? null : queryParams,
-    ).toString();
+    ).toString(); 
     return _get(
       endpoint,
       (json) =>
