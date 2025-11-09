@@ -42,8 +42,12 @@ class PjpCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 16),
-            Icon(Icons.keyboard_arrow_left, // <-- Swipe hint
+            
+            // --- ✅ FIX: Icon direction ---
+            // This now correctly hints at a left-to-right swipe
+            Icon(Icons.keyboard_arrow_right, // <-- Was keyboard_arrow_left
                 color: theme.colorScheme.onSurface.withOpacity(0.7), size: 30),
+            // --- END FIX ---
           ],
         ),
       ),
@@ -67,11 +71,11 @@ class PendingPjpCard extends StatelessWidget {
     final displayName = pjp.dealerName ?? pjp.areaToBeVisited.split('|').first;
     // --- END FIX ---
 
-    // --- ✅ FIX: Make the subtitle smarter ---
-    // Show the actual status from the PJP object
-    final statusText = pjp.status == 'PENDING'
+    // --- ✅ THE MAIN FIX: This now checks the correct field ---
+    // It looks at 'verificationStatus' instead of 'status'.
+    final statusText = (pjp.verificationStatus == 'PENDING')
         ? "Waiting for approval"
-        : "Status: ${pjp.status}";
+        : "Status: ${pjp.verificationStatus ?? 'N/A'}"; // Use verificationStatus
     // --- END FIX ---
 
 
@@ -105,7 +109,7 @@ class PendingPjpCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    statusText, // <-- Use the new statusText variable
+                    statusText, // <-- Use the new fixed statusText variable
                     style: textTheme.bodyMedium?.copyWith(
                       color: textColor,
                     ),

@@ -138,24 +138,38 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
     );
   }
 
-  Future<void> _startJourneyForPjp(Pjp pjp) async {
-    // This is the logic you wanted: it takes the pre-filled PJP data
-    // and sends it to the Journey tracker page.
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    try {
-      // We parse the destination from the 'areaToBeVisited' string
-      final parts = pjp.areaToBeVisited.split('|');
-      if (parts.length != 3) {
-        throw const FormatException('Invalid PJP data format. Cannot get location.');
-      }
-      final String displayName = pjp.dealerName ?? parts[0]; // <-- Use new logic
-      final double? lat = double.tryParse(parts[1]);
-      final double? lon = double.tryParse(parts[2]);
-      if (lat == null || lon == null) {
-        throw const FormatException('Could not parse coordinates from PJP.');
-      }
 
-      dev.log('Start Journey for PJP id=${pjp.id}', name: _log);
+  // --- ✅ THIS IS THE FINAL, ROBUST FIX ---
+  Future<void> _startJourneyForPjp(Pjp pjp) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
+    // 1. Check if dealerId exists.
+    if (pjp.dealerId == null || pjp.dealerId!.isEmpty) {
+      scaffoldMessenger.showSnackBar(SnackBar(
+          content: Text('Error: This PJP is not linked to a dealer.'),
+          backgroundColor: Colors.red));
+      return;
+    }
+
+    try {
+      dev.log('Start Journey: Fetching dealer details for id=${pjp.dealerId}', name: _log);
+      
+      // 2. Fetch the dealer by its ID to get reliable coordinates
+      final dealer = await _apiService.fetchDealerById(pjp.dealerId!);
+
+      // 3. Check if the fetched dealer has coordinates
+      if (dealer.latitude == null || dealer.longitude == null) {
+        throw FormatException('Dealer "${dealer.name}" has no location saved.');
+      }
+      
+      final lat = dealer.latitude;
+      final lon = dealer.longitude;
+      // Use the dealer's name, or fallback to the PJP's name
+      final String displayName = dealer.name.isNotEmpty ? dealer.name : (pjp.dealerName ?? 'Dealer Visit');
+
+      dev.log('Start Journey for PJP id=${pjp.id}, Dealer: ${dealer.name}', name: _log);
+      
+      // 4. Update the PJP journey status
       await _apiService.updatePjp(pjp.id, {'status': 'started'});
       scaffoldMessenger.showSnackBar(const SnackBar(
           content: Text('Journey Planned, redirecting...'),
@@ -164,13 +178,12 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       refreshPjpList();
       widget.onPjpCreated();
 
-      // --- THIS IS THE HANDOFF ---
-      // It calls the function in navscreen.dart, which changes the tab
-      // and passes the journey data.
+      // 5. THIS IS THE HANDOFF
+      // Send the *reliable* coordinates to the NavScreen
       widget.onStartJourney({
         'pjpId': pjp.id,
         'displayName': displayName,
-        'destination': LatLng(lat, lon),
+        'destination': LatLng(lat!, lon!),
       });
       // --- END OF HANDOFF ---
 
@@ -182,6 +195,8 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
           backgroundColor: Colors.red));
     }
   }
+  // --- END OF FIX ---
+
 
   @override
   Widget build(BuildContext context) {
@@ -237,7 +252,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
               );
             }
 
-            // --- ✅ BUG FIX: Build the list with correct logic ---
+            // --- Build the list with correct logic ---
             List<Widget> listItems = []; // Start with an empty list
 
             // 1. If there are PENDING items, add a header and the items
@@ -249,9 +264,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
               listItems.addAll(pendingPjps.map((pjp) => Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                 // This is the "Pending" card, it is NOT slidable
-                // --- ✅ THIS IS THE FIX ---
                 child: PendingPjpCard(pjp: pjp), // <-- Use PendingPjpCard
-                // --- END FIX ---
               )).toList());
             }
 
@@ -280,20 +293,17 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                       ),
                     ],
                   ),
-                  // --- This part was correct ---
                   child: PjpCard(pjp: pjp, isVerified: true),
                 ),
               )));
             }
-            // --- END OF BUG FIX ---
+            // --- END OF LIST LOGIC ---
 
             return RefreshIndicator(
               onRefresh: _handleRefresh,
               color: theme.colorScheme.onPrimary,
               backgroundColor: theme.colorScheme.primary,
               child: ListView.builder(
-                // --- ✅ PADDING FIX: Remove unnecessary top padding ---
-                // The AppBar is separate now
                 padding: const EdgeInsets.only(
                     top: 8.0, // Just a small top padding
                     bottom: 120), // Padding for the FAB and Nav Bar
@@ -306,7 +316,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
           },
         ),
         Positioned(
-          // --- ✅ THEME: Made FAB spacing consistent ---
           bottom: 100.0, // Raised slightly to clear floating nav bar
           right: 16.0,
           child: FloatingActionButton(

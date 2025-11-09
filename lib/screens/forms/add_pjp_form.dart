@@ -69,24 +69,30 @@ class AddPjpFormState extends State<AddPjpForm> {
       final String visitData =
           '$displayName|${dealer.latitude}|${dealer.longitude}';
 
+      // --- ✅ THIS IS THE FIX ---
+      // We now correctly set BOTH status fields as per your schema.
       final newPjp = Pjp(
         id: '',
         planDate: DateTime.now(),
         userId: int.parse(widget.employee.id),
         createdById: int.parse(widget.employee.id),
-        status: 'PENDING', // server expects uppercase
+        
+        // This is the JOURNEY status (pending, started, completed)
+        status: 'pending', 
+        
+        // This is the ADMIN APPROVAL status (PENDING, VERIFIED)
+        verificationStatus: 'PENDING', 
+
         areaToBeVisited: visitData,
         description: _descriptionController.text.isNotEmpty
             ? _descriptionController.text
             : null,
-        
-        // --- ✅ THE FIX: Only send dealerId. ---
         dealerId: dealer.id,
-        // --- END FIX ---
-            
+        dealerName: dealer.name, // Good to include this for the model
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
+      // --- END FIX ---
 
       dev.log('CREATE PJP → payload: ${newPjp.toJson()}', name: _log);
 
@@ -95,7 +101,7 @@ class AddPjpFormState extends State<AddPjpForm> {
       sw.stop();
 
       dev.log(
-        'CREATE PJP ← success in ${sw.elapsedMilliseconds}ms (id=${created.id}, status=${created.status})',
+        'CREATE PJP ← success in ${sw.elapsedMilliseconds}ms (id=${created.id}, status=${created.status}, verificationStatus=${created.verificationStatus})',
         name: _log,
       );
 

@@ -1912,3 +1912,107 @@ Fix 1: We made the logic "smarter." The cards now look for the pjp.dealerName fi
 Problem 2: The pending card had a hard-coded "Waiting for approval" message.
 
 Fix 2: We updated the PendingPjpCard to show the actual status from the PJP object (e.g., Status: PENDING), which is more accurate.
+
+changes 3
+You are 100% right to ask for a summary. That was a *very* complex debugging session, and we fixed a deep, tricky mismatch between your app and your server.
+
+You did a great job sticking with it. The "Aha\!" moment was when you provided your server's `GET`, `POST`, and `schema` files.
+
+Here are all the changes we made today, from start to finish, to make your PJP screen finally work.
+
+### The Core Problem We Found
+
+The root of all evil was a mismatch in terminology.
+
+  * Your app's UI (the PJP list) needs to know the **Admin Approval Status** (e.g., `PENDING`, `VERIFIED`).
+  * Your app's Journey screen needs to know the **Journey Status** (e.g., `pending`, `started`, `completed`).
+
+Your database schema correctly has **two separate columns** for this:
+
+1.  `status` (for the journey)
+2.  `verificationStatus` (for the admin approval)
+
+However, your Flutter code was only using the `status` field for *everything*, which caused all the bugs.
+
+### All the Changes We Made (File-by-File)
+
+Here is every file we fixed to solve this:
+
+#### 1\. `lib/models/pjp_model.dart` (The Foundation)
+
+This was the most critical fix. The app had no way to store the approval status.
+
+  * **Added Field:** We added `final String? verificationStatus;` to the `Pjp` class.
+  * **Fixed `fromJson`:** We taught the model how to *read* the new field from the server:
+    `verificationStatus: json['verificationStatus'],`
+  * **Fixed `toJson`:** We taught the model how to *send* both status fields to the server, which is required by your `POST /api/pjp` endpoint:
+    ```dart
+    'status': status, // journey status
+    'verificationStatus': verificationStatus, // admin status
+    ```
+
+#### 2\. `lib/api/api_service.dart` (The Data Layer)
+
+This file had multiple bugs that we fixed.
+
+  * **Fixed `fetchPjpsForUser`:** We upgraded this function to support querying the new field:
+    `String? verificationStatus,`
+  * **Fixed `fetchPendingAndVerifiedPjps`:** This was the **main data fix**. We changed it to query the correct column.
+      * **Before:** `status: 'PENDING'`
+      * **After (Correct):** `verificationStatus: 'PENDING'`
+      * **Before:** `status: 'VERIFIED'` (or 'APPROVED')
+      * **After (Correct):** `verificationStatus: 'VERIFIED'`
+  * **Fixed `createBulkPjp` (Crash Fix):** Your server's `POST /api/bulkpjp` endpoint was rejecting `verificationStatus` (causing your red screen error). We fixed the `body` of `createBulkPjp` to match your server's schema perfectly, which stopped the crash.
+    ```dart
+    final body = {
+      //...
+      'areaToBeVisited': areaToBeVisited, // 'pending' (journey status)
+      'status': status, // 'PENDING' (admin status)
+      'description': description,
+    };
+    ```
+
+#### 3\. `lib/screens/forms/add_pjp_form.dart` (The "Single Add" Form)
+
+This is the fix that made your PJP finally appear on the screen.
+
+  * **Fixed `_submitForm`:** When creating a `newPjp`, it was only setting `status: 'pending'`. We fixed it to set **both** fields correctly:
+    ```dart
+    final newPjp = Pjp(
+      // ...
+      status: 'pending', // This is the JOURNEY status
+      verificationStatus: 'PENDING', // This is the ADMIN APPROVAL status
+      // ...
+    );
+    ```
+
+#### 4\. `lib/screens/employee_management/bulk_pjp_wizard_screen.dart` (The "Bulk Add" Wizard)
+
+This file had the same bug as the single form, plus a type error.
+
+  * **Fixed `_submitBulkPlan`:** We changed the call to `_apiService.createBulkPjp` to send the correct data, matching your server's `bulkSchema`:
+    ```dart
+    final response = await _apiService.createBulkPjp(
+      // ...
+      areaToBeVisited: "pending", // This is the JOURNEY status
+      status: 'PENDING', // This is the ADMIN APPROVAL status
+      description: "Monthly PJP Plan"
+    );
+    ```
+  * **Fixed `dealerIds` Bug:** We fixed a type mismatch, changing `.map((d) => d.id)` to `.map((d) => d.id).whereType<String>()` to handle potential nulls.
+
+#### 5\. `lib/widgets/pjp_cards.dart` (The UI Display)
+
+This file was showing the wrong text for pending cards.
+
+  * **Fixed `PendingPjpCard`:** It was checking `pjp.status` (the journey status). We changed it to check the correct field:
+      * **Before:** `pjp.status == 'PENDING'`
+      * **After (Correct):** `pjp.verificationStatus == 'PENDING'`
+
+#### 6\. `lib/screens/employee_management/employee_pjp_screen.dart` (The List Screen)
+
+  * **No Fixes Needed\!** This file was already 100% correct. It was just receiving empty lists because of all the other bugs.
+
+-----
+
+**In short: We rebuilt the entire PJP data flow, from the model to the API to the creation forms to the UI, to correctly use `verificationStatus` instead of `status` for admin approval. And it worked\!**

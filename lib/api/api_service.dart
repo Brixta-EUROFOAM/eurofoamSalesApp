@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import '../models/dealer_model.dart';
-import '../models/pjp_model.dart';
+import '../models/pjp_model.dart'; // This file also contains PjpData
 import '../models/daily_task_model.dart';
 import '../models/leave_application_model.dart';
 import '../models/attendance_model.dart';
@@ -14,30 +14,24 @@ import '../models/geotracking_data_model.dart';
 import '../models/competition_report_model.dart';
 
 class ApiService {
-  // --- ✅ FIX 1: Removed the space after 'https:' ---
   static const String _baseUrl = 'https://myserverbymycoco.onrender.com';
 
   // --- GENERIC HELPERS (Unchanged) ---
   Future<T> _get<T>(String endpoint, T Function(dynamic json) fromJson) async {
     final url = Uri.parse('$_baseUrl/api/$endpoint');
-    
-    // --- ✅ DEBUGGING: Log the full URL being called ---
     dev.log('GET: $url', name: 'ApiService');
-    
     try {
       final response = await http.get(url).timeout(const Duration(seconds: 45));
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 200) {
         if (jsonData['success'] == true && jsonData['data'] != null) {
-          // The fromJson function receives ONLY the 'data' property
           return fromJson(jsonData['data']);
         } else {
           throw Exception(jsonData['error'] ?? 'API returned success: false');
         }
       } else {
         throw Exception(
-          jsonData['error'] ??
-              'Failed to load data. Status: ${response.statusCode}',
+          jsonData['error'] ?? 'Failed to load data. Status: ${response.statusCode}',
         );
       }
     } catch (e) {
@@ -106,8 +100,7 @@ class ApiService {
         }
       } else {
         throw Exception(
-          jsonData['error'] ??
-              'Failed to update item. Status: ${response.statusCode}',
+          jsonData['error'] ?? 'Failed to update item. Status: ${response.statusCode}',
         );
       }
     } catch (e) {
@@ -125,8 +118,7 @@ class ApiService {
       if (response.statusCode != 200 && response.statusCode != 204) {
         final jsonData = jsonDecode(response.body);
         throw Exception(
-          jsonData['error'] ??
-              'Failed to delete item. Status: ${response.statusCode}',
+          jsonData['error'] ?? 'Failed to delete item. Status: ${response.statusCode}',
         );
       }
     } catch (e) {
@@ -135,7 +127,7 @@ class ApiService {
     }
   }
 
-  // ... (uploadImageToR2, performOcr, sendGeoTrackingPoint, reverseGeocodeWithRadar, searchPhotonAddress are all unchanged) ...
+  // --- SPECIALIZED NETWORK METHODS (Unchanged) ---
   Future<String> uploadImageToR2(File imageFile) async {
     final url = Uri.parse('$_baseUrl/api/r2/upload-direct');
     dev.log('POST (Multipart): $url', name: 'ApiService');
@@ -172,7 +164,6 @@ class ApiService {
       rethrow;
     }
   }
-
   Future<Map<String, dynamic>> performOcr(
       String imageUrl, String docType) async {
     dev.log('Performing MOCK OCR for $docType on $imageUrl',
@@ -198,7 +189,6 @@ class ApiService {
         return {};
     }
   }
-
   Future<void> sendGeoTrackingPoint(GeoTrackingPoint point) async {
     final url = Uri.parse('$_baseUrl/api/geotracking');
     final body = point.toJson();
@@ -227,7 +217,6 @@ class ApiService {
       );
     }
   }
-
   Future<Map<String, String>> reverseGeocodeWithRadar({
     required double latitude,
     required double longitude,
@@ -276,7 +265,6 @@ class ApiService {
       rethrow;
     }
   }
-
   Future<List<dynamic>> searchPhotonAddress(String query) async {
     final url = Uri.https('photon.komoot.io', '/api/', {
       'q': query,
@@ -303,7 +291,7 @@ class ApiService {
     }
   }
 
-  // --- DEALER METHODS (UNCHANGED) ---
+  // --- DEALER METHODS (Unchanged) ---
   Future<List<Dealer>> fetchDealers(
       {String? region,
       String? area,
@@ -328,35 +316,30 @@ class ApiService {
       (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
     );
   }
-
   Future<Dealer> fetchDealerById(String dealerId) {
     return _get(
       'dealers/$dealerId',
       (json) => Dealer.fromJson(json),
     );
   }
-
   Future<List<Dealer>> fetchDealersByUserId(int userId) async {
     return _get(
       'dealers/user/$userId',
       (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
     );
   }
-
   Future<List<Dealer>> fetchDealersByRegion(String region) async {
     return _get(
       'dealers/region/$region',
       (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
     );
   }
-
   Future<List<Dealer>> fetchDealersByArea(String area) async {
     return _get(
       'dealers/area/$area',
       (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
     );
   }
-
   Future<Dealer> createDealer(
     Dealer dealer, {
     double? radius,
@@ -371,7 +354,6 @@ class ApiService {
       (json) => Dealer.fromJson(json),
     );
   }
-
   Future<Dealer> updateDealer(
     String dealerId,
     Map<String, dynamic> data,
@@ -382,27 +364,26 @@ class ApiService {
       (json) => Dealer.fromJson(json),
     );
   }
-
   Future<void> deleteDealer(String dealerId) => _delete('dealers/$dealerId');
 
   // --- PJP METHODS ---
 
-  // ✅ THIS FUNCTION IS NOW FULLY UPGRADED
   /// Fetches PJPs for a specific user, with optional filters.
-  /// This hits the `GET /api/pjp/user/:userId` endpoint, which
-  /// supports all the query parameters from `buildWhere`.
+  /// This hits the `GET /api/pjp/user/:userId` endpoint.
   Future<List<Pjp>> fetchPjpsForUser(
     int userId, {
     String? startDate,
     String? endDate,
     String? status,
-    String? dealerId, // <-- ✅ NEWLY ADDED
+    String? verificationStatus, // <-- ✅ UPGRADED
+    String? dealerId,
   }) async {
     final queryParams = <String, String>{
       if (startDate != null) 'startDate': startDate,
       if (endDate != null) 'endDate': endDate,
       if (status != null) 'status': status,
-      if (dealerId != null) 'dealerId': dealerId, // <-- ✅ NEWLY ADDED
+      if (verificationStatus != null) 'verificationStatus': verificationStatus, // <-- ✅ UPGRADED
+      if (dealerId != null) 'dealerId': dealerId,
     };
     final endpoint = Uri(
       path: 'pjp/user/$userId',
@@ -414,19 +395,15 @@ class ApiService {
     );
   }
 
-  // ✅ NEW FUNCTION
   /// Fetches a single PJP by its ID.
-  /// Hits `GET /api/pjp/:id`
   Future<Pjp> fetchPjpById(String pjpId) async {
     return _get(
       'pjp/$pjpId',
-      (json) => Pjp.fromJson(json), // 'data' is a single Pjp object
+      (json) => Pjp.fromJson(json),
     );
   }
 
-  // ✅ NEW FUNCTION
-  /// Fetches PJPs by status (e.g., 'pending', 'approved').
-  /// Hits `GET /api/pjp/status/:status`
+  /// Fetches PJPs by *journey* status (e.g., 'pending', 'started', 'completed').
   Future<List<Pjp>> fetchPjpsByStatus(
     String status, {
     String? startDate,
@@ -439,7 +416,7 @@ class ApiService {
       if (dealerId != null) 'dealerId': dealerId,
     };
     final endpoint = Uri(
-      path: 'pjp/status/$status', // <-- Uses the new route
+      path: 'pjp/status/$status',
       queryParameters: queryParams.isEmpty ? null : queryParams,
     ).toString();
     return _get(
@@ -448,90 +425,86 @@ class ApiService {
     );
   }
 
-  // --- ✅ NEWLY ADDED FUNCTION ---
-  /// Fetches PJPs that are 'PENDING' OR 'VERIFIED' in parallel.
-  /// Also passes along any optional date or dealer filters.
+  /// Fetches PJPs based on their ADMIN verification status.
   Future<PjpData> fetchPendingAndVerifiedPjps({
-  // --- ✅ ADD THIS REQUIRED PARAMETER ---
-  required int userId,
-  // ---
-  String? startDate,
-  String? endDate,
-  String? dealerId,
-}) async {
-  try {
-    // --- ✅ WE MUST USE fetchPjpsForUser TO FILTER BY USER ---
-    final List<List<Pjp>> results = await Future.wait([
-      fetchPjpsForUser(
-        userId,
-        status: 'PENDING', // Use the new backend status
-        startDate: startDate,
-        endDate: endDate,
-        dealerId: dealerId,
-      ),
-      fetchPjpsForUser(
-        userId,
-        status: 'APPROVED', // Use the new backend status
-        startDate: startDate,
-        endDate: endDate,
-        dealerId: dealerId,
-      ),
-    ]);
+    required int userId,
+    String? startDate,
+    String? endDate,
+    String? dealerId,
+  }) async {
+    try {
+      // --- ✅ THIS IS THE FIX ---
+      // We now query by `verificationStatus` for both, as your
+      // server's `buildWhere` function supports it.
+      final List<List<Pjp>> results = await Future.wait([
+        fetchPjpsForUser(
+          userId,
+          verificationStatus: 'PENDING', // <-- ✅ CORRECT
+          startDate: startDate,
+          endDate: endDate,
+          dealerId: dealerId,
+        ),
+        fetchPjpsForUser(
+          userId,
+          verificationStatus: 'VERIFIED', // <-- ✅ CORRECT
+          startDate: startDate,
+          endDate: endDate,
+          dealerId: dealerId,
+        ),
+      ]);
+      // --- END FIX ---
 
-    // 2. 'results' is [ [pending_pjps], [verified_pjps] ]
-    //    Package them into the PjpData object.
-    return PjpData(
-      pendingPjps: results[0],  // The 'PENDING' list
-      verifiedPjps: results[1], // The 'VERIFIED' list
-    );
+      return PjpData(
+        pendingPjps: results[0],  // The 'PENDING' list
+        verifiedPjps: results[1], // The 'VERIFIED' list
+      );
 
-  } catch (e) {
-    // Handle any errors
-    dev.log('Failed to fetch PENDING and VERIFIED PJPs: $e', name: 'ApiService');
-    // Return empty data on failure
-    return PjpData(pendingPjps: [], verifiedPjps: []);
+    } catch (e) {
+      dev.log('Failed to fetch PENDING and VERIFIED PJPs: $e', name: 'ApiService');
+      return PjpData(pendingPjps: [], verifiedPjps: []);
+    }
   }
-}
-  // --- END NEWLY ADDED FUNCTION ---
 
+  /// Creates a single PJP (using POST /api/pjp)
   Future<Pjp> createPjp(Pjp pjp) async {
-    // This now correctly uses the updated Pjp.toJson()
+    // This uses the model's toJson(), which correctly sends
+    // both 'status' and 'verificationStatus'
     return _post('pjp', pjp.toJson(), (json) => Pjp.fromJson(json));
   }
 
-  // --- ✅ NEW: BULK PJP CREATION ---
-  /// Sends a list of PJPs to a bulk-creation endpoint.
-  /// Matches the `POST /api/bulkpjp` endpoint.
+  /// Creates PJPs in bulk (using POST /api/bulkpjp)
   Future<Map<String, dynamic>> createBulkPjp({
     required int userId,
     required int createdById,
     required List<String> dealerIds,
     required DateTime baseDate,
     required int batchSizePerDay,
-    required String areaToBeVisited, // This is the default "area" string
+    
+    // --- ✅ THIS IS THE FIX ---
+    // We are reverting to match your LIVE server's schema
+    required String areaToBeVisited, // The live server requires this
     String? description,
-    String status = 'PENDING',
+    String status = 'PENDING', // The live server accepts this
+    // 'verificationStatus' is REMOVED because the live server rejects it
+    // --- END FIX ---
   }) async {
-    // 1. Create the final body matching the server's `bulkSchema`
+    
+    // --- ✅ THIS IS THE FIX ---
+    // This body now matches your server's LIVE (old) schema
     final body = {
       'userId': userId,
       'createdById': createdById,
       'dealerIds': dealerIds,
-      'baseDate': baseDate.toIso8601String().split('T').first, // YYYY-MM-DD
+      'baseDate': baseDate.toIso8601String().split('T').first,
       'batchSizePerDay': batchSizePerDay,
       'areaToBeVisited': areaToBeVisited,
       'description': description,
       'status': status,
     };
+    // 'verificationStatus' is NOT sent
+    // --- END FIX ---
     
-    // 2. Remove nulls, just in case (though `description` is the only one)
     body.removeWhere((key, value) => value == null);
-
-    // 3. --- 🚨 CRITICAL FIX ---
-    // We cannot use the generic `_post` helper because the server's response
-    // for `bulkpjp` (e.g., `{"success": true, "totalRowsCreated": 80}`)
-    // does *not* have a `data` field, which `_post` expects.
-    // We must make a custom call.
     
     final url = Uri.parse('$_baseUrl/api/bulkpjp');
     dev.log('POST (Bulk): $url', name: 'ApiService');
@@ -542,13 +515,12 @@ class ApiService {
             headers: {'Content-Type': 'application/json; charset=UTF-8'},
             body: jsonEncode(body),
           )
-          .timeout(const Duration(seconds: 90)); // Increased timeout for bulk op
+          .timeout(const Duration(seconds: 90));
           
       final jsonData = jsonDecode(response.body);
       
       if (response.statusCode == 201) {
          if (jsonData['success'] == true) {
-          // Return the whole success body: {"success": true, "totalRowsCreated": ...}
           return jsonData;
         } else {
           throw Exception(jsonData['error'] ?? 'API returned success: false');
@@ -566,14 +538,59 @@ class ApiService {
       rethrow;
     }
   }
-  // --- END NEW FUNCTION ---
 
+  /// Updates a PJP (e.g., changing its journey status to 'started')
   Future<Pjp> updatePjp(String pjpId, Map<String, dynamic> data) async {
     return _patch('pjp/$pjpId', data, (json) => Pjp.fromJson(json));
   }
 
+  /// Deletes a PJP
   Future<void> deletePjp(String pjpId) => _delete('pjp/$pjpId');
-  // --- (All other methods for Tasks, Leave, DVR, etc. are UNCHANGED) ---
+
+  // --- (All other methods are unchanged) ---
+  
+  // --- ATTENDANCE METHODS ---
+  Future<List<Attendance>> fetchAttendanceForUser(
+    int userId, {
+    String? startDate,
+    String? endDate,
+  }) async {
+    final queryParams = <String, String>{
+      if (startDate != null) 'startDate': startDate,
+      if (endDate != null) 'endDate': endDate,
+    };
+    final endpoint = Uri(
+      path: 'attendance/user/$userId',
+      queryParameters: queryParams.isEmpty ? null : queryParams,
+    ).toString();
+    return _get(
+      endpoint,
+      (json) =>
+          (json as List).map((item) => Attendance.fromJson(item)).toList(),
+    );
+  }
+  Future<Attendance> fetchTodaysAttendance(int userId) {
+    return _get(
+      'attendance/user/$userId/today',
+      (json) => Attendance.fromJson(json),
+    );
+  }
+  Future<Attendance> checkIn(Map<String, dynamic> checkInData) async {
+    return _post(
+      'attendance/check-in',
+      checkInData,
+      (json) => Attendance.fromJson(json),
+    );
+  }
+  Future<Attendance> checkOut(Map<String, dynamic> checkOutData) async {
+    return _post(
+      'attendance/check-out',
+      checkOutData,
+      (json) => Attendance.fromJson(json),
+    );
+  }
+
+  // --- DAILY TASK METHODS ---
   Future<List<DailyTask>> fetchDailyTasksForUser(
     int userId, {
     String? startDate,
@@ -594,7 +611,16 @@ class ApiService {
       (json) => (json as List).map((item) => DailyTask.fromJson(item)).toList(),
     );
   }
+  Future<DailyTask> createDailyTask(DailyTask task) async {
+    return _post(
+      'daily-tasks',
+      task.toJson(),
+      (json) => DailyTask.fromJson(json),
+    );
+  }
+  Future<void> deleteDailyTask(String taskId) => _delete('daily-tasks/$taskId');
 
+  // --- LEAVE APPLICATION METHODS ---
   Future<List<LeaveApplication>> fetchLeaveApplicationsForUser(
     int userId, {
     String? startDate,
@@ -617,34 +643,19 @@ class ApiService {
           .toList(),
     );
   }
-
-  Future<List<Attendance>> fetchAttendanceForUser(
-    int userId, {
-    String? startDate,
-    String? endDate,
-  }) async {
-    final queryParams = <String, String>{
-      if (startDate != null) 'startDate': startDate,
-      if (endDate != null) 'endDate': endDate,
-    };
-    final endpoint = Uri(
-      path: 'attendance/user/$userId',
-      queryParameters: queryParams.isEmpty ? null : queryParams,
-    ).toString();
-    return _get(
-      endpoint,
-      (json) =>
-          (json as List).map((item) => Attendance.fromJson(item)).toList(),
+  Future<LeaveApplication> createLeaveApplication(
+    LeaveApplication leaveApp,
+  ) async {
+    return _post(
+      'leave-applications',
+      leaveApp.toJson(),
+      (json) => LeaveApplication.fromJson(json),
     );
   }
+  Future<void> deleteLeaveApplication(String leaveId) =>
+      _delete('leave-applications/$leaveId');
 
-  Future<Attendance> fetchTodaysAttendance(int userId) {
-    return _get(
-      'attendance/user/$userId/today',
-      (json) => Attendance.fromJson(json),
-    );
-  }
-
+  // --- REPORTING METHODS (DVR, TVR, Competition) ---
   Future<List<DailyVisitReport>> fetchDvrsForUser(
     int userId, {
     String? startDate,
@@ -669,7 +680,15 @@ class ApiService {
           .toList(),
     );
   }
-
+  Future<DailyVisitReport> createDvr(DailyVisitReport dvr) async {
+    return _post(
+      'daily-visit-reports',
+      dvr.toJson(),
+      (json) => DailyVisitReport.fromJson(json),
+    );
+  }
+  Future<void> deleteDvr(String dvrId) =>
+      _delete('daily-visit-reports/$dvrId');
   Future<List<TechnicalVisitReport>> fetchTvrsForUser(
     int userId, {
     String? startDate,
@@ -694,39 +713,6 @@ class ApiService {
           .toList(),
     );
   }
-
-  Future<Attendance> checkIn(Map<String, dynamic> checkInData) async {
-    return _post(
-      'attendance/check-in',
-      checkInData,
-      (json) => Attendance.fromJson(json),
-    );
-  }
-
-  Future<Attendance> checkOut(Map<String, dynamic> checkOutData) async {
-    return _post(
-      'attendance/check-out',
-      checkOutData,
-      (json) => Attendance.fromJson(json),
-    );
-  }
-
-  Future<DailyTask> createDailyTask(DailyTask task) async {
-    return _post(
-      'daily-tasks',
-      task.toJson(),
-      (json) => DailyTask.fromJson(json),
-    );
-  }
-
-  Future<DailyVisitReport> createDvr(DailyVisitReport dvr) async {
-    return _post(
-      'daily-visit-reports',
-      dvr.toJson(),
-      (json) => DailyVisitReport.fromJson(json),
-    );
-  }
-
   Future<TechnicalVisitReport> createTvr(TechnicalVisitReport tvr) async {
     return _post(
       'technical-visit-reports',
@@ -734,17 +720,8 @@ class ApiService {
       (json) => TechnicalVisitReport.fromJson(json),
     );
   }
-
-  Future<LeaveApplication> createLeaveApplication(
-    LeaveApplication leaveApp,
-  ) async {
-    return _post(
-      'leave-applications',
-      leaveApp.toJson(),
-      (json) => LeaveApplication.fromJson(json),
-    );
-  }
-
+  Future<void> deleteTvr(String tvrId) =>
+      _delete('technical-visit-reports/$tvrId');
   Future<CompetitionReport> createCompetitionReport(
     CompetitionReport report,
   ) async {
@@ -754,14 +731,6 @@ class ApiService {
       (json) => CompetitionReport.fromJson(json),
     );
   }
-
-  Future<void> deleteDailyTask(String taskId) => _delete('daily-tasks/$taskId');
-  Future<void> deleteDvr(String dvrId) =>
-      _delete('daily-visit-reports/$dvrId');
-  Future<void> deleteTvr(String tvrId) =>
-      _delete('technical-visit-reports/$tvrId');
-  Future<void> deleteLeaveApplication(String leaveId) =>
-      _delete('leave-applications/$leaveId');
   Future<void> deleteSalesOrder(String orderId) =>
       _delete('sales-orders/$orderId');
 }

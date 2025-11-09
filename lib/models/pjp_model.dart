@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-// --- Helper functions are unchanged ---
+// --- Helper functions ---
 Pjp pjpFromJson(String str) => Pjp.fromJson(json.decode(str));
 String pjpToJson(Pjp data) => json.encode(data.toJson());
 
@@ -9,15 +9,17 @@ class Pjp {
   final int userId;
   final int createdById;
   final DateTime planDate;
-  final String status;
-  final String areaToBeVisited; // Kept for existing logic
-  final String? description;
   
-  // --- ✅ UPGRADED FIELDS ---
-  final String? dealerId; // This is what the server needs
-  final String? dealerName; // This is useful for display
-  // --- END UPGRADE ---
-
+  /// The JOURNEY status (e.g., 'pending', 'started', 'completed')
+  final String status; 
+  
+  /// The ADMIN approval status (e.g., 'PENDING', 'VERIFIED')
+  final String? verificationStatus;
+  
+  final String areaToBeVisited;
+  final String? description;
+  final String? dealerId;
+  final String? dealerName;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -28,22 +30,15 @@ class Pjp {
     required this.planDate,
     required this.status,
     required this.areaToBeVisited,
-    
-    // --- ✅ UPGRADED CONSTRUCTOR ---
+    this.verificationStatus, // <-- ADDED
+    this.description,
     this.dealerId,
     this.dealerName,
-    // --- END UPGRADE ---
-
-    this.description,
     required this.createdAt,
     required this.updatedAt,
   });
 
-  /// ✅ Handles both camelCase and snake_case from server
-  /// ✅ Now smartly parses dealer info
   factory Pjp.fromJson(Map<String, dynamic> json) {
-    
-    // Smartly find dealer info, whether it's flat or nested
     String? foundDealerId = json['dealerId']?.toString();
     String? foundDealerName = json['dealerName']?.toString();
 
@@ -57,35 +52,33 @@ class Pjp {
       userId: json['userId'] ?? 0,
       createdById: json['createdById'] ?? 0,
       planDate: DateTime.tryParse(json['planDate'] ?? '') ?? DateTime.now(),
-      status: json['status'] ?? 'pending', // Default to pending
+      status: json['status'] ?? 'pending',
       areaToBeVisited: json['areaToBeVisited'] ?? '',
-      
-      // --- ✅ UPGRADED ---
+      description: json['description'],
       dealerId: foundDealerId,
       dealerName: foundDealerName,
-      // --- END UPGRADE ---
       
-      description: json['description'],
+      // --- ✅ THIS IS THE FIX ---
+      // Read the correct field from the server
+      verificationStatus: json['verificationStatus'],
+      // ---
+      
       createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
       updatedAt: DateTime.tryParse(json['updatedAt'] ?? '') ?? DateTime.now(),
     );
   }
-
-  /// ✅ Proper copyWith
+  
   Pjp copyWith({
     String? id,
     int? userId,
     int? createdById,
     DateTime? planDate,
     String? status,
+    String? verificationStatus, // <-- ADDED
     String? areaToBeVisited,
     String? description,
-    
-    // --- ✅ UPGRADED ---
     String? dealerId,
     String? dealerName,
-    // --- END UPGRADE ---
-
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -95,40 +88,39 @@ class Pjp {
       createdById: createdById ?? this.createdById,
       planDate: planDate ?? this.planDate,
       status: status ?? this.status,
+      verificationStatus: verificationStatus ?? this.verificationStatus, // <-- ADDED
       areaToBeVisited: areaToBeVisited ?? this.areaToBeVisited,
       description: description ?? this.description,
-      
-      // --- ✅ UPGRADED ---
       dealerId: dealerId ?? this.dealerId,
       dealerName: dealerName ?? this.dealerName,
-      // --- END UPGRADE ---
-      
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
-  /// ✅ Matches server camelCase schema
-  /// ✅ Now sends the correct dealerId
   Map<String, dynamic> toJson() {
     return {
       'userId': userId,
       'createdById': createdById,
       'planDate': planDate.toIso8601String().split('T').first,
-      'status': status,
-      'areaToBeVisited': areaToBeVisited, // Still sent for compatibility
-      'description': description,
       
-      // --- ✅ UPGRADED ---
-      'dealerId': dealerId, // Send the ID
-      // 'dealerName': dealerName, // No need to send name, server has it
-      // --- END UPGRADE ---
+      // --- ✅ THIS IS THE FIX ---
+      // Send BOTH fields, as required by the pjpInputSchema
+      'status': status,
+      'verificationStatus': verificationStatus,
+      // ---
+      
+      'areaToBeVisited': areaToBeVisited,
+      'description': description,
+      'dealerId': dealerId,
     };
   }
 }
+
+/// A helper class to hold separated PJP lists for the UI.
 class PjpData {
   final List<Pjp> pendingPjps;
-  final List<Pjp> verifiedPjps; // We use 'verified' to match your new ApiService function
+  final List<Pjp> verifiedPjps; 
 
   PjpData({
     required this.pendingPjps,
