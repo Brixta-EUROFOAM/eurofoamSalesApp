@@ -471,7 +471,7 @@ class ApiService {
       ),
       fetchPjpsForUser(
         userId,
-        status: 'VERIFIED', // Use the new backend status
+        status: 'APPROVED', // Use the new backend status
         startDate: startDate,
         endDate: endDate,
         dealerId: dealerId,

@@ -6,7 +6,6 @@ import 'package:assetarchiverflutter/screens/employee_management/employee_profil
 import 'package:assetarchiverflutter/screens/employee_management/employee_pjp_screen.dart';
 import 'package:assetarchiverflutter/screens/employee_management/employee_journey_screen.dart';
 import 'package:assetarchiverflutter/screens/employee_management/employee_salesorder_screen.dart';
-// import 'package:assetarchiverflutter/widgets/reusableglasscard.dart'; // <-- 1. REMOVED
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:assetarchiverflutter/screens/forms/create_dvr.dart';
@@ -15,7 +14,6 @@ import 'package:assetarchiverflutter/screens/forms/create_leave_form.dart';
 import 'package:assetarchiverflutter/screens/forms/create_competition_form.dart';
 import 'package:assetarchiverflutter/screens/forms/create_daily_task_form.dart';
 import 'package:assetarchiverflutter/screens/forms/add_dealer_form.dart';
-// No theme provider import is needed here
 
 // --- (NavProvider class remains exactly the same) ---
 class NavProvider with ChangeNotifier {
@@ -41,6 +39,7 @@ class NavProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // --- These are now handled by GlobalKeys, but are fine to leave ---
   void refreshDashboard() {
     debugPrint("Refreshing Dashboard...");
   }
@@ -63,6 +62,11 @@ class _NavScreenState extends State<NavScreen> {
   final GlobalKey<EmployeeDashboardScreenState> _dashboardKey =
       GlobalKey<EmployeeDashboardScreenState>();
 
+  // --- ✅ FIX: Add a GlobalKey for the PJP Screen ---
+  final GlobalKey<EmployeePJPScreenState> _pjpKey =
+      GlobalKey<EmployeePJPScreenState>();
+  // --- END FIX ---
+
   @override
   void initState() {
     super.initState();
@@ -77,8 +81,6 @@ class _NavScreenState extends State<NavScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // --- 2. REMOVED all the 'isDarkMode' and 'glassColor' logic ---
-
     return ChangeNotifierProvider.value(
       value: _navProvider,
       child: Consumer<NavProvider>(
@@ -93,13 +95,17 @@ class _NavScreenState extends State<NavScreen> {
 
           final pages = <Widget>[
             EmployeeDashboardScreen(
-              key: _dashboardKey,
+              key: _dashboardKey, // This key is used for refresh
               employee: widget.employee,
             ),
             EmployeePJPScreen(
+              // --- ✅ FIX: Pass the key to the PJP Screen ---
+              key: _pjpKey,
+              // --- END FIX ---
               employee: widget.employee,
               onStartJourney: provider.startJourney,
               onPjpCreated: () {
+                // When a PJP is created, refresh the dashboard too
                 _dashboardKey.currentState?.refreshData();
                 provider.refreshDashboard();
               },
@@ -114,22 +120,13 @@ class _NavScreenState extends State<NavScreen> {
           ];
 
           return Scaffold(
-            // --- 3. This is now a standard, theme-aware AppBar ---
-            // It will get its color/style from app_theme.dart
             appBar: AppBar(
               title: Text(pageTitles[provider.selectedIndex]),
             ),
-            
-            // --- 4. The drawer is now standard ---
             drawer: _buildDrawer(context, widget.employee),
-            
-            // --- ✅ THEME FIX: Rebuilt the Scaffold Body ---
-            // This Stack is how we make the nav bar float
             body: Stack(
               children: [
                 IndexedStack(index: provider.selectedIndex, children: pages),
-                
-                // This is the floating nav bar
                 Positioned(
                   bottom: 0,
                   left: 0,
@@ -138,80 +135,83 @@ class _NavScreenState extends State<NavScreen> {
                 ),
               ],
             ),
-            // We set this to null because it's now part of the body Stack
-            bottomNavigationBar: null,
-            // --- END FIX ---
+            bottomNavigationBar: null, // Handled by the Stack
           );
         },
       ),
     );
   }
 
-  // --- ✅ NEW: Floating, Rounded Nav Bar ---
-  // This widget creates the "floating" bar from your screenshot
   Widget _buildFloatingNavBar(BuildContext context, NavProvider provider) {
-    final theme = Theme.of(context);
-    
     return Card(
-      // This margin makes it "float"
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 24), 
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       elevation: 8,
       shadowColor: Colors.black.withOpacity(0.3),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24.0), // Rounded corners
+        borderRadius: BorderRadius.circular(24.0),
       ),
-      clipBehavior: Clip.antiAlias, // This cuts the corners
+      clipBehavior: Clip.antiAlias,
       child: BottomNavigationBar(
-        // We make the bar transparent so the Card's color (from the theme) shows
         backgroundColor: Colors.transparent,
-        elevation: 0, 
+        elevation: 0,
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.checklist_rtl), label: 'PJP'),
-          BottomNavigationBarItem(icon: Icon(Icons.shopping_cart_outlined), label: 'Sales Order'),
-          BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Journey'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.shopping_cart_outlined), label: 'Sales Order'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.map_outlined), label: 'Journey'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
         currentIndex: provider.selectedIndex,
         onTap: (index) {
-          if (index == 0) provider.refreshDashboard();
-          if (index == 1) provider.refreshPjpList();
+          // --- ✅ FIX: Call refresh methods directly using the keys ---
+          if (index == 0) _dashboardKey.currentState?.refreshData();
+          if (index == 1) _pjpKey.currentState?.refreshPjpList();
+          // --- END FIX ---
           provider.changePage(index);
         },
-        // All styling (colors, labels) now comes from app_theme.dart
-        // (including the `show...Labels: true` fix we just made)
       ),
     );
   }
-  // --- END NEW ---
 
-  // --- (All dialog functions remain the same) ---
+  // --- DIALOG FUNCTIONS (WITH UI IMPROVEMENT) ---
+
   void _showAddDealerDialog(BuildContext context, Employee employee) {
-    print('>>> _showAddDealerDialog called in nav_screen.dart. Trying to show AddDealerForm...');
+    print(
+        '>>> _showAddDealerDialog called in nav_screen.dart. Trying to show AddDealerForm...');
     showDialog(
       context: context,
-      builder: (_) => Dialog(
-        backgroundColor: const Color.fromARGB(184, 193, 16, 16),
+      builder: (dialogContext) => Dialog(
+        // --- ✅ UI FIX: Use theme surface color instead of hardcoded red ---
+        backgroundColor: Theme.of(dialogContext).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24.0),
         ),
+        clipBehavior: Clip.antiAlias,
+        // --- END UI FIX ---
         child: AddDealerForm(employee: employee),
       ),
     );
   }
-   void _showCreateDvrDialog(BuildContext context, Employee employee) {
+
+  void _showCreateDvrDialog(BuildContext context, Employee employee) {
     showDialog(
       context: context,
-      builder: (_) => Dialog(
-        backgroundColor: const Color.fromARGB(0, 140, 6, 6),
+      builder: (dialogContext) => Dialog(
+        // --- ✅ UI FIX: Use theme surface color instead of hardcoded red ---
+        backgroundColor: Theme.of(dialogContext).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24.0),
         ),
+        clipBehavior: Clip.antiAlias,
+        // --- END UI FIX ---
         child: CreateDvrScreen(employee: employee),
       ),
     );
   }
 
+  // --- These forms provide their own background, so transparent is correct ---
   void _showCreateTvrDialog(BuildContext context, Employee employee) {
     showDialog(
       context: context,
@@ -256,21 +256,15 @@ class _NavScreenState extends State<NavScreen> {
     );
   }
 
-
-  // --- ✅ NEW: Prettier, Themed Drawer ---
-  // This replaces your old _buildGlassDrawer with a standard,
-  // professional-looking UserAccountsDrawerHeader.
+  // --- (Drawer code remains the same, it's already theme-aware) ---
   Widget _buildDrawer(BuildContext context, Employee employee) {
-    // Get all text styles directly from the theme
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
     return Drawer(
-      // The background color is now controlled by your theme
       child: ListView(
         padding: EdgeInsets.zero,
         children: [
-          // This is a much cleaner, standard header that matches your screenshot
           UserAccountsDrawerHeader(
             accountName: Text(
               employee.displayName,
@@ -285,88 +279,57 @@ class _NavScreenState extends State<NavScreen> {
                 color: theme.colorScheme.onPrimary.withOpacity(0.8),
               ),
             ),
-            // This pulls the blue from your "Good Morning" card
             decoration: BoxDecoration(
               color: theme.colorScheme.primary,
             ),
-            // You can add a CircleAvatar here if you have a user image
-            // currentAccountPicture: CircleAvatar(
-            //   backgroundColor: theme.colorScheme.background,
-            //   child: Text(
-            //     "RH", // You'd getInitials() here
-            //     style: TextStyle(color: theme.colorScheme.primary),
-            //   ),
-            // ),
           ),
-          _buildDrawerActionItem(
-              context,
+          _buildDrawerActionItem(context,
               icon: Icons.person_add_alt,
-              text: 'ADD DEALER',
-              onTap: () {
-                 print('>>> ADD DEALER button tapped!');
-                 Navigator.pop(context);
-                 _showAddDealerDialog(context, employee);
-              }
-            ),
-            _buildDrawerActionItem(
-              context,
+              text: 'ADD DEALER', onTap: () {
+            print('>>> ADD DEALER button tapped!');
+            Navigator.pop(context);
+            _showAddDealerDialog(context, employee);
+          }),
+          _buildDrawerActionItem(context,
               icon: Icons.description_outlined,
-              text: 'CREATE DVR',
-              onTap: () {
-                Navigator.pop(context);
-                // --- ✅ BUG FIX: Removed stray print statement ---
-                _showCreateDvrDialog(context, employee);
-              }
-            ),
-            _buildDrawerActionItem(
-              context,
-              icon: Icons.description,
-              text: 'CREATE TVR',
-               onTap: () {
-                Navigator.pop(context);
-                _showCreateTvrDialog(context, employee);
-              }
-            ),
-            _buildDrawerActionItem(
-              context,
+              text: 'CREATE DVR', onTap: () {
+            Navigator.pop(context);
+            _showCreateDvrDialog(context, employee);
+          }),
+          _buildDrawerActionItem(context,
+              icon: Icons.description, text: 'CREATE TVR', onTap: () {
+            Navigator.pop(context);
+            _showCreateTvrDialog(context, employee);
+          }),
+          _buildDrawerActionItem(context,
               icon: Icons.assessment_outlined,
-              text: 'COMPETETION FORM',
-              onTap: () {
-                Navigator.pop(context);
-                _showCompetitionFormDialog(context, employee);
-              }
-            ),
-            _buildDrawerActionItem(
-              context,
+              text: 'COMPETETION FORM', onTap: () {
+            Navigator.pop(context);
+            _showCompetitionFormDialog(context, employee);
+          }),
+          _buildDrawerActionItem(context,
               icon: Icons.account_box_sharp,
-              text: 'APPLY FOR LEAVE',
-              onTap: () {
-                Navigator.pop(context);
-                _showApplyForLeaveDialog(context, employee);
-              }
-            ),
-            _buildDrawerActionItem(
-              context,
+              text: 'APPLY FOR LEAVE', onTap: () {
+            Navigator.pop(context);
+            _showApplyForLeaveDialog(context, employee);
+          }),
+          _buildDrawerActionItem(context,
               icon: Icons.task_alt,
-              text: 'CREATE DAILY TASK',
-              onTap: () {
-                Navigator.pop(context);
-                _showCreateDailyTaskDialog(context, employee);
-              }
-            ),
+              text: 'CREATE DAILY TASK', onTap: () {
+            Navigator.pop(context);
+            _showCreateDailyTaskDialog(context, employee);
+          }),
         ],
       ),
     );
   }
 
-  // --- This widget is now fully theme-aware ---
   Widget _buildDrawerActionItem(
     BuildContext context, {
     required IconData icon,
     required String text,
     VoidCallback? onTap,
   }) {
-    // Get colors directly from the theme
     final theme = Theme.of(context);
     final iconColor = theme.colorScheme.onSurface.withOpacity(0.7);
     final textColor = theme.colorScheme.onSurface;

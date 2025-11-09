@@ -258,21 +258,32 @@ This directory holds the five core, full-page screens that are displayed in the 
     2.  **PJP Overview:** The screen uses a `FutureBuilder` tied to `_pjpFuture`. This future is initialized in `refreshData()` (which is called on `initState` and `didChangeAppLifecycleState`) to call `_apiService.fetchPjpsForUser(...)` with a `status: 'pending'`. The `FutureBuilder` then renders a `Card` summarizing the number of pending PJPs for the day.
     3.  **Lifecycle Management:** The widget uses `WidgetsBindingObserver` to listen for app lifecycle events. When the app `resumed` (e.g., the user brings it back from the background), it automatically calls `refreshData()` to ensure the PJP list is up-to-date.
 
-#### `lib/screens/employee_management/employee_pjp_screen.dart` (PJP Tab)
+###'lib/screens/employee_management/employee_pjp_screen.dart (PJP Tab)
+Purpose: The "PJP" tab (index 1). It allows the user to view, create (singly or in bulk), and start their Personal Journey Plans.
 
-* **Purpose:** The "PJP" tab (index 1). It allows the user to view, create (singly or in bulk), and *start* their Personal Journey Plans.
-* **Core Logic:**
-    1.  **List PJPs:** The main body is a `FutureBuilder` that awaits `_pjpDataFuture`. This future is populated by `_apiService.fetchPendingAndVerifiedPjps(userId: ...)`. This API call returns a `PjpData` object containing two separate lists: `pendingPjps` and `verifiedPjps`.
-    2.  **UI (Pending vs. Verified):** The `ListView.builder` dynamically builds the list. It first shows a `_PendingPjpSummaryCard` with the count of pending PJPs. Then, it shows a `_PjpSectionHeader` followed by the list of "Verified" PJPs. Only "Verified" PJPs can be started.
-    3.  **Start Journey (Swipe Action):** Each "Verified" PJP `_PjpCard` is wrapped in a `Slidable` widget. This widget provides the "swipe-to-reveal" action. Swiping reveals a `SlidableAction` button labeled "Start Journey".
-    4.  **`_startJourneyForPjp(Pjp pjp)`:** This function is the "start" trigger.
-        * It parses the PJP's destination, which is stored in the `areaToBeVisited` string in a "Name|Latitude|Longitude" format.
-        * It calls `await _apiService.updatePjp(pjp.id, {'status': 'started'})` to notify the backend that the journey is underway.
-        * Critically, it then calls `widget.onStartJourney(...)`. This function was passed down from `nav_screen.dart`. It sends a map of the journey data (the `pjpId`, `displayName`, and `LatLng` destination) *up* to the `NavProvider`, which triggers the app to automatically switch to the "Journey" tab.
-    5.  **Create PJP:** A `FloatingActionButton` on this screen calls `_showPjpOptions`. This modal now gives a choice:
-        * **"Add Single Visit"**: Shows the `AddPjpForm` (a `StatefulWidget` defined in the *same file*) in a modal bottom sheet. This form fetches all dealers (`_apiService.fetchDealers`), lets the user pick one, and on submit, calls `_apiService.createPjp` with `status: 'PENDING'`.
-        * **"Create Bulk Monthly Plan"**: Pushes a new `MaterialPageRoute` for the `BulkPjpWizardScreen` (also in the same file). This screen is a `Stepper` that lets the user select multiple dates on a `TableCalendar` (Step 1) and then assign dealers to those dates (Step 2) using a `_DealerSelectionDialog`. On submit, it calls the `api_service.createBulkPjp` endpoint.
+Core Logic (REFACTORED):
 
+Encapsulation (NEW): This file is now a clean "container" screen. All complex UI and logic have been moved to separate, dedicated files to improve management and readability.
+
+List PJPs: The main body is a FutureBuilder that awaits _pjpDataFuture. This future is populated by _apiService.fetchPendingAndVerifiedPjps(userId: int.parse(widget.employee.id)). This API call returns a PjpData object containing two separate lists: pendingPjps and verifiedPjps.
+
+UI (Refactored): The ListView.builder now gets its UI from imported widgets (PjpCard, PendingPjpSummaryCard, PjpSectionHeader) located in the new lib/widgets/pjp_cards.dart file. The PjpCard itself has been fixed to get the dealer's name from the pjp.areaToBeVisited string, as the pjp.dealer object no longer exists on the model.
+
+Start Journey (Swipe Action): Each "Verified" PJP PjpCard is wrapped in a Slidable widget. Swiping reveals a SlidableAction button labeled "Start Journey".
+
+_startJourneyForPjp(Pjp pjp): This function is the "start" trigger.
+
+It parses the PJP's destination, which is stored in the areaToBeVisited string in a "Name|Latitude|Longitude" format.
+
+It calls await _apiService.updatePjp(pjp.id, {'status': 'started'}) to notify the backend.
+
+Critically, it then calls widget.onStartJourney(...). This function was passed down from nav_screen.dart. It sends a map of the journey data (the pjpId, displayName, and LatLng destination) up to the NavProvider, which triggers the app to automatically switch to the "Journey" tab.
+
+Create PJP (Refactored): A FloatingActionButton on this screen calls _showPjpOptions. This modal now gives a choice:
+
+"Add Single Visit": Calls _showAddPjpForm, which now opens the lib/screens/forms/add_pjp_form.dart widget in a modal bottom sheet.
+
+"Create Bulk Monthly Plan": Calls _showBulkPjpWizard, which now navigates (MaterialPageRoute) to the new lib/screens/employee_management/bulk_pjp_wizard_screen.dart file.
 #### `lib/screens/employee_management/employee_salesorder_screen.dart` (Sales Order Tab)
 
 * **Purpose:** The "Sales Order" tab (index 2). It's a fully functional, self-contained AI-powered chatbot ("CemTemBot") for helping the user create sales orders.
@@ -387,3 +398,5 @@ This directory holds all the pop-up data entry forms. These are all `StatefulWid
 * **Core Logic:**
     1.  This is a standard `Form` widget with `TextFormField`s (for brand name, billing, etc.) and a `DropdownButtonFormField` (for "Schemes Yes/No").
     2.  **Submission:** `_submitForm` validates the controllers, parses the `_avgSchemeCostController.text` to a `double`, bundles all the data into a `CompetitionReport` object, and calls `_apiService.createCompetitionReport`.
+
+
