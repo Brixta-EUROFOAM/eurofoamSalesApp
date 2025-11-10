@@ -2087,3 +2087,87 @@ Here is a summary of all the changes we made, formatted for your `WORKING.MD` fi
 ---
 
 Seriously great work. Now go get that sleep.
+
+changes 5:
+Here is a complete breakdown of everything we've done. We did a *ton* of work to take this app from a buggy state to a "smart," professional tool.
+
+---
+
+### 1. The Core PJP System (Bug Fixes)
+
+This was the biggest and most critical set of fixes.
+
+* **Fixed the "Vanishing PJPs" Bug (Part 1):** We fixed a massive bug where the app was confusing the **Admin Approval Status** (e.g., `VERIFIED`) with the **Journey Status** (e.g., `pending`). We fixed this across 5 files (`pjp_model.dart`, `api_service.dart`, `add_pjp_form.dart`, `bulk_pjp_wizard_screen.dart`, `pjp_cards.dart`) to use the correct `verificationStatus` field.
+* **Fixed the "Vanishing PJPs" Bug (Part 2):** After that, we discovered your server *actually* uses a single `status` column with `'PENDING'` and `'APPROVED'`. We fixed `api_service.dart` again to query for these *correct* values, which finally made your approved PJPs appear.
+
+---
+
+### 2. The "Smart" Upgrades (App Logic)
+
+We made the app *think* for the user instead of just showing lists.
+
+* **Smart Dashboard (`employee_dashboard_screen.dart`):**
+    * Rebuilt the PJP logic from scratch.
+    * It now fetches and displays three distinct, relevant lists: **"Journey in Progress"** (`status: 'started'`), **"Upcoming Today"** (today's date + `'APPROVED'`), and **"Tomorrow's Plan"** (tomorrow's date + `'APPROVED'`).
+* **Smart PJP Screen (`employee_pjp_screen.dart`):**
+    * No longer shows the entire month's list.
+    * We modified `refreshPjpList` and `_handleRefresh` to pass **today's date** to the API, so the user only sees the PJPs that are relevant *today*.
+* **Smart PJP Wizard (`bulk_pjp_wizard_screen.dart`):**
+    * **Location-Aware:** The wizard now gets the user's current location on launch and prioritizes their local region at the top of the dealer list.
+    * **"Smart Scheduler" Algorithm:** We completely replaced the "dumb" Step 2. The user now selects their dates and a "master pool" of dealers. We built a scheduler algorithm that automatically creates a balanced, 8-visit-per-day plan, ensuring dealers are spaced out evenly.
+
+---
+
+### 3. The "Lively" UI Upgrades (Look & Feel)
+
+We took the app from "shit and static" to "industry standard."
+
+* **PJP "Deck of Cards" (`employee_pjp_screen.dart`):**
+    * Replaced the boring `ListView` with an animated `Stack` of cards.
+    * The deck **expands on tap**.
+    * It **auto-collapses after 5 seconds** (using a `Timer`).
+    * We added a **"COLLAPSE" button** for manual control.
+* **"Smart" PJP Cards (`pjp_cards.dart`):**
+    * Fixed the bug where all bulk PJPs showed "Monthly PJP Plan."
+    * The `PjpCard` is now a `StatefulWidget` that **fetches the dealer's name from the API** if it's missing, guaranteeing the correct name is always shown.
+* **Journey Screen UI (`employee_journey_screen.dart`):**
+    * Replaced the "rudimentary" floating text fields.
+    * We built a modern, **`DraggableScrollableSheet`** (sliding bottom panel) to hold all controls.
+    * The panel's UI **changes its state** (`_buildIdleJourneyPanel` vs. `_buildActiveJourneyPanel`) depending on if the journey is active.
+
+---
+
+### 4. The "Smart" DVR & Geofence (Business Logic)
+
+We just finished this. We automated the entire Visit-to-Report workflow.
+
+* **Geofence Calibration (`create_dvr.dart` & `api_service.dart`):**
+    * This was your idea to fix "wonkey" locations.
+    * We added `updateDealerGeofence` to the API.
+    * The DVR form now uses `SharedPreferences` as a "memory" to see if a dealer has been calibrated.
+    * On the **first visit** to *any* dealer, the `_submitDvr` function **automatically updates the dealer's geofence** with the user's current, accurate GPS location.
+* **Auto-Open DVR (`pjp_screen` -> `nav_screen` -> `journey_screen` -> `dvr_form`):**
+    * We created a "handshake" between all your main screens.
+    * When a journey ends, `onJourneyCompleted` is called, which tells the `NavScreen` to **immediately open the `CreateDvrScreen`** in a dialog.
+* **DVR Business Logic (`create_dvr.dart`):**
+    * **Auto-fill:** The new DVR form opens with the `Dealer`, `PJP`, and `checkInTime` all pre-filled from the journey.
+    * **10-Minute Minimum:** The `_submitDvr` function now has a check that **throws an error** if the user tries to submit a report less than 10 minutes after check-in.
+    * **60-Minute Auto-Submit:** We added a `Timer` that **auto-submits a partial report** if the user forgets to check out after 60 minutes.
+    * **Geofence Lock:** The existing 200m distance check now also serves as your geofence lock, preventing submission if the user has left the area.
+
+---
+
+### 5. Code Cleanup & Bug Squashing
+
+* **Simplified Dealer Form (`add_dealer_form.dart`):**
+    * We **removed ~80% of the fields** from this "monster" form, keeping only the fields your schema marked as `.notNull()`.
+    * The form is now simple, fast, and relies on the "Get Location" button.
+* **Countless Bug Fixes:**
+    * We fixed all the compile errors you found, including:
+        * Missing `import` statements (`EmployeePJPScreenState not found`).
+        * Undefined methods (`copyWith` on `Dealer`).
+        * Undefined parameters (missing `pjpId` in the `DailyVisitReport` constructor).
+        * `Uri.toString()` errors.
+        * `String?` vs. `String` errors in the "Smart Scheduler."
+* **Documentation:**
+    * Absorbed and processed your `WORKING2.MD` and `JOURNEY.MD` files for full project context.
