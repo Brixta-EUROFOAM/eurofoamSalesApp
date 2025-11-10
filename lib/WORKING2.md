@@ -2016,3 +2016,74 @@ This file was showing the wrong text for pending cards.
 -----
 
 **In short: We rebuilt the entire PJP data flow, from the model to the API to the creation forms to the UI, to correctly use `verificationStatus` instead of `status` for admin approval. And it worked\!**
+
+
+changes 3:
+
+You bet. It's been a very productive night! We've fixed a ton of bugs and added some major "smart" features.
+
+Here is a summary of all the changes we made, formatted for your `WORKING.MD` file.
+
+---
+
+### Project Changes Log (Night of Nov 10, 2025)
+
+#### 1. `api_service.dart`
+* **Critical Bug Fix (Vanishing PJPs):** Identified that the server uses a single `status` column (not `verificationStatus`).
+* **Logic Change:** Modified `fetchPendingAndVerifiedPjps` to query for `status: 'PENDING'` and `status: 'APPROVED'`. This correctly fetches all pending and admin-approved PJPs, fixing the "vanishing" bug.
+* **New Function:** Added `updateDealerGeofence` to `PATCH` a dealer's `latitude`, `longitude`, and `radius`. This is for the new DVR calibration feature.
+* **Bug Fix:** Fixed `argument_type_not_assignable` errors by adding `.toString()` to all `Uri` objects before passing them to the `_get` helper.
+
+#### 2. `employee_pjp_screen.dart`
+* **New Feature (Smart View):** The screen is no longer a giant list. It now only fetches PJPs for **today's date**, creating a focused "day-by-day" view.
+* **New Feature (Lively UI):** Replaced the "Verified Visits" `ListView` with an animated, stacked "Deck of Cards" UI.
+    * The deck expands/collapses on tap.
+    * A "COLLAPSE" button was added to the section header.
+    * The deck auto-collapses after 5 seconds of inactivity.
+* **Logic Update:** When "Start Journey" is swiped, the card is now **instantly removed from the UI** (`_currentPjpData.verifiedPjps.removeWhere(...)`) for a "lively" feel *before* the refresh.
+* **Logic Update:** `_startJourneyForPjp` now correctly calls `_apiService.updatePjp` to set the *journey status* (the `status` column) to `'started'`.
+* **Bug Fix:** Fixed linter warnings for `unnecessary_set_literal` and `curly_braces_in_flow_control_structures`.
+
+#### 3. `pjp_cards.dart` (Major UI/Logic Overhaul)
+* **UI Redesign:** Replaced the "ugly" static cards with new, modern, professional designs.
+* **Critical "Smart" Fix:** Converted `PjpCard` to a `StatefulWidget`. It now fetches the dealer's name (`_apiService.fetchDealerById`) if `pjp.dealerName` is `null`.
+* **Bug Fix:** This permanently fixes the bug where all bulk PJPs showed up as "Monthly PJP Plan" or "pending". They now show the **correct dealer name**.
+* **UI:** `PjpSectionHeader` was updated to include the new `isExpanded` state and the "COLLAPSE" button.
+
+#### 4. `bulk_pjp_wizard_screen.dart` (Major Feature Upgrade)
+* **Feature ("Smart Scheduler"):** Replaced the "dumb" Step 2. The user no longer assigns 8 dealers per day.
+    1.  User selects all their **Dates**.
+    2.  User selects one **Master Pool** of all dealers.
+    3.  A new **`_generateAndSubmitSmartPlan` algorithm** runs, automatically creating a balanced plan (8 visits/day, dealers spaced out) for the user.
+* **Feature ("Location-Aware"):** The wizard now gets the user's current location (`_getCurrentRegion`) on launch.
+* **UI:** The "Select Dealer Pool" dialog (`_DealerSelectionDialog`) now **prioritizes the user's current region**, showing it at the top and expanded by default.
+* **Bug Fix:** Fixed a critical bug where `"pending"` was being saved as the `areaToBeVisited`. It now correctly saves `"Monthly PJP Plan"`.
+* **Bug Fix:** Fixed `String?` vs `String` errors for `dealer.id` in the new scheduler algorithm.
+* **Bug Fix:** Removed the unused `intl.dart` import.
+
+#### 5. `employee_dashboard_screen.dart` (Major Feature Upgrade)
+* **Feature ("Smart Dashboard"):** The dashboard is no longer a simple list of old PJPs.
+* **Logic:** It now runs 3 parallel API calls (`_fetchDashboardData`) to get:
+    1.  **Ongoing:** All PJPs with `status: 'started'`.
+    2.  **Upcoming Today:** All PJPs with `status: 'APPROVED'` for today's date.
+    3.  **Tomorrow's Plan:** All PJPs with `status: 'APPROVED'` for tomorrow's date.
+* **UI:** The `FutureBuilder` was rebuilt to display these three distinct lists in separate, clean card sections.
+
+#### 6. `create_dvr.dart` (New Feature + Bug Fix)
+* **New Feature ("Geofence Calibration"):** Implemented the "one-time calibration" feature.
+* **Logic:** Uses `SharedPreferences` to "remember" (`_isDealerCalibrated`, `_markDealerAsCalibrated`) which dealers have been calibrated.
+* **Logic:** The `_submitDvr` function now checks this "memory." On the **first visit** to any dealer, it calls `_apiService.updateDealerGeofence` with the user's current, accurate location and a 25m radius *before* submitting the report.
+* **Bug Fix:** Fixed a `copyWith` error (since `Dealer` doesn't have it) by refactoring the `_submitDvr` logic to use local variables (`dealerLat`, `dealerLon`) for the distance check.
+* **Bug Fix:** Fixed a major crash by correcting the `DailyVisitReport` constructor to match the *actual* model's parameters (e.g., `reportDate`, `location`, `todayCollectionRupees`).
+
+#### 7. `add_dealer_form.dart` (Major Refactor)
+* **UI Overhaul:** Stripped the "monster" form down. **Removed ~80% of the fields** (Godown, Residential, Bank, ID, Docs, etc.) that were not `.notNull()` in the schema.
+* **Logic:** The form now relies *only* on the "Get Current Location" button to fill the 4 required address fields.
+* **Logic:** Removed all complex, unused autocomplete logic and controllers. The form is now fast, simple, and not overwhelming.
+
+#### 8. `nav_screen.dart`
+* **Bug Fix:** Fixed the `EmployeePJPScreenState not found` compile error by adding the missing `import '.../employee_pjp_screen.dart'`.
+
+---
+
+Seriously great work. Now go get that sleep.
