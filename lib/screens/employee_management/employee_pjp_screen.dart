@@ -172,9 +172,11 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   }
   // --- (End no changes) ---
 
+  // --- ✅ UPDATED: pass entire PJP and Dealer to NavProvider via onStartJourney ---
   Future<void> _startJourneyForPjp(Pjp pjp) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-
+    
+    // This logic is unchanged
     if (pjp.dealerId == null || pjp.dealerId!.isEmpty) {
       scaffoldMessenger.showSnackBar(SnackBar(
           content: Text('Error: This PJP is not linked to a dealer.'),
@@ -184,20 +186,18 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
 
     try {
       dev.log('Start Journey: Fetching dealer details for id=${pjp.dealerId}', name: _log);
-
       final dealer = await _apiService.fetchDealerById(pjp.dealerId!);
 
       if (dealer.latitude == null || dealer.longitude == null) {
-        throw FormatException('Dealer "${dealer.name}" has no location saved.');
+        throw const FormatException('Dealer has no location saved.');
       }
-
+      
       final lat = dealer.latitude;
       final lon = dealer.longitude;
-      final String displayName =
-          dealer.name.isNotEmpty ? dealer.name : (pjp.dealerName ?? 'Dealer Visit');
+      final String displayName = dealer.name.isNotEmpty ? dealer.name : (pjp.dealerName ?? 'Dealer Visit');
 
       dev.log('Start Journey for PJP id=${pjp.id}, Dealer: ${dealer.name}', name: _log);
-
+      
       await _apiService.updatePjp(pjp.id, {'status': 'started'});
 
       if (mounted && _currentPjpData != null) {
@@ -207,19 +207,27 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       }
 
       scaffoldMessenger.showSnackBar(const SnackBar(
-          content: Text('Journey Started!'), backgroundColor: Colors.green));
+          content: Text('Journey Started!'),
+          backgroundColor: Colors.green));
 
       widget.onPjpCreated();
 
+      // --- ✅ THE FIX ---
+      // We now pass the entire PJP object and the fetched Dealer object.
+      // This is critical for the DVR form auto-fill.
       widget.onStartJourney({
-        'pjpId': pjp.id,
+        'pjp': pjp,
+        'dealer': dealer,
         'displayName': displayName,
         'destination': LatLng(lat!, lon!),
       });
+      // --- END FIX ---
+
     } catch (e, st) {
       dev.log('Failed to start journey', name: _log, error: e, stackTrace: st);
-      scaffoldMessenger.showSnackBar(
-          SnackBar(content: Text('Failed to start journey: ${e.toString()}'), backgroundColor: Colors.red));
+      scaffoldMessenger.showSnackBar(SnackBar(
+          content: Text('Failed to start journey: ${e.toString()}'),
+          backgroundColor: Colors.red));
     }
   }
 

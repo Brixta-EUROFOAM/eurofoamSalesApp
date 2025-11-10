@@ -1,8 +1,13 @@
+// lib/screens/employee_management/employee_journey_screen.dart
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:assetarchiverflutter/models/geotracking_data_model.dart';
+import 'package:assetarchiverflutter/models/pjp_model.dart';      // ✅ NEW
+import 'package:assetarchiverflutter/models/dealer_model.dart';   // ✅ NEW
+
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
@@ -19,11 +24,16 @@ class EmployeeJourneyScreen extends StatefulWidget {
   final Map<String, dynamic>? initialJourneyData;
   final VoidCallback? onDestinationConsumed;
 
+  // --- ✅ NEW CALLBACK ---
+  final Function(Pjp pjp, Dealer dealer, DateTime checkInTime)? onJourneyCompleted;
+  // ---
+
   const EmployeeJourneyScreen({
     super.key,
     required this.employee,
     this.initialJourneyData,
     this.onDestinationConsumed,
+    this.onJourneyCompleted, // ✅ in constructor
   });
 
   @override
@@ -33,12 +43,12 @@ class EmployeeJourneyScreen extends StatefulWidget {
 class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   final Completer<MapLibreMapController> _controllerCompleter = Completer();
   late Future<String> _styleFuture;
-  
+
   // --- ✅ REFACTORED: Replaced _originController with a simple String ---
   String _distanceDisplay = "Set a destination";
   final _destinationController = TextEditingController();
   // ---
-  
+
   final String? _stadiaApiKey = dotenv.env['STADIA_API_KEY'];
   final String? _radarApiKey = dotenv.env['RADAR_API_KEY'];
 
@@ -47,7 +57,14 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   bool _isJourneyActive = false;
   double _totalDistanceTravelled = 0.0;
   Position? _lastRecordedPosition;
+
   String? _currentJourneyId;
+
+  // --- ✅ NEW STATE ---
+  Pjp? _currentPjp;
+  Dealer? _currentDealer;
+  // ---
+
   String? _currentPjpId;
   LatLng? _currentUserLocation;
   LatLng? _destinationLocation;
@@ -90,7 +107,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
   @override
   void dispose() {
-    // --- ✅ REFACTORED: Removed _originController.dispose() ---
     _destinationController.dispose();
     _positionStreamSubscription?.cancel();
     _radarArrivalCheckTimer?.cancel();
@@ -100,8 +116,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     super.dispose();
   }
 
-  // --- (All backend/logic functions are UNCHANGED) ---
-  // ... _launchGoogleMapsNavigation, _initializeNotifications, etc. ...
   Future<void> _launchGoogleMapsNavigation() async {
     if (_destinationLocation == null) {
       _showError("Destination not set.");
@@ -157,7 +171,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           'Shows when your location is being tracked for a journey.',
       importance: Importance.low,
       priority: Priority.low,
-      ongoing: true, // This is key for the foreground service
+      ongoing: true,
       autoCancel: false,
     );
     const NotificationDetails platformDetails =
@@ -186,7 +200,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   void _startLocationStream() {
     const LocationSettings locationSettings = LocationSettings(
       accuracy: LocationAccuracy.best,
-      distanceFilter: 1, 
+      distanceFilter: 1,
     );
 
     _positionStreamSubscription =
@@ -196,7 +210,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     });
   }
 
-  // --- ✅ REFACTORED: Updates _distanceDisplay state variable ---
   void _onPositionUpdate(Position position) {
     _currentUserLocation = LatLng(position.latitude, position.longitude);
 
@@ -217,7 +230,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       );
 
       if (movement > 2.0) {
-        _totalDistanceTravelled += movement; 
+        _totalDistanceTravelled += movement;
         _lastRecordedPosition = position;
         _routeTaken.add(_currentUserLocation!);
         _updateTravelledPolyline();
@@ -246,30 +259,38 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       });
     }
   }
-  // ---
 
+  // --- ✅ THE FIX: consume full objects from journeyData ---
   void _processNewJourneyData(Map<String, dynamic> journeyData) async {
-    final String? pjpId = journeyData['pjpId'] as String?;
+    final Pjp? pjp = journeyData['pjp'] as Pjp?;
+    final Dealer? dealer = journeyData['dealer'] as Dealer?;
     final LatLng? destination = journeyData['destination'] as LatLng?;
     final String? displayName = journeyData['displayName'] as String?;
 
-    if (destination == null || displayName == null || pjpId == null) {
+    if (destination == null || displayName == null || pjp == null || dealer == null) {
       _showError('Received invalid journey data from PJP.');
       return;
     }
-    _currentPjpId = pjpId; 
+
+    _currentPjpId = pjp.id;   // Keep for Radar/updates
+    _currentPjp = pjp;        // Store full objects for DVR callback
+    _currentDealer = dealer;
+
     _routeTaken.clear();
+
     final controller = await _controllerCompleter.future;
     try {
       await controller.removeLayer('route-taken-line');
       await controller.removeSource('route-taken-source');
     } catch (_) {}
+
     if (mounted) {
       setState(() {
         _destinationLocation = destination;
         _destinationController.text = displayName;
       });
     }
+
     await _getDirectionsAndDrawRoute();
     widget.onDestinationConsumed?.call();
   }
@@ -283,7 +304,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         (event) =>
             event['type'] == 'user.entered_geofence' &&
             event['geofence'] != null &&
-            event['geofence']['externalId'] == _currentPjpId, 
+            event['geofence']['externalId'] == _currentPjpId,
         orElse: () => null,
       );
       if (arrivalEvent != null) {
@@ -306,7 +327,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     }
   }
 
-  // --- ✅ REFACTORED: Updates _distanceDisplay state variable ---
   void _startJourney() async {
     if (_isJourneyActive || _destinationLocation == null) return;
 
@@ -328,7 +348,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         'JRN-${widget.employee.id}-${DateTime.now().millisecondsSinceEpoch}';
 
     try {
-      _showTrackingNotification(); 
+      _showTrackingNotification();
 
       setState(() {
         _isJourneyActive = true;
@@ -339,20 +359,23 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
       _radarArrivalCheckTimer?.cancel();
       _radarArrivalCheckTimer = Timer.periodic(
-          const Duration(seconds: 30),
-          (_) => _performRadarArrivalCheck());
+        const Duration(seconds: 30),
+        (_) => _performRadarArrivalCheck(),
+      );
     } catch (e) {
       _showError("Failed to start journey.");
     }
   }
-  // ---
 
-  // --- ✅ REFACTORED: Updates _distanceDisplay state variable ---
+  // --- ✅ UPDATED: call onJourneyCompleted with PJP, Dealer, and check-in time
   void _stopJourney() async {
     _radarArrivalCheckTimer?.cancel();
     _cancelTrackingNotification();
 
     if (!_isJourneyActive) return;
+
+    // ✅ Check-in time for DVR
+    final DateTime dvrCheckInTime = DateTime.now();
 
     if (_lastRecordedPosition != null && _currentJourneyId != null) {
       final finalTrackingPoint = GeoTrackingPoint(
@@ -382,35 +405,52 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         _isJourneyActive = false;
         _currentJourneyId = null;
         _currentPjpId = null;
+        // keep _currentPjp and _currentDealer until after callback
         _distanceDisplay =
             "Journey Complete (${finalDistanceKm.toStringAsFixed(2)} km)";
       });
     }
     _showError(
         "Journey Ended. Total distance: ${finalDistanceKm.toStringAsFixed(2)} km.");
-  }
-  // ---
 
+    // ✅ Trigger DVR dialog upstream
+    if (widget.onJourneyCompleted != null &&
+        _currentPjp != null &&
+        _currentDealer != null) {
+      widget.onJourneyCompleted!(_currentPjp!, _currentDealer!, dvrCheckInTime);
+    }
+
+    // Clear objects after notifying
+    _currentPjp = null;
+    _currentDealer = null;
+  }
+
+  // --- ✅ UPDATED: uses _stopJourney which triggers DVR flow, simpler copy
   void _showDestinationArrivalNotification() {
     if (!mounted || !_isJourneyActive) return;
+
+    // 1) Stop tracking
+    // 2) Calls onJourneyCompleted
+    // 3) NavScreen opens DVR
     _stopJourney();
+
+    // Simple confirmation dialog
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
         title: const Text('Destination Reached! 🎯'),
-        content: Text(
-            'You have arrived at ${_destinationController.text}. The journey has been automatically finalized.'),
+        content: const Text('You have arrived. Please complete the visit report.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'))
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          )
         ],
       ),
     );
   }
 
-  // --- ✅ REFACTORED: Updates _distanceDisplay state variable ---
   Future<void> _determinePositionAndMoveCamera() async {
     setState(() => _distanceDisplay = "Checking permissions...");
     try {
@@ -426,23 +466,22 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       setState(() => _distanceDisplay = "Fetching location...");
       Position position = await Geolocator.getCurrentPosition();
       _currentUserLocation = LatLng(position.latitude, position.longitude);
-      
+
       if (mounted) setState(() => _distanceDisplay = "My Current Location");
-      
+
       final controller = await _controllerCompleter.future;
       await controller.animateCamera(CameraUpdate.newCameraPosition(
         CameraPosition(target: _currentUserLocation!, zoom: 15.0),
       ));
       _drawUserLocationPointer(_currentUserLocation!);
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() => _distanceDisplay = "Failed to get location");
+      }
       _showError("Error getting location: $e");
     }
   }
-  // ---
 
-  // --- (All map drawing/utility functions are UNCHANGED) ---
   Future<void> _drawUserLocationPointer(LatLng point) async {
     final controller = await _controllerCompleter.future;
     try {
@@ -520,8 +559,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     final autocompleteUrl = Uri.parse(
         'https://api.radar.io/v1/autocomplete?query=$destinationAddress&near=${_currentUserLocation!.latitude},${_currentUserLocation!.longitude}');
     try {
-      final response = await http
-          .get(autocompleteUrl, headers: {'Authorization': _radarApiKey});
+      final response =
+          await http.get(autocompleteUrl, headers: {'Authorization': _radarApiKey});
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['addresses'] != null && data['addresses'].isNotEmpty) {
@@ -628,7 +667,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     });
   }
 
-  // --- ✅ NEW: This is the entirely new build method ---
   @override
   Widget build(BuildContext context) {
     final bool canStartJourney =
@@ -636,7 +674,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
     return Stack(
       children: [
-        // --- 1. The Map (Unchanged) ---
+        // Map
         SizedBox.expand(
           child: FutureBuilder<String>(
             future: _styleFuture,
@@ -667,11 +705,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           ),
         ),
 
-        // --- 2. The NEW Draggable Bottom Panel ---
+        // Draggable bottom panel
         DraggableScrollableSheet(
-          initialChildSize: 0.30, // Start ~30% from bottom
+          initialChildSize: 0.30,
           minChildSize: 0.30,
-          maxChildSize: 0.5, // Can drag up to 50%
+          maxChildSize: 0.5,
           builder: (BuildContext context, ScrollController scrollController) {
             return Container(
               decoration: BoxDecoration(
@@ -691,7 +729,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                 controller: scrollController,
                 padding: const EdgeInsets.all(16.0),
                 children: [
-                  // --- Drag Handle ---
+                  // Drag handle
                   Center(
                     child: Container(
                       width: 40,
@@ -704,12 +742,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                     ),
                   ),
 
-                  // --- Content (changes based on state) ---
+                  // Content
                   _isJourneyActive
                       ? _buildActiveJourneyPanel(context)
                       : _buildIdleJourneyPanel(context),
 
-                  // --- Slider (always at the bottom of the panel) ---
                   const SizedBox(height: 16),
                   _StartJourneySlider(
                     isJourneyActive: _isJourneyActive,
@@ -726,7 +763,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     );
   }
 
-  // --- ✅ NEW: Helper for the "Idle" panel UI ---
   Widget _buildIdleJourneyPanel(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -739,7 +775,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         ),
         const SizedBox(height: 8),
         Text(
-          _distanceDisplay, // Shows "Set a destination", "Fetching...", etc.
+          _distanceDisplay,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -756,11 +792,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     );
   }
 
-  // --- ✅ NEW: Helper for the "Active" panel UI ---
   Widget _buildActiveJourneyPanel(BuildContext context) {
     return Column(
       children: [
-        // --- Live Stats Card ---
         Card(
           elevation: 0,
           color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
@@ -769,7 +803,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // --- Distance ---
+                // Distance
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -792,7 +826,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                     ],
                   ),
                 ),
-                // --- Navigate Button ---
+                // Navigate
                 ElevatedButton(
                   onPressed: _launchGoogleMapsNavigation,
                   style: ElevatedButton.styleFrom(
@@ -808,7 +842,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        // --- Destination Readout ---
+        // Destination readout
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: const Icon(Icons.flag, color: Colors.green),
@@ -826,14 +860,14 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       ],
     );
   }
-  
-  // --- ✅ MODIFIED: This is now styled to fit inside the panel ---
-  Widget _buildLocationInputField(
-      {required TextEditingController controller,
-      required String hintText,
-      required IconData icon,
-      bool readOnly = false,
-      void Function(String)? onSubmitted}) {
+
+  Widget _buildLocationInputField({
+    required TextEditingController controller,
+    required String hintText,
+    required IconData icon,
+    bool readOnly = false,
+    void Function(String)? onSubmitted,
+  }) {
     return Container(
       height: 60,
       decoration: BoxDecoration(
@@ -848,10 +882,20 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
           decoration: InputDecoration(
             hintText: hintText,
-            hintStyle: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.7)),
-            prefixIcon: Icon(icon, size: 22, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            hintStyle: TextStyle(
+              color: Theme.of(context)
+                  .colorScheme
+                  .onSurfaceVariant
+                  .withOpacity(0.7),
+            ),
+            prefixIcon: Icon(
+              icon,
+              size: 22,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
             border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(vertical: 15.0, horizontal: 10),
+            contentPadding:
+                const EdgeInsets.symmetric(vertical: 15.0, horizontal: 10),
           ),
         ),
       ),
@@ -859,7 +903,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   }
 }
 
-// --- (Slider widget is unchanged) ---
 class _StartJourneySlider extends StatelessWidget {
   final bool isJourneyActive;
   final VoidCallback onSlideAction;
@@ -878,9 +921,8 @@ class _StartJourneySlider extends StatelessWidget {
     final Color outerColor = isJourneyActive
         ? Colors.redAccent.withAlpha(230)
         : Theme.of(context).colorScheme.primary.withAlpha(230);
-    final Icon sliderIcon = isJourneyActive
-        ? const Icon(Icons.stop)
-        : const Icon(Icons.arrow_forward_ios);
+    final Icon sliderIcon =
+        isJourneyActive ? const Icon(Icons.stop) : const Icon(Icons.arrow_forward_ios);
     final bool isEnabled = canStart || isJourneyActive;
 
     return SlideAction(
@@ -891,8 +933,9 @@ class _StartJourneySlider extends StatelessWidget {
             }
           : () {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Please set a destination before starting.'),
-                  backgroundColor: Colors.orange));
+                content: Text('Please set a destination before starting.'),
+                backgroundColor: Colors.orange,
+              ));
               return null;
             },
       innerColor: Colors.white,
@@ -901,10 +944,11 @@ class _StartJourneySlider extends StatelessWidget {
       text: isEnabled ? slideText : 'DESTINATION NOT SET',
       enabled: isEnabled,
       textStyle: const TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.5),
+        color: Colors.white,
+        fontSize: 16,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 0.5,
+      ),
       borderRadius: 16,
       elevation: 0,
       height: 65,

@@ -2,11 +2,12 @@
 import 'dart:io';
 import 'dart:ui';
 import 'dart:developer' as dev;
-
+import 'dart:async'; // ✅ timers
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/models/daily_visit_report_model.dart';
 import 'package:assetarchiverflutter/models/dealer_model.dart';
 import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:assetarchiverflutter/models/pjp_model.dart'; // ✅ PJP
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
@@ -18,7 +19,20 @@ const _calibratedDealersKey = 'calibrated_dealers';
 
 class CreateDvrScreen extends StatefulWidget {
   final Employee employee;
-  const CreateDvrScreen({super.key, required this.employee});
+
+  // --- ✅ NEW PARAMETERS ---
+  final Pjp? pjp;
+  final Dealer? dealer;
+  final DateTime? initialCheckInTime;
+  // ---
+
+  const CreateDvrScreen({
+    super.key,
+    required this.employee,
+    this.pjp,
+    this.dealer,
+    this.initialCheckInTime,
+  });
 
   @override
   State<CreateDvrScreen> createState() => _CreateDvrScreenState();
@@ -56,10 +70,45 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   File? _inTimeImageFile;
   String? _inTimeImageUrl;
 
+  // --- ✅ NEW TIMER STATE ---
+  Timer? _autoSubmitTimer;
+  static const int _minVisitMinutes = 10;
+  static const int _maxVisitMinutes = 60;
+  // ---
+
   @override
   void initState() {
     super.initState();
-    _fetchDealersForDropdown();
+
+    // --- ✅ NEW LOGIC: prefill when opened from Journey, else load dealers ---
+    if (widget.pjp != null &&
+        widget.dealer != null &&
+        widget.initialCheckInTime != null) {
+      dev.log('DVR screen opened from Journey. Pre-filling data.', name: _log);
+
+      // Use the visited dealer only; we bypass the dealer dropdown step
+      _allDealers = [widget.dealer!];
+      _selectedDealer = widget.dealer!;
+      _isLoadingDealers = false;
+
+      _checkInTime = widget.initialCheckInTime;
+
+      // Auto-fill read-only dealer fields and seed feedback from PJP
+      _dealerTotalPotentialController.text =
+          widget.dealer!.totalPotential.toString();
+      _dealerBestPotentialController.text =
+          widget.dealer!.bestPotential.toString();
+      _brandSellingController.text = widget.dealer!.brandSelling.join(', ');
+      _contactPersonController.text = widget.dealer!.name;
+      _contactPersonPhoneNoController.text = widget.dealer!.phoneNo;
+      _feedbacksController.text = widget.pjp!.description ?? '';
+
+      // Kick off auto-submit safety timer
+      _startAutoSubmitTimer();
+    } else {
+      _fetchDealersForDropdown();
+    }
+    // --- END NEW LOGIC ---
   }
 
   @override
@@ -75,6 +124,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     _feedbacksController.dispose();
     _solutionBySalespersonController.dispose();
     _anyRemarksController.dispose();
+    _autoSubmitTimer?.cancel(); // ✅ cancel timer
     super.dispose();
   }
 
@@ -159,14 +209,13 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       );
     } catch (e) {
       if (!mounted) return null;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to get location: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Failed to get location: $e')));
       return null;
     }
   }
 
-  // --- Simple camera helper for checkout step ---
+  // --- Simple camera helper for check-in / check-out photos ---
   Future<File?> _captureImage() async {
     final x = await _imagePicker.pickImage(
       source: ImageSource.camera,
@@ -206,7 +255,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       final imageFile = File(pickedFile.path);
       if (mounted) setState(() => _inTimeImageFile = imageFile);
 
-      // Upload
+      // Upload to R2
       final imageUrl = await _apiService.uploadImageToR2(imageFile);
 
       // Set state
@@ -221,6 +270,8 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
             backgroundColor: Colors.green,
           ),
         );
+        // Start the safety timer only when check-in happens from manual flow
+        _startAutoSubmitTimer();
       }
     } catch (e) {
       if (mounted) {
@@ -236,9 +287,78 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     }
   }
 
+  // --- ✅ NEW TIMER FUNCTIONS ---
+  void _startAutoSubmitTimer() {
+    _autoSubmitTimer?.cancel();
+    _autoSubmitTimer = Timer(const Duration(minutes: _maxVisitMinutes), () {
+      dev.log('60-minute timer fired. Auto-submitting DVR.', name: _log);
+      _autoSubmitDvr();
+    });
+  }
+
+  /// Auto-submits a partial DVR if the user forgets.
+  Future<void> _autoSubmitDvr() async {
+    if (!mounted) return;
+    if (_isSubmitting) return;
+
+    setState(() => _isSubmitting = true);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    try {
+      final Position? pos = await _getCurrentPosition();
+      if (pos == null) throw Exception('Auto-submit failed: Could not get location.');
+      if (_selectedDealer == null || _checkInTime == null) {
+        throw Exception('Auto-submit failed: Missing dealer or check-in time.');
+      }
+
+      final dvr = DailyVisitReport(
+        userId: int.parse(widget.employee.id),
+        reportDate: DateTime.now(),
+        dealerType: _selectedDealer!.type,
+        dealerName: _selectedDealer!.name,
+        location: _selectedDealer!.address,
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        visitType: 'PLANNED',
+        dealerTotalPotential: _selectedDealer!.totalPotential,
+        dealerBestPotential: _selectedDealer!.bestPotential,
+        brandSelling: _selectedDealer!.brandSelling,
+        todayOrderMt: 0.0,
+        todayCollectionRupees: 0.0,
+        feedbacks: _feedbacksController.text.isNotEmpty
+            ? _feedbacksController.text
+            : "Auto-submitted after 60-minute timeout.",
+        anyRemarks: "Auto-submitted after 60-minute timeout.",
+        checkInTime: _checkInTime!,
+        checkOutTime: DateTime.now(),
+        inTimeImageUrl: _inTimeImageUrl,
+        outTimeImageUrl: null,
+        pjpId: widget.pjp?.id,
+      );
+
+      await _apiService.createDvr(dvr);
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('Visit auto-submitted due to 60-minute timeout.'),
+          backgroundColor: Colors.blue,
+        ),
+      );
+      navigator.pop();
+    } catch (e) {
+      dev.log('Auto-submit DVR failed: $e', name: _log, error: e);
+      // Silent fail in background; no snackbar needed beyond debug log
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+  // --- END NEW TIMER FUNCTIONS ---
+
   // --- ✅ THIS IS THE FULLY UPGRADED SUBMIT FUNCTION ---
-  // --- ✅ FINAL: Submit DVR aligned to your model ---
   Future<void> _submitDvr() async {
+    // 1. Cancel the auto-submit timer. The user is submitting manually.
+    _autoSubmitTimer?.cancel();
+
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -249,31 +369,50 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       return;
     }
 
+    // --- ✅ RULE 1: 10-MINUTE MINIMUM ---
+    if (_checkInTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please check-in with a photo before submitting.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    final visitDuration = DateTime.now().difference(_checkInTime!);
+    if (visitDuration.inMinutes < _minVisitMinutes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Visit is too short. Please spend at least $_minVisitMinutes minutes.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    // --- END RULE 1 ---
+
     setState(() => _isSubmitting = true);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
+
+    // We get dealerId from _selectedDealer, set during prefill or selection
     final String dealerId = _selectedDealer!.id!;
 
     try {
-      // 1) Accurate location for submission + calibration
+      // 1) Accurate location
       final Position? currentPosition = await _getCurrentPosition();
       if (currentPosition == null) {
         throw Exception('Could not get your current location.');
       }
 
-      // 2) One-time geofence calibration memory
+      // 2) Geofence Calibration
       bool isAlreadyCalibrated = await _isDealerCalibrated(dealerId);
-
-      // Coordinates to use for distance check
       double dealerLat;
       double dealerLon;
 
       if (!isAlreadyCalibrated) {
-        // First-time calibration
-        dev.log(
-          'First time DVR for $dealerId. Calibrating geofence...',
-          name: _log,
-        );
+        dev.log('First time DVR for $dealerId. Calibrating geofence...', name: _log);
         try {
           final newLat = currentPosition.latitude;
           final newLon = currentPosition.longitude;
@@ -285,56 +424,35 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
             longitude: newLon,
             radius: newRadius,
           );
-
           await _markDealerAsCalibrated(dealerId);
-
-          // Use new calibrated coordinates for distance check
           dealerLat = newLat;
           dealerLon = newLon;
-
           scaffoldMessenger.showSnackBar(
             const SnackBar(
-              content: Text('Dealer location calibrated!'),
-              backgroundColor: Colors.blue,
-            ),
-          );
-          dev.log(
-            'Geofence for $dealerId calibrated successfully.',
-            name: _log,
+                content: Text('Dealer location calibrated!'),
+                backgroundColor: Colors.blue),
           );
         } catch (e) {
-          // Calibration failed: fallback to existing dealer coords
-          dev.log(
-            'WARNING: Geofence calibration failed. Using old coordinates for distance check.',
-            name: _log,
-            error: e,
-          );
+          dev.log('WARNING: Geofence calibration failed. Using old coordinates.',
+              name: _log, error: e);
           if (_selectedDealer!.latitude == null ||
               _selectedDealer!.longitude == null) {
-            throw Exception(
-              'Dealer location is missing. Cannot verify distance.',
-            );
+            throw Exception('Dealer location is missing.');
           }
           dealerLat = _selectedDealer!.latitude!;
           dealerLon = _selectedDealer!.longitude!;
         }
       } else {
-        // Already calibrated: use stored dealer coords
-        dev.log(
-          'Dealer $dealerId is already calibrated. Skipping.',
-          name: _log,
-        );
+        dev.log('Dealer $dealerId is already calibrated.', name: _log);
         if (_selectedDealer!.latitude == null ||
             _selectedDealer!.longitude == null) {
-          throw Exception(
-            'Dealer location is missing. Cannot verify distance.',
-          );
+          throw Exception('Dealer location is missing.');
         }
         dealerLat = _selectedDealer!.latitude!;
         dealerLon = _selectedDealer!.longitude!;
       }
 
-      // 3) Verify distance within 200 m
+      // --- ✅ RULE 2: GEOFENCE LOCK (200 m) ---
       final double distance = Geolocator.distanceBetween(
         currentPosition.latitude,
         currentPosition.longitude,
@@ -343,25 +461,23 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       );
       if (distance > 200) {
         throw Exception(
-          'You are too far from the dealer (${distance.toStringAsFixed(0)}m) to submit this report.',
-        );
+            'You are too far from the dealer (${distance.toStringAsFixed(0)}m) to submit this report.');
       }
+      // --- END RULE 2 ---
 
-      // 4) Capture + upload check-out photo
+      // 4) Capture and upload check-out photo
       scaffoldMessenger.showSnackBar(
-        const SnackBar(content: Text('Please take a check-out photo.')),
-      );
+          const SnackBar(content: Text('Please take a check-out photo.')));
       final imageFile = await _captureImage();
       if (imageFile == null) {
         throw Exception('Check-out photo cancelled.');
       }
 
       scaffoldMessenger.showSnackBar(
-        const SnackBar(content: Text('Uploading check-out photo...')),
-      );
+          const SnackBar(content: Text('Uploading check-out photo...')));
       final outTimeImageUrl = await _apiService.uploadImageToR2(imageFile);
 
-      // 5) Build and submit DVR (aligned to your model)
+      // 5) Build and submit the DVR (matches your schema)
       final dvr = DailyVisitReport(
         userId: int.parse(widget.employee.id),
         reportDate: DateTime.now(),
@@ -370,7 +486,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
         location: _selectedDealer!.address,
         latitude: currentPosition.latitude,
         longitude: currentPosition.longitude,
-        visitType: 'PLANNED', // wire to dropdown if needed
+        visitType: 'PLANNED',
         dealerTotalPotential: _selectedDealer!.totalPotential,
         dealerBestPotential: _selectedDealer!.bestPotential,
         brandSelling: _selectedDealer!.brandSelling,
@@ -378,31 +494,29 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
         todayCollectionRupees:
             double.tryParse(_todayCollectionRupeesController.text) ?? 0.0,
         feedbacks: _feedbacksController.text,
-        anyRemarks: _anyRemarksController.text.isEmpty
-            ? null
-            : _anyRemarksController.text,
-        checkInTime: _checkInTime!, // from your check-in step
+        anyRemarks:
+            _anyRemarksController.text.isEmpty ? null : _anyRemarksController.text,
+        checkInTime: _checkInTime!,
         checkOutTime: DateTime.now(),
-        inTimeImageUrl: _inTimeImageUrl!, // from your check-in upload
+        inTimeImageUrl: _inTimeImageUrl,
         outTimeImageUrl: outTimeImageUrl,
+        pjpId: widget.pjp?.id,
       );
 
       await _apiService.createDvr(dvr);
 
       scaffoldMessenger.showSnackBar(
         const SnackBar(
-          content: Text('DVR Submitted Successfully!'),
-          backgroundColor: Colors.green,
-        ),
+            content: Text('DVR Submitted Successfully!'),
+            backgroundColor: Colors.green),
       );
       navigator.pop();
     } catch (e) {
       dev.log('DVR Submission failed: $e', name: _log, error: e);
       scaffoldMessenger.showSnackBar(
         SnackBar(
-          content: Text('DVR Submission failed: $e'),
-          backgroundColor: Colors.red,
-        ),
+            content: Text('DVR Submission failed: $e'),
+            backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -435,7 +549,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent, // For the "floating" effect
+      backgroundColor: Colors.transparent, // floating effect in dialog
       body: Center(
         child: SingleChildScrollView(
           child: Padding(
@@ -469,10 +583,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(
-                                Icons.close,
-                                color: Colors.white,
-                              ),
+                              icon: const Icon(Icons.close, color: Colors.white),
                               onPressed: () => Navigator.of(context).pop(),
                             ),
                           ],
@@ -491,7 +602,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                                   ),
                                 )
                               : DropdownButtonFormField<Dealer>(
-                                  initialValue: _selectedDealer,
+                                  value: _selectedDealer,
                                   isExpanded: true,
                                   hint: const Text(
                                     'Select Dealer/Sub-dealer*',
@@ -499,9 +610,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                                   ),
                                   dropdownColor: const Color(0xFF0D47A1),
                                   style: const TextStyle(color: Colors.white),
-                                  decoration: _inputDecoration(
-                                    'Dealer/Sub-dealer',
-                                  ),
+                                  decoration: _inputDecoration('Dealer/Sub-dealer'),
                                   items: _allDealers
                                       .map(
                                         (dealer) => DropdownMenuItem(
@@ -514,23 +623,18 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                                       )
                                       .toList(),
                                   onChanged: _onDealerSelected,
-                                  validator: (v) => v == null
-                                      ? 'Please select a dealer'
-                                      : null,
+                                  validator: (v) =>
+                                      v == null ? 'Please select a dealer' : null,
                                 ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
-                            onPressed:
-                                _selectedDealer == null || _isUploadingImage
+                            onPressed: _selectedDealer == null || _isUploadingImage
                                 ? null
                                 : _handleCheckIn,
                             icon: _isUploadingImage
                                 ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
+                                    width: 20, height: 20,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
                                   )
                                 : const Icon(Icons.camera_alt),
                             label: const Text('CHECK-IN WITH PHOTO'),
@@ -551,10 +655,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                                   ? FileImage(_inTimeImageFile!)
                                   : null,
                               child: _inTimeImageFile == null
-                                  ? const Icon(
-                                      Icons.check_circle,
-                                      color: Colors.green,
-                                    )
+                                  ? const Icon(Icons.check_circle, color: Colors.green)
                                   : null,
                             ),
                             title: Text(
@@ -568,39 +669,33 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                               'Checked-In at ${DateFormat('hh:mm a').format(_checkInTime!)}',
                               style: const TextStyle(color: Colors.white70),
                             ),
-                            trailing: const Icon(
-                              Icons.check_circle,
-                              color: Colors.green,
-                              size: 32,
-                            ),
+                            trailing: const Icon(Icons.check_circle,
+                                color: Colors.green, size: 32),
                           ),
                           const Divider(color: Colors.white24, height: 30),
 
                           DropdownButtonFormField<String>(
-                            initialValue: _selectedVisitType,
+                            value: _selectedVisitType,
                             dropdownColor: const Color(0xFF0D47A1),
                             style: const TextStyle(color: Colors.white),
                             decoration: _inputDecoration('Visit Type'),
-                            items:
-                                [
-                                      'Routine',
-                                      'Follow-up',
-                                      'Complaint',
-                                      'New Lead',
-                                    ]
-                                    .map(
-                                      (type) => DropdownMenuItem(
-                                        value: type,
-                                        child: Text(type),
-                                      ),
-                                    )
-                                    .toList(),
+                            items: const [
+                              'Routine',
+                              'Follow-up',
+                              'Complaint',
+                              'New Lead',
+                            ].map((type) => DropdownMenuItem(
+                                  value: type,
+                                  child: Text(type),
+                                ))
+                                .toList(),
                             onChanged: (value) =>
                                 setState(() => _selectedVisitType = value),
                             validator: (v) =>
                                 v == null ? 'Please select a visit type' : null,
                           ),
                           const SizedBox(height: 16),
+
                           TextFormField(
                             controller: _dealerTotalPotentialController,
                             readOnly: true,
@@ -631,6 +726,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                             ),
                           ),
                           const SizedBox(height: 16),
+
                           TextFormField(
                             controller: _contactPersonController,
                             style: const TextStyle(color: Colors.white),
@@ -650,11 +746,12 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                             ),
                           ),
                           const SizedBox(height: 16),
+
                           TextFormField(
                             controller: _todayOrderMtController,
                             keyboardType: TextInputType.number,
                             style: const TextStyle(color: Colors.white),
-                            decoration: _inputDecoration('Today\'s Order (MT)'),
+                            decoration: _inputDecoration("Today's Order (MT)"),
                             validator: (v) =>
                                 v!.isEmpty ? 'Field is required' : null,
                           ),
@@ -663,9 +760,8 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                             controller: _todayCollectionRupeesController,
                             keyboardType: TextInputType.number,
                             style: const TextStyle(color: Colors.white),
-                            decoration: _inputDecoration(
-                              'Today\'s Collection (₹)',
-                            ),
+                            decoration:
+                                _inputDecoration("Today's Collection (₹)"),
                             validator: (v) =>
                                 v!.isEmpty ? 'Field is required' : null,
                           ),

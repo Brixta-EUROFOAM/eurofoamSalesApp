@@ -1,13 +1,20 @@
-// lib/navscreen.dart
-import 'dart:ui'; // We still need this for the dialog's blur
+// lib/screens/nav_screen.dart
+import 'dart:ui'; // Still needed for dialog blur if you use it elsewhere
+import 'dart:developer' as dev;
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
 import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:assetarchiverflutter/models/pjp_model.dart';
+import 'package:assetarchiverflutter/models/dealer_model.dart';
+
 import 'package:assetarchiverflutter/screens/employee_management/employee_dashboard_screen.dart';
 import 'package:assetarchiverflutter/screens/employee_management/employee_profile_screen.dart';
 import 'package:assetarchiverflutter/screens/employee_management/employee_pjp_screen.dart';
 import 'package:assetarchiverflutter/screens/employee_management/employee_journey_screen.dart';
 import 'package:assetarchiverflutter/screens/employee_management/employee_salesorder_screen.dart';
-import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+
 import 'package:assetarchiverflutter/screens/forms/create_dvr.dart';
 import 'package:assetarchiverflutter/screens/forms/create_tvr.dart';
 import 'package:assetarchiverflutter/screens/forms/create_leave_form.dart';
@@ -15,7 +22,7 @@ import 'package:assetarchiverflutter/screens/forms/create_competition_form.dart'
 import 'package:assetarchiverflutter/screens/forms/create_daily_task_form.dart';
 import 'package:assetarchiverflutter/screens/forms/add_dealer_form.dart';
 
-// --- (NavProvider class remains exactly the same) ---
+// --- NavProvider ---
 class NavProvider with ChangeNotifier {
   int _selectedIndex = 0;
   Map<String, dynamic>? _journeyData;
@@ -28,8 +35,9 @@ class NavProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  // ✅ Saves the entire journey map and navigates to Journey tab
   void startJourney(Map<String, dynamic> data) {
-    _journeyData = data;
+    _journeyData = data; // richer map with pjp, dealer, etc.
     _selectedIndex = 3;
     notifyListeners();
   }
@@ -39,7 +47,7 @@ class NavProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- These are now handled by GlobalKeys, but are fine to leave ---
+  // Optional debug hooks
   void refreshDashboard() {
     debugPrint("Refreshing Dashboard...");
   }
@@ -59,13 +67,13 @@ class NavScreen extends StatefulWidget {
 
 class _NavScreenState extends State<NavScreen> {
   late final NavProvider _navProvider;
+
   final GlobalKey<EmployeeDashboardScreenState> _dashboardKey =
       GlobalKey<EmployeeDashboardScreenState>();
 
-  // --- ✅ FIX: Add a GlobalKey for the PJP Screen ---
+  // ✅ Key for PJP screen so we can refresh it directly
   final GlobalKey<EmployeePJPScreenState> _pjpKey =
       GlobalKey<EmployeePJPScreenState>();
-  // --- END FIX ---
 
   @override
   void initState() {
@@ -78,6 +86,35 @@ class _NavScreenState extends State<NavScreen> {
     _navProvider.dispose();
     super.dispose();
   }
+
+  // --- ✅ NEW FUNCTION ---
+  // Opens the DVR dialog and pre-fills it using journey data.
+  void _showCreateDvrDialogFromJourney(
+    BuildContext context,
+    Employee employee,
+    Pjp pjp,
+    Dealer dealer,
+    DateTime checkInTime,
+  ) {
+    dev.log('Auto-opening DVR for PJP ${pjp.id} at $checkInTime', name: 'NavScreen');
+    showDialog(
+      context: context,
+      barrierDismissible: false, // user must complete or cancel explicitly
+      builder: (_) => Dialog(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24.0),
+        ),
+        child: CreateDvrScreen(
+          employee: employee,
+          pjp: pjp,
+          dealer: dealer,
+          initialCheckInTime: checkInTime,
+        ),
+      ),
+    );
+  }
+  // --- END NEW FUNCTION ---
 
   @override
   Widget build(BuildContext context) {
@@ -95,17 +132,14 @@ class _NavScreenState extends State<NavScreen> {
 
           final pages = <Widget>[
             EmployeeDashboardScreen(
-              key: _dashboardKey, // This key is used for refresh
+              key: _dashboardKey,
               employee: widget.employee,
             ),
             EmployeePJPScreen(
-              // --- ✅ FIX: Pass the key to the PJP Screen ---
               key: _pjpKey,
-              // --- END FIX ---
               employee: widget.employee,
               onStartJourney: provider.startJourney,
               onPjpCreated: () {
-                // When a PJP is created, refresh the dashboard too
                 _dashboardKey.currentState?.refreshData();
                 provider.refreshDashboard();
               },
@@ -115,6 +149,19 @@ class _NavScreenState extends State<NavScreen> {
               initialJourneyData: provider.journeyData,
               employee: widget.employee,
               onDestinationConsumed: provider.clearJourneyData,
+
+              // --- ✅ THE FIX ---
+              // Connect journey completion to DVR dialog
+              onJourneyCompleted: (Pjp pjp, Dealer dealer, DateTime checkInTime) {
+                _showCreateDvrDialogFromJourney(
+                  context,
+                  widget.employee,
+                  pjp,
+                  dealer,
+                  checkInTime,
+                );
+              },
+              // --- END FIX ---
             ),
             EmployeeProfileScreen(employee: widget.employee),
           ];
@@ -135,7 +182,7 @@ class _NavScreenState extends State<NavScreen> {
                 ),
               ],
             ),
-            bottomNavigationBar: null, // Handled by the Stack
+            bottomNavigationBar: null, // handled by the floating nav
           );
         },
       ),
@@ -158,38 +205,33 @@ class _NavScreenState extends State<NavScreen> {
           BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.checklist_rtl), label: 'PJP'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.shopping_cart_outlined), label: 'Sales Order'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.map_outlined), label: 'Journey'),
+            icon: Icon(Icons.shopping_cart_outlined),
+            label: 'Sales Order',
+          ),
+          BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Journey'),
           BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
         currentIndex: provider.selectedIndex,
         onTap: (index) {
-          // --- ✅ FIX: Call refresh methods directly using the keys ---
           if (index == 0) _dashboardKey.currentState?.refreshData();
           if (index == 1) _pjpKey.currentState?.refreshPjpList();
-          // --- END FIX ---
           provider.changePage(index);
         },
       ),
     );
   }
 
-  // --- DIALOG FUNCTIONS (WITH UI IMPROVEMENT) ---
+  // --- Drawer and dialog helpers ---
 
   void _showAddDealerDialog(BuildContext context, Employee employee) {
-    print(
-        '>>> _showAddDealerDialog called in nav_screen.dart. Trying to show AddDealerForm...');
     showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
-        // --- ✅ UI FIX: Use theme surface color instead of hardcoded red ---
         backgroundColor: Theme.of(dialogContext).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24.0),
         ),
         clipBehavior: Clip.antiAlias,
-        // --- END UI FIX ---
         child: AddDealerForm(employee: employee),
       ),
     );
@@ -199,19 +241,16 @@ class _NavScreenState extends State<NavScreen> {
     showDialog(
       context: context,
       builder: (dialogContext) => Dialog(
-        // --- ✅ UI FIX: Use theme surface color instead of hardcoded red ---
         backgroundColor: Theme.of(dialogContext).colorScheme.surface,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(24.0),
         ),
         clipBehavior: Clip.antiAlias,
-        // --- END UI FIX ---
         child: CreateDvrScreen(employee: employee),
       ),
     );
   }
 
-  // --- These forms provide their own background, so transparent is correct ---
   void _showCreateTvrDialog(BuildContext context, Employee employee) {
     showDialog(
       context: context,
@@ -256,7 +295,6 @@ class _NavScreenState extends State<NavScreen> {
     );
   }
 
-  // --- (Drawer code remains the same, it's already theme-aware) ---
   Widget _buildDrawer(BuildContext context, Employee employee) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
@@ -279,14 +317,11 @@ class _NavScreenState extends State<NavScreen> {
                 color: theme.colorScheme.onPrimary.withOpacity(0.8),
               ),
             ),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
-            ),
+            decoration: BoxDecoration(color: theme.colorScheme.primary),
           ),
           _buildDrawerActionItem(context,
               icon: Icons.person_add_alt,
               text: 'ADD DEALER', onTap: () {
-            print('>>> ADD DEALER button tapped!');
             Navigator.pop(context);
             _showAddDealerDialog(context, employee);
           }),
