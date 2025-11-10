@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/models/pjp_model.dart';
-import 'package:assetarchiverflutter/models/dealer_model.dart'; // <-- ✅ NEW IMPORT
-import 'package:assetarchiverflutter/api/api_service.dart'; // <-- ✅ NEW IMPORT
-import 'package:intl/intl.dart'; 
-import 'dart:developer' as dev; // <-- ✅ NEW IMPORT
+import 'package:assetarchiverflutter/models/dealer_model.dart';
+import 'package:assetarchiverflutter/api/api_service.dart';
+import 'package:intl/intl.dart';
+import 'dart:developer' as dev;
 
-// --- ✅ REDESIGNED: PjpCard is now a StatefulWidget ---
+// --- PjpCard (StatefulWidget) ---
 class PjpCard extends StatefulWidget {
   final Pjp pjp;
   final bool isVerified;
@@ -18,7 +18,7 @@ class PjpCard extends StatefulWidget {
 
 class _PjpCardState extends State<PjpCard> {
   final ApiService _apiService = ApiService();
-  
+
   String? _displayName;
   String? _subtitle;
   bool _isLoading = false;
@@ -33,9 +33,7 @@ class _PjpCardState extends State<PjpCard> {
     final pjp = widget.pjp;
     final dateString = DateFormat.yMMMd().format(pjp.planDate);
 
-    // --- ✅ THIS IS THE SMART LOGIC ---
-    
-    // 1. If dealerName is already in the PJP object, just use it.
+    // 1) Use provided dealerName when available
     if (pjp.dealerName != null && pjp.dealerName!.isNotEmpty) {
       setState(() {
         _displayName = pjp.dealerName!;
@@ -46,23 +44,24 @@ class _PjpCardState extends State<PjpCard> {
       return;
     }
 
-    // 2. If dealerName is missing, but we have a dealerId, fetch the dealer.
+    // 2) Otherwise, try fetching the dealer by id
     if (pjp.dealerId != null && pjp.dealerId!.isNotEmpty) {
       if (!mounted) return;
-      setState(() { _isLoading = true; }); // Show loading
-      
+      setState(() {
+        _isLoading = true;
+      });
+
       try {
         dev.log('PjpCard: Fetching details for dealerId=${pjp.dealerId}');
         final Dealer dealer = await _apiService.fetchDealerById(pjp.dealerId!);
         if (!mounted) return;
         setState(() {
           _displayName = dealer.name;
-          _subtitle = dealer.area; // Use the dealer's area as the subtitle
+          _subtitle = dealer.area;
           _isLoading = false;
         });
       } catch (e) {
         dev.log('PjpCard: Failed to fetch dealer ${pjp.dealerId}', error: e);
-        // 3. If fetch fails, fall back to the PJP description.
         if (!mounted) return;
         setState(() {
           _displayName = pjp.description ?? pjp.areaToBeVisited;
@@ -73,7 +72,7 @@ class _PjpCardState extends State<PjpCard> {
       return;
     }
 
-    // 4. If all else fails, fall back to description/area.
+    // 3) Fallback to description/area
     if (!mounted) return;
     setState(() {
       _displayName = (pjp.description != null && pjp.description!.isNotEmpty)
@@ -82,18 +81,16 @@ class _PjpCardState extends State<PjpCard> {
       _subtitle = dateString;
       _isLoading = false;
     });
-    // --- END LOGIC ---
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
-    
-    // Use the description as a temporary title while loading
+
     final loadingTitle = (widget.pjp.description != null && widget.pjp.description!.isNotEmpty)
-          ? widget.pjp.description!
-          : "Loading Dealer...";
+        ? widget.pjp.description!
+        : "Loading Dealer...";
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -101,7 +98,7 @@ class _PjpCardState extends State<PjpCard> {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // --- 1. THE "LIVELY" ACTION BAR ---
+            // 1) Action bar
             Container(
               width: 60,
               decoration: BoxDecoration(
@@ -119,24 +116,24 @@ class _PjpCardState extends State<PjpCard> {
               ),
             ),
 
-            // --- 2. THE CONTENT (NOW HANDLES LOADING) ---
+            // 2) Content
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center, 
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
                       _isLoading ? loadingTitle : (_displayName ?? "Error"),
                       style: textTheme.titleMedium?.copyWith(
-                          color: theme.colorScheme.onSurface,
-                          fontWeight: FontWeight.bold),
+                        color: theme.colorScheme.onSurface,
+                        fontWeight: FontWeight.bold,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 4),
-                    // Date or Area Subtitle
                     Row(
                       children: [
                         if (_isLoading)
@@ -144,23 +141,24 @@ class _PjpCardState extends State<PjpCard> {
                             width: 12,
                             height: 12,
                             margin: const EdgeInsets.only(left: 1, right: 7),
-                            child: CircularProgressIndicator(strokeWidth: 2, color: theme.colorScheme.primary),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: theme.colorScheme.primary,
+                            ),
                           )
                         else
                           Icon(
-                            // If subtitle is not the date, show a pin icon
                             (_subtitle != null && _subtitle != DateFormat.yMMMd().format(widget.pjp.planDate))
-                               ? Icons.pin_drop_outlined
-                               : Icons.calendar_today_outlined,
+                                ? Icons.pin_drop_outlined
+                                : Icons.calendar_today_outlined,
                             size: 14,
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         Text(
-                          _isLoading 
-                              ? "Fetching details..." 
-                              : (_subtitle ?? ""),
+                          _isLoading ? "Fetching details..." : (_subtitle ?? ""),
                           style: textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant),
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -171,7 +169,7 @@ class _PjpCardState extends State<PjpCard> {
               ),
             ),
 
-            // --- 3. THE STATUS ICON ---
+            // 3) Status icon
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Icon(
@@ -187,8 +185,7 @@ class _PjpCardState extends State<PjpCard> {
   }
 }
 
-// --- ✅ PendingPjpCard is now also SMARTER ---
-// It will never show "pending" as a title again.
+// --- PendingPjpCard ---
 class PendingPjpCard extends StatelessWidget {
   final Pjp pjp;
 
@@ -199,41 +196,24 @@ class PendingPjpCard extends StatelessWidget {
     final theme = Theme.of(context);
     final textTheme = theme.textTheme;
 
-    // --- ✅ NEW, SMARTER LOGIC ---
-    final String displayName;
-    
-    // 1. Try to use dealerName if it exists (e.g., from a single PJP)
-    if (pjp.dealerName != null && pjp.dealerName!.isNotEmpty) {
-      displayName = pjp.dealerName!;
-    } else {
-    // 2. Fall back to description (e.g., "Monthly PJP Plan")
-      displayName = (pjp.description != null && pjp.description!.isNotEmpty)
-          ? pjp.description!
-          : pjp.areaToBeVisited; // 3. Last resort
-    }
-    // This logic ensures "pending" is never shown as the title.
-    // --- END NEW LOGIC ---
+    final String displayName = (pjp.dealerName != null && pjp.dealerName!.isNotEmpty)
+        ? pjp.dealerName!
+        : ((pjp.description != null && pjp.description!.isNotEmpty) ? pjp.description! : pjp.areaToBeVisited);
 
     final dateString = DateFormat.yMMMd().format(pjp.planDate);
-    final pendingColor = theme.colorScheme.secondary; 
+    final pendingColor = theme.colorScheme.secondary;
 
     return Card(
-      elevation: 0, 
+      elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: theme.colorScheme.outline.withOpacity(0.5),
-        ),
+        side: BorderSide(color: theme.colorScheme.outline.withOpacity(0.5)),
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-        leading: Icon(
-          Icons.hourglass_top, 
-          color: pendingColor,
-          size: 30,
-        ),
+        leading: Icon(Icons.hourglass_top, color: pendingColor, size: 30),
         title: Text(
-          displayName, // <-- Uses new smart logic
+          displayName,
           style: textTheme.titleMedium?.copyWith(
             color: theme.colorScheme.onSurface,
             fontWeight: FontWeight.w600,
@@ -252,24 +232,63 @@ class PendingPjpCard extends StatelessWidget {
   }
 }
 
-
-// --- Section header (Unchanged) ---
+// --- ✅ Section header (Now with collapse button) ---
 class PjpSectionHeader extends StatelessWidget {
   final String title;
-  const PjpSectionHeader({super.key, required this.title});
+  final bool? isExpanded;
+  final VoidCallback? onToggle;
+
+  const PjpSectionHeader({
+    super.key,
+    required this.title,
+    this.isExpanded,
+    this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20.0, 24.0, 16.0, 8.0),
-      child: Text(
-        title.toUpperCase(),
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.onSurface.withOpacity(0.6),
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.8,
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            title.toUpperCase(),
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurface.withOpacity(0.6),
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.8,
+            ),
+          ),
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 300),
+            opacity: (isExpanded == true) ? 1.0 : 0.0,
+            child: (isExpanded == true)
+                ? TextButton(
+                    onPressed: onToggle,
+                    style: TextButton.styleFrom(
+                      foregroundColor: theme.colorScheme.secondary,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          'COLLAPSE',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.secondary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.unfold_less, size: 18),
+                      ],
+                    ),
+                  )
+                : const SizedBox(height: 30),
+          ),
+        ],
       ),
     );
   }

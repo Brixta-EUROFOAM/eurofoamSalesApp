@@ -7,6 +7,8 @@ import 'package:assetarchiverflutter/models/pjp_model.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'dart:developer' as dev;
+import 'dart:async'; // ✅ Timer for auto-collapse
+import 'package:intl/intl.dart'; // ✅ NEW: for YYYY-MM-DD formatting
 
 import 'package:assetarchiverflutter/widgets/pjp_cards.dart';
 import 'package:assetarchiverflutter/screens/forms/add_pjp_form.dart';
@@ -33,8 +35,16 @@ class EmployeePJPScreen extends StatefulWidget {
 class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   final ApiService _apiService = ApiService();
   late Future<PjpData> _pjpDataFuture;
-  
+
   PjpData? _currentPjpData;
+
+  // --- ✅ NEW: State for animated deck ---
+  bool _isDeckExpanded = false;
+  Timer? _collapseTimer; // auto-collapse timer
+  // ---
+
+  // --- ✅ NEW: Helper to get YYYY-MM-DD string ---
+  String _isoDate(DateTime dt) => DateFormat('yyyy-MM-dd').format(dt);
 
   @override
   void initState() {
@@ -43,15 +53,26 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
     refreshPjpList();
   }
 
+  @override
+  void dispose() {
+    _collapseTimer?.cancel(); // ✅ prevent timer leaks
+    super.dispose();
+  }
+
   void refreshPjpList() {
     final uid = int.tryParse(widget.employee.id);
-    dev.log('refreshPjpList() → fetchPendingAndVerifiedPjps(userId=$uid)', name: _log);
-    
+    if (uid == null) return;
+
+    final todayString = _isoDate(DateTime.now());
+    dev.log('refreshPjpList() → fetch PJPs for $todayString (userId=$uid)', name: _log);
+
     if (mounted) {
       setState(() {
         _currentPjpData = null;
         _pjpDataFuture = _apiService.fetchPendingAndVerifiedPjps(
-          userId: uid ?? -1,
+          userId: uid,
+          startDate: todayString,  // ✅ only today
+          endDate: todayString,    // ✅ only today
         );
       });
     }
@@ -59,21 +80,24 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
 
   Future<void> _handleRefresh() async {
     final uid = int.tryParse(widget.employee.id);
-    dev.log('onRefresh → fetchPendingAndVerifiedPjps(userId=$uid)', name: _log);
-    
-    final fut = _apiService.fetchPendingAndVerifiedPjps(userId: uid ?? -1);
-    
-    // --- ✅ THIS IS THE FIX ---
-    // 1. Added curly braces for the 'if' block.
-    // 2. Changed '=>' (returns a Set) to '() { ... }' (a function block).
+    if (uid == null) return;
+
+    final todayString = _isoDate(DateTime.now());
+    dev.log('onRefresh → fetch PJPs for $todayString (userId=$uid)', name: _log);
+
+    final fut = _apiService.fetchPendingAndVerifiedPjps(
+      userId: uid,
+      startDate: todayString,  // ✅ only today
+      endDate: todayString,    // ✅ only today
+    );
+
     if (mounted) {
-      setState(() { 
-        _currentPjpData = null; 
+      setState(() {
+        _currentPjpData = null;
         _pjpDataFuture = fut;
       });
     }
-    // --- END FIX ---
-    
+
     await fut;
   }
 
@@ -118,6 +142,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       },
     );
   }
+
   void _showAddPjpForm() {
     dev.log('Open AddPjpForm', name: _log);
     final theme = Theme.of(context);
@@ -132,6 +157,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       ),
     );
   }
+
   void _showBulkPjpWizard() {
     dev.log('Open BulkPjpWizardScreen', name: _log);
     Navigator.of(context).push(
@@ -146,10 +172,9 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   }
   // --- (End no changes) ---
 
-
   Future<void> _startJourneyForPjp(Pjp pjp) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    
+
     if (pjp.dealerId == null || pjp.dealerId!.isEmpty) {
       scaffoldMessenger.showSnackBar(SnackBar(
           content: Text('Error: This PJP is not linked to a dealer.'),
@@ -159,19 +184,20 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
 
     try {
       dev.log('Start Journey: Fetching dealer details for id=${pjp.dealerId}', name: _log);
-      
+
       final dealer = await _apiService.fetchDealerById(pjp.dealerId!);
 
       if (dealer.latitude == null || dealer.longitude == null) {
         throw FormatException('Dealer "${dealer.name}" has no location saved.');
       }
-      
+
       final lat = dealer.latitude;
       final lon = dealer.longitude;
-      final String displayName = dealer.name.isNotEmpty ? dealer.name : (pjp.dealerName ?? 'Dealer Visit');
+      final String displayName =
+          dealer.name.isNotEmpty ? dealer.name : (pjp.dealerName ?? 'Dealer Visit');
 
       dev.log('Start Journey for PJP id=${pjp.id}, Dealer: ${dealer.name}', name: _log);
-      
+
       await _apiService.updatePjp(pjp.id, {'status': 'started'});
 
       if (mounted && _currentPjpData != null) {
@@ -181,8 +207,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       }
 
       scaffoldMessenger.showSnackBar(const SnackBar(
-          content: Text('Journey Started!'),
-          backgroundColor: Colors.green));
+          content: Text('Journey Started!'), backgroundColor: Colors.green));
 
       widget.onPjpCreated();
 
@@ -191,17 +216,14 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
         'displayName': displayName,
         'destination': LatLng(lat!, lon!),
       });
-
     } catch (e, st) {
       dev.log('Failed to start journey', name: _log, error: e, stackTrace: st);
-      scaffoldMessenger.showSnackBar(SnackBar(
-          content:
-              Text('Failed to start journey: ${e.toString()}'),
-          backgroundColor: Colors.red));
+      scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text('Failed to start journey: ${e.toString()}'), backgroundColor: Colors.red));
     }
   }
 
-
+  // --- ✅ REPLACED BUILD WITH NEW WOW-FACTOR UI ---
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -211,12 +233,11 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
         FutureBuilder<PjpData>(
           future: _pjpDataFuture,
           builder: (context, snapshot) {
-            
             if (snapshot.connectionState == ConnectionState.waiting &&
                 _currentPjpData == null) {
               return Center(
-                  child: CircularProgressIndicator(
-                      color: theme.colorScheme.primary));
+                  child:
+                      CircularProgressIndicator(color: theme.colorScheme.primary));
             }
 
             if (snapshot.hasError) {
@@ -228,12 +249,12 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                       style: TextStyle(color: theme.colorScheme.error)),
                 ),
               );
-              }
-            
+            }
+
             if (snapshot.hasData) {
               _currentPjpData = snapshot.data;
             }
-            
+
             if (_currentPjpData == null) {
               dev.log('Future completed but data==null', name: _log);
               return Center(
@@ -241,9 +262,8 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                     style: TextStyle(color: theme.colorScheme.error)),
               );
             }
-            
-            final pjpData = _currentPjpData!; 
 
+            final pjpData = _currentPjpData!;
             final pendingPjps = pjpData.pendingPjps;
             final verifiedPjps = pjpData.verifiedPjps;
 
@@ -263,58 +283,52 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
               );
             }
 
-            List<Widget> listItems = []; 
-
-            if (pendingPjps.isNotEmpty) {
-              listItems.add(
-                PjpSectionHeader(title: 'PENDING APPROVAL (${pendingPjps.length})')
-              );
-              listItems.addAll(pendingPjps.map((pjp) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                child: PendingPjpCard(pjp: pjp),
-              )).toList());
-            }
-
-            if (verifiedPjps.isNotEmpty) {
-              listItems.add(
-                PjpSectionHeader(title: 'VERIFIED VISITS (${verifiedPjps.length})')
-              );
-              listItems.addAll(verifiedPjps.map((pjp) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                child: Slidable(
-                  key: ValueKey(pjp.id),
-                  startActionPane: ActionPane(
-                    motion: const StretchMotion(),
-                    children: [
-                      SlidableAction(
-                        onPressed: (_) => _startJourneyForPjp(pjp),
-                        backgroundColor: theme.colorScheme.primary,
-                        foregroundColor: theme.colorScheme.onPrimary,
-                        icon: Icons.route,
-                        label: 'Start Journey',
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ],
-                  ),
-                  child: PjpCard(pjp: pjp, isVerified: true),
-                ),
-              )));
-            }
-
+            // --- ✅ NEW: Build UI with Column ---
             return RefreshIndicator(
               onRefresh: _handleRefresh,
               color: theme.colorScheme.onPrimary,
               backgroundColor: theme.colorScheme.primary,
-              child: ListView.builder(
-                padding: const EdgeInsets.only(
-                    top: 8.0,
-                    bottom: 120),
-                itemCount: listItems.length,
-                itemBuilder: (context, index) {
-                  return listItems[index];
-                },
+              child: ListView(
+                padding: const EdgeInsets.only(top: 8.0, bottom: 120),
+                children: [
+                  // 1) Pending section as horizontal list
+                  if (pendingPjps.isNotEmpty) ...[
+                    PjpSectionHeader(
+                        title: 'PENDING APPROVAL (${pendingPjps.length})'),
+                    SizedBox(
+                      height: 110,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        itemCount: pendingPjps.length,
+                        itemBuilder: (context, index) {
+                          return Container(
+                            width: MediaQuery.of(context).size.width * 0.8,
+                            margin: const EdgeInsets.only(right: 12.0),
+                            child: PendingPjpCard(pjp: pendingPjps[index]),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+
+                  // 2) Verified section as animated deck with header controls
+                  if (verifiedPjps.isNotEmpty) ...[
+                    PjpSectionHeader(
+                      title: 'VERIFIED VISITS (${verifiedPjps.length})',
+                      // ✅ pass state and collapse callback
+                      isExpanded: _isDeckExpanded,
+                      onToggle: () {
+                        _collapseTimer?.cancel();
+                        setState(() => _isDeckExpanded = false);
+                      },
+                    ),
+                    _buildAnimatedDeck(verifiedPjps, theme),
+                  ],
+                ],
               ),
             );
+            // --- END NEW UI ---
           },
         ),
         Positioned(
@@ -328,6 +342,79 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  // --- ✅ The "Deck of Cards" Widget with auto-collapse ---
+  Widget _buildAnimatedDeck(List<Pjp> verifiedPjps, ThemeData theme) {
+    // Card layout props
+    const double cardHeight = 110.0;
+    const double collapsedOverlap = 15.0;
+    const double expandedSpacing = 115.0;
+
+    // Container height animate between collapsed and expanded
+    final double collapsedHeight =
+        (verifiedPjps.length - 1) * collapsedOverlap + cardHeight;
+    final double expandedHeight =
+        (verifiedPjps.length - 1) * expandedSpacing + cardHeight;
+
+    return GestureDetector(
+      onTap: () {
+        // cancel any existing timer
+        _collapseTimer?.cancel();
+
+        setState(() {
+          _isDeckExpanded = !_isDeckExpanded; // toggle
+        });
+
+        // auto-collapse after 5 seconds
+        if (_isDeckExpanded) {
+          _collapseTimer = Timer(const Duration(seconds: 5), () {
+            if (mounted) {
+              dev.log('Auto-collapsing deck...', name: _log);
+              setState(() => _isDeckExpanded = false);
+            }
+          });
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOutCubic,
+        height: _isDeckExpanded ? expandedHeight : collapsedHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        child: Stack(
+          children: List.generate(verifiedPjps.length, (index) {
+            final pjp = verifiedPjps[index];
+
+            return AnimatedPositioned(
+              duration: const Duration(milliseconds: 400),
+              curve: Curves.easeInOutCubic,
+              top: _isDeckExpanded
+                  ? (index * expandedSpacing)
+                  : (index * collapsedOverlap),
+              left: 0,
+              right: 0,
+              key: ValueKey(pjp.id),
+              child: Slidable(
+                startActionPane: ActionPane(
+                  motion: const StretchMotion(),
+                  children: [
+                    SlidableAction(
+                      onPressed: (_) => _startJourneyForPjp(pjp),
+                      backgroundColor: theme.colorScheme.primary,
+                      foregroundColor: theme.colorScheme.onPrimary,
+                      icon: Icons.route,
+                      label: 'Start Journey',
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ],
+                ),
+                child: PjpCard(pjp: pjp, isVerified: true),
+              ),
+            );
+          }),
+        ),
+      ),
     );
   }
 }

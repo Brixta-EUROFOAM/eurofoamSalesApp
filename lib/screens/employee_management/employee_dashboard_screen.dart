@@ -2,13 +2,27 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-// import 'package:assetarchiverflutter/widgets/reusableglasscard.dart'; // <-- REMOVED
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/models/pjp_model.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart'; // <-- ✅ NEW IMPORT
+import 'dart:developer' as dev; // <-- ✅ NEW IMPORT
+
+// --- ✅ NEW: A helper class to hold all our new data ---
+class DashboardPjpData {
+  final List<Pjp> ongoing;
+  final List<Pjp> upcomingToday;
+  final List<Pjp> tomorrow;
+  DashboardPjpData({
+    required this.ongoing,
+    required this.upcomingToday,
+    required this.tomorrow,
+  });
+}
+// ---
 
 class EmployeeDashboardScreen extends StatefulWidget {
   final Employee employee;
@@ -23,9 +37,11 @@ class EmployeeDashboardScreen extends StatefulWidget {
 }
 
 class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with WidgetsBindingObserver {
-  // --- (All your logic is unchanged) ---
   final ApiService _apiService = ApiService();
-  late Future<List<Pjp>> _pjpFuture;
+  
+  // --- ✅ MODIFIED: The future is now for our new data class ---
+  late Future<DashboardPjpData> _pjpFuture;
+  
   bool _isCheckingIn = false;
   bool _isCheckingOut = false;
   String _greeting = 'Good Morning';
@@ -46,22 +62,67 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
     }
   }
 
+  // --- ✅ NEW: Helper to get YYYY-MM-DD string ---
+  String _isoDate(DateTime dt) {
+    return DateFormat('yyyy-MM-dd').format(dt);
+  }
+
+  // --- ✅ NEW: This function fetches all the data you wanted ---
+  Future<DashboardPjpData> _fetchDashboardData() async {
+    final uid = int.tryParse(widget.employee.id);
+    if (uid == null) throw Exception('Invalid Employee ID');
+
+    final today = DateTime.now();
+    final tomorrow = today.add(const Duration(days: 1));
+    
+    final todayString = _isoDate(today);
+    final tomorrowString = _isoDate(tomorrow);
+
+    dev.log('Fetching Dashboard Data for $todayString & $tomorrowString', name: 'Dashboard');
+
+    // Fetch all 3 lists in parallel
+    final results = await Future.wait([
+      // 1. "Going on right now"
+      _apiService.fetchPjpsForUser(
+        uid,
+        status: 'started', 
+      ),
+      
+      // 2. "Coming up today"
+      _apiService.fetchPjpsForUser(
+        uid,
+        status: 'APPROVED', 
+        startDate: todayString,
+        endDate: todayString,
+      ),
+      
+      // 3. "Tomorrow"
+       _apiService.fetchPjpsForUser(
+        uid,
+        status: 'APPROVED', 
+        startDate: tomorrowString,
+        endDate: tomorrowString,
+      ),
+    ]);
+
+    return DashboardPjpData(
+      ongoing: results[0],
+      upcomingToday: results[1],
+      tomorrow: results[2],
+    );
+  }
+
+  // --- ✅ MODIFIED: These functions now call the new fetch method ---
   void refreshData() {
     if (mounted) {
       setState(() {
-        _pjpFuture = _apiService.fetchPjpsForUser(
-          int.parse(widget.employee.id),
-          status: 'pending',
-        );
+        _pjpFuture = _fetchDashboardData();
       });
     }
   }
 
   Future<void> _handleRefresh() async {
-    final newPjpFuture = _apiService.fetchPjpsForUser(
-      int.parse(widget.employee.id),
-      status: 'pending',
-    );
+    final newPjpFuture = _fetchDashboardData();
     if (mounted) {
       setState(() {
         _pjpFuture = newPjpFuture;
@@ -69,6 +130,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
     }
     await newPjpFuture;
   }
+  // ---
 
   @override
   void dispose() {
@@ -76,6 +138,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
     super.dispose();
   }
 
+  // --- (All other methods like _setGreeting, _captureImage, _handleCheckIn, etc. are UNCHANGED) ---
   void _setGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) {
@@ -132,7 +195,6 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
   }
 
   Future<void> _handleCheckIn() async {
-    // ... (Your Check In logic is unchanged) ...
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     setState(() => _isCheckingIn = true);
     try {
@@ -171,7 +233,6 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
   }
   
   Future<void> _handleCheckOut() async {
-    // ... (Your Check Out logic is unchanged) ...
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     setState(() => _isCheckingOut = true);
     try {
@@ -221,10 +282,11 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
         child: ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
+            // --- (Greeting Card is unchanged) ---
             Card(
               color: theme.brightness == Brightness.light 
-                     ? theme.colorScheme.primary  // Light mode = Blue card
-                     : theme.colorScheme.surface, // Dark mode = Lighter blue card
+                     ? theme.colorScheme.primary
+                     : theme.colorScheme.surface, 
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
                 child: Column(
@@ -265,30 +327,27 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
                 ),
               ),
             ),
-            const SizedBox(height: 24), // Increased spacing
+            const SizedBox(height: 24),
 
-            // --- ✅ THE FIX ---
-            // Replaced Row with a Column and removed Expanded
+            // --- (Check In/Out buttons are unchanged) ---
             Column(
               children: [
                 SizedBox(
-                  width: double.infinity, // Make button full-width
+                  width: double.infinity,
                   child: ElevatedButton.icon(
                     icon: _isCheckingIn 
                         ? const SizedBox(width: 18, height: 45, child: CircularProgressIndicator(strokeWidth: 2)) 
-                        // Match the icon from your "idea" screenshot
                         : const Icon(Icons.arrow_forward, size: 50), 
                     label: const Text('Check In'),
                     onPressed: _isCheckingIn || _isCheckingOut ? null : _handleCheckIn,
                   ),
                 ),
-                const SizedBox(height: 16), // Spacing between buttons
+                const SizedBox(height: 16), 
                 SizedBox(
-                  width: double.infinity, // Make button full-width
+                  width: double.infinity, 
                   child: ElevatedButton.icon(
                     icon: _isCheckingOut 
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) 
-                        // Match the icon from your "idea" screenshot
                         : const Icon(Icons.arrow_back, size: 50),
                     label: const Text('Check Out'),
                     onPressed: _isCheckingIn || _isCheckingOut ? null : _handleCheckOut,
@@ -296,11 +355,11 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
                 ),
               ],
             ),
-            // --- END FIX ---
 
             const SizedBox(height: 24),
 
-            FutureBuilder<List<Pjp>>(
+            // --- ✅ THIS IS THE ENTIRELY NEW, SMART FUTUREBUILDER ---
+            FutureBuilder<DashboardPjpData>(
               future: _pjpFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
@@ -321,7 +380,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
                       padding: const EdgeInsets.all(16.0),
                       child: Center(
                         child: Text(
-                          'Error fetching PJPs: ${snapshot.error}', 
+                          'Error fetching PJP data: ${snapshot.error}', 
                           style: TextStyle(color: theme.colorScheme.onErrorContainer)
                         )
                       ),
@@ -329,13 +388,17 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
                   );
                 }
 
-                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                // We have data!
+                final data = snapshot.data!;
+                final bool noPjpsFound = data.ongoing.isEmpty && data.upcomingToday.isEmpty && data.tomorrow.isEmpty;
+
+                if (noPjpsFound) {
                   return Card(
                      child: Padding(
-                       padding: const EdgeInsets.all(24.0), // More padding
+                       padding: const EdgeInsets.all(24.0),
                        child: Center(
                         child: Text(
-                          'No active PJPs found.', 
+                          'No active PJPs found for today or tomorrow.', 
                           style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7))
                         )
                       ),
@@ -343,39 +406,42 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
                   );
                 }
 
-                final pjps = snapshot.data!;
-
-                return Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Active & Upcoming PJPs (${pjps.length})",
-                          style: textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold, 
-                            color: theme.colorScheme.onSurface
-                          ),
+                // Build the new UI
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // --- 1. "ONGOING" SECTION ---
+                    if (data.ongoing.isNotEmpty) ...[
+                      Text(
+                        "Journey in Progress",
+                        style: textTheme.titleMedium?.copyWith(
+                          color: theme.colorScheme.onSurface.withOpacity(0.7),
+                          fontWeight: FontWeight.bold,
                         ),
-                        const SizedBox(height: 16),
-                        ...pjps.map((pjp) => ListTile(
-                              leading: Icon(Icons.route, color: theme.colorScheme.onSurface.withOpacity(0.7)),
-                              title: Text(
-                                'Plan for: ${pjp.planDate.toLocal().toString().split(' ')[0]}', 
-                                style: TextStyle(
-                                  color: theme.colorScheme.onSurface, 
-                                  fontWeight: FontWeight.bold
-                                )
-                              ),
-                              subtitle: Text(
-                                'Status: ${pjp.status}', 
-                                style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7))
-                              ),
-                            )),
-                      ],
+                      ),
+                      const SizedBox(height: 8),
+                      // Loop over all ongoing PJPs
+                      ...data.ongoing.map((pjp) => 
+                        _buildOngoingPjpCard(pjp, theme)
+                      ).toList(),
+                      const SizedBox(height: 24),
+                    ],
+
+                    // --- 2. "UPCOMING TODAY" SECTION ---
+                    _buildUpcomingPjpList(
+                      data.upcomingToday, 
+                      "Upcoming Today",
+                      theme,
                     ),
-                  ),
+
+                    // --- 3. "TOMORROW'S PLAN" SECTION ---
+                    _buildUpcomingPjpList(
+                      data.tomorrow,
+                      "Tomorrow's Plan",
+                      theme,
+                    ),
+
+                  ],
                 );
               },
             ),
@@ -386,5 +452,101 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
         ),
       ),
     );
+  }
+
+  // --- ✅ NEW: Helper widget for the "Ongoing" card ---
+  Widget _buildOngoingPjpCard(Pjp pjp, ThemeData theme) {
+    return Card(
+      elevation: 0,
+      color: theme.colorScheme.primaryContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: theme.colorScheme.primary, width: 2),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: Icon(Icons.location_on, color: theme.colorScheme.primary, size: 30),
+        title: Text(
+          pjp.dealerName ?? pjp.description ?? "Ongoing Visit",
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: theme.colorScheme.onPrimaryContainer,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          "Journey started. Tap Journey tab to view.",
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onPrimaryContainer.withOpacity(0.8),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- ✅ NEW: Helper widget for the "Upcoming" lists ---
+  Widget _buildUpcomingPjpList(List<Pjp> pjps, String title, ThemeData theme) {
+    if (pjps.isEmpty) return const SizedBox.shrink(); // Don't show if empty
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24.0),
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "$title (${pjps.length})",
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 16),
+              // Use a helper to show a few items
+              ..._buildPjpListTiles(pjps.take(3).toList(), theme), // Show max 3
+              
+              if (pjps.length > 3)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8.0),
+                  child: Text(
+                    "+ ${pjps.length - 3} more...",
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurface.withOpacity(0.7),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // --- ✅ NEW: Helper for the list tiles ---
+  List<Widget> _buildPjpListTiles(List<Pjp> pjps, ThemeData theme) {
+    return pjps.map((pjp) => Padding(
+      padding: const EdgeInsets.only(bottom: 8.0),
+      child: ListTile(
+        leading: Icon(Icons.route, color: theme.colorScheme.onSurface.withOpacity(0.7)),
+        title: Text(
+          pjp.dealerName ?? pjp.description ?? "Approved Visit",
+          style: TextStyle(
+            color: theme.colorScheme.onSurface,
+            fontWeight: FontWeight.bold,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Text(
+          pjp.areaToBeVisited.split('|').first.trim(),
+          style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    )).toList();
   }
 }
