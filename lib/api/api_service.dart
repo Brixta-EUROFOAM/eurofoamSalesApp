@@ -1,3 +1,4 @@
+// lib/services/api_service.dart
 import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:io';
@@ -13,6 +14,7 @@ import '../models/daily_visit_report_model.dart';
 import '../models/technical_visit_report_model.dart';
 import '../models/geotracking_data_model.dart';
 import '../models/competition_report_model.dart';
+import '../models/mason_model.dart'; // <-- ✅ ADDED THIS IMPORT
 
 class ApiService {
   static const String _baseUrl = 'https://myserverbymycoco.onrender.com';
@@ -754,4 +756,186 @@ class ApiService {
 
   Future<void> deleteSalesOrder(String orderId) =>
       _delete('sales-orders/$orderId');
-}
+
+  // --- MASON / CONTRACTOR METHODS ---
+
+  /// Fetches a paginated and filtered list of all masons.
+  Future<List<Mason>> fetchMasons({
+    int page = 1,
+    int limit = 50,
+    String? sortBy, // e.g., 'pointsBalance'
+    String? sortDir, // 'asc' or 'desc'
+    int? userId,
+    String? dealerId,
+    String? kycStatus,
+    bool? isReferred,
+    String? search,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+      if (sortBy != null) 'sortBy': sortBy,
+      if (sortDir != null) 'sortDir': sortDir,
+      if (userId != null) 'userId': userId.toString(),
+      if (dealerId != null) 'dealerId': dealerId,
+      if (kycStatus != null) 'kycStatus': kycStatus,
+      if (isReferred != null) 'isReferred': isReferred.toString(),
+      if (search != null && search.isNotEmpty) 'search': search,
+    };
+
+    final endpoint = Uri(
+      path: 'masons',
+      queryParameters: queryParams.isEmpty ? null : queryParams,
+    ).toString();
+
+    // Your _get helper's fromJson will receive the 'data' field,
+    // which is the list of masons.
+    return _get(
+      endpoint,
+      (json) => (json as List).map((item) => Mason.fromJson(item)).toList(),
+    );
+  }
+
+  /// Fetches a single mason by their UUID.
+  Future<Mason> fetchMasonById(String masonId) {
+    return _get(
+      'masons/$masonId',
+      (json) => Mason.fromJson(json),
+    );
+  }
+
+  /// Fetches masons assigned to a specific TSO (user).
+  Future<List<Mason>> fetchMasonsByUserId(
+    int userId, {
+    int page = 1,
+    int limit = 50,
+    String? sortBy,
+    String? sortDir,
+    String? dealerId,
+    String? kycStatus,
+    bool? isReferred,
+    String? search,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+      if (sortBy != null) 'sortBy': sortBy,
+      if (sortDir != null) 'sortDir': sortDir,
+      if (dealerId != null) 'dealerId': dealerId,
+      if (kycStatus != null) 'kycStatus': kycStatus,
+      if (isReferred != null) 'isReferred': isReferred.toString(),
+      if (search != null && search.isNotEmpty) 'search': search,
+    };
+
+    final endpoint = Uri(
+      path: 'masons/user/$userId',
+      queryParameters: queryParams.isEmpty ? null : queryParams,
+    ).toString();
+
+    return _get(
+      endpoint,
+      (json) => (json as List).map((item) => Mason.fromJson(item)).toList(),
+    );
+  }
+
+  /// Fetches masons assigned to a specific Dealer.
+  Future<List<Mason>> fetchMasonsByDealerId(
+    String dealerId, {
+    int page = 1,
+    int limit = 50,
+    String? sortBy,
+    String? sortDir,
+    String? kycStatus,
+    bool? isReferred,
+    String? search,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+      if (sortBy != null) 'sortBy': sortBy,
+      if (sortDir != null) 'sortDir': sortDir,
+      if (kycStatus != null) 'kycStatus': kycStatus,
+      if (isReferred != null) 'isReferred': isReferred.toString(),
+      if (search != null && search.isNotEmpty) 'search': search,
+    };
+
+    final endpoint = Uri(
+      path: 'masons/dealer/$dealerId',
+      queryParameters: queryParams.isEmpty ? null : queryParams,
+    ).toString();
+
+    return _get(
+      endpoint,
+      (json) => (json as List).map((item) => Mason.fromJson(item)).toList(),
+    );
+  }
+
+  // --- MASON / CONTRACTOR METHODS (write) ---
+
+  /// Create a new mason (POST /api/masons)
+  Future<Mason> createMason(Mason mason) {
+    final body = mason.toJson()..removeWhere((k, v) => v == null);
+    return _post(
+      'masons',
+      body,
+      (json) => Mason.fromJson(json),
+    );
+  }
+
+  /// Update an existing mason (PATCH /api/masons/:id)
+  Future<Mason> updateMason(String masonId, Map<String, dynamic> data) {
+    final body = Map<String, dynamic>.from(data)..removeWhere((k, v) => v == null);
+    return _patch(
+      'masons/$masonId',
+      body,
+      (json) => Mason.fromJson(json),
+    );
+  }
+
+  /// Delete a mason (DELETE /api/masons/:id)
+  Future<void> deleteMason(String masonId) async {
+    return _delete('masons/$masonId');
+  }
+
+  /// Submit KYC for a mason (POST /api/kyc-submissions)
+  ///
+  /// Example:
+  /// await api.submitKyc(
+  ///   masonId: 'uuid',
+  ///   aadhaarNumber: '1234..',
+  ///   panNumber: 'ABCDE1234F',
+  ///   voterIdNumber: 'XYZ..',
+  ///   documents: {
+  ///     'aadhaarFrontUrl': 'https://...',
+  ///     'panUrl': 'https://...'
+  ///   },
+  ///   remark: 'some note',
+  /// );
+  Future<Map<String, dynamic>> submitKyc({
+    required String masonId,
+    String? aadhaarNumber,
+    String? panNumber,
+    String? voterIdNumber,
+    Map<String, String>? documents,
+    String? remark,
+  }) async {
+    final body = <String, dynamic>{
+      'masonId': masonId,
+      if (aadhaarNumber != null && aadhaarNumber.isNotEmpty) 'aadhaarNumber': aadhaarNumber,
+      if (panNumber != null && panNumber.isNotEmpty) 'panNumber': panNumber,
+      if (voterIdNumber != null && voterIdNumber.isNotEmpty) 'voterIdNumber': voterIdNumber,
+      if (documents != null && documents.isNotEmpty) 'documents': documents,
+      if (remark != null && remark.isNotEmpty) 'remark': remark,
+    }..removeWhere((k, v) => v == null);
+
+    // Use the generic _post which expects the server to return { success: true, data: ... }
+    return _post(
+      'kyc-submissions',
+      body,
+      (json) {
+        // return the created submission object (server returns data: newRecord)
+        return json as Map<String, dynamic>;
+      },
+    );
+  }
+} // <-- This is the final closing brace of your ApiService class

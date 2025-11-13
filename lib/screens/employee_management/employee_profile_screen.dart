@@ -1,17 +1,13 @@
 // lib/screens/employee_management/employee_profile_screen.dart
 import 'dart:async';
 import 'package:assetarchiverflutter/models/employee_model.dart';
-// import 'package:assetarchiverflutter/widgets/reusableglasscard.dart'; // <-- REMOVED
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/models/dealer_model.dart';
 import 'package:assetarchiverflutter/api/auth_service.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart'; 
-// --- NEW IMPORTS ---
 import 'package:provider/provider.dart';
 import 'package:assetarchiverflutter/widgets/theme_provider.dart';
-// --- END NEW IMPORTS ---
 
 // --- (_ProfileStats class remains the same) ---
 class _ProfileStats {
@@ -71,8 +67,6 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   }
 
   Future<_ProfileStats> _fetchProfileStats() async {
-    // --- ✅ BUG FIX: Your original code was correct. We MUST parse the String ID to an int. ---
-    // This is LINE 78
     final employeeId = int.parse(widget.employee.id); 
 
     final now = DateTime.now();
@@ -82,13 +76,12 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     final startDate = formatter.format(firstDayOfMonth);
     final endDate = formatter.format(lastDayOfMonth);
 
-    // --- ✅ BUG FIX: Pass the 'employeeId' (int) to all API calls ---
     final results = await Future.wait([
-      _apiService.fetchDvrsForUser(employeeId, startDate: startDate, endDate: endDate),     // Line 83
-      _apiService.fetchTvrsForUser(employeeId, startDate: startDate, endDate: endDate),     // Line 84
-      _apiService.fetchPjpsForUser(employeeId, startDate: startDate, endDate: endDate),     // Line 85
-      _apiService.fetchDealers(userId: employeeId),                               // Line 86
-      _apiService.fetchDailyTasksForUser(employeeId, status: 'Completed'),            // Line 87
+      _apiService.fetchDvrsForUser(employeeId, startDate: startDate, endDate: endDate),
+      _apiService.fetchTvrsForUser(employeeId, startDate: startDate, endDate: endDate),
+      _apiService.fetchPjpsForUser(employeeId, startDate: startDate, endDate: endDate),
+      _apiService.fetchDealers(userId: employeeId),
+      _apiService.fetchDailyTasksForUser(employeeId, status: 'Completed'),
     ]);
 
     final dvrCount = (results[0] as List).length;
@@ -133,14 +126,11 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     );
   }
 
+  // --- ✅ THIS IS THE CORRECTED BUILD METHOD ---
   @override
-  Widget build(BuildContext
-    context) {
-    // --- Get theme and provider ---
+  Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    // --- END ---
 
     return SafeArea(
       child: FutureBuilder<_ProfileStats>(
@@ -174,173 +164,95 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             color: theme.colorScheme.onPrimary,
             backgroundColor: theme.colorScheme.primary,
             child: ListView(
-              padding: const EdgeInsets.all(16.0),
+              // --- ✅ THE FIX ---
+              // Add 120px of bottom padding to clear the floating nav bar
+              padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 120.0),
+              // --- END FIX ---
               children: [
-                Column(
-                  children: [
-                    CircleAvatar(
-                      radius: 50,
-                      backgroundColor: theme.colorScheme.primary,
-                      child: Text(
-                        getInitials(),
-                        style: textTheme.headlineLarge?.copyWith(
-                          color: theme.colorScheme.onPrimary,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      widget.employee.displayName,
-                      style: textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: textTheme.bodyLarge?.color,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      widget.employee.email ?? 'No email',
-                      style: textTheme.bodyLarge?.copyWith(
-                        color: textTheme.bodyMedium?.color,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Chip(
-                      avatar: Icon(
-                        Icons.work_outline,
-                        color: textTheme.bodyMedium?.color,
-                        size: 18,
-                      ),
-                      label: Text(
-                        _capitalize(widget.employee.role ?? 'Employee'),
-                        style: textTheme.bodyMedium,
-                      ),
-                      backgroundColor: theme.colorScheme.surface.withOpacity(0.5),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(
-                          color: theme.colorScheme.onSurface.withOpacity(0.1),
-                        ),
-                      ),
-                    ),
-                  ],
+                
+                // --- 1. NEW Profile Header Card ---
+                _ProfileHeaderCard(
+                  initials: getInitials(),
+                  displayName: widget.employee.displayName,
+                  email: widget.employee.email ?? 'No email',
+                  role: _capitalize(widget.employee.role ?? 'Employee'),
                 ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _StatCard(
-                        icon: Icons.description_outlined,
-                        label: 'Reports (This Month)',
-                        value: stats.monthlyReportCount.toString(),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _StatCard(
+
+                // --- 2. NEW Action & Stats List ---
+                const _SectionHeader('Toolbox & Stats'),
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      _ActionListTile(
                         icon: Icons.store_mall_directory_outlined,
-                        label: 'Manage Dealers',
-                        value: stats.allTimeDealerCount.toString(),
+                        title: 'Manage Dealers',
+                        trailing: stats.allTimeDealerCount.toString(),
                         onTap: _showManageDealersSheet,
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _StatCard(
-                        icon: Icons.checklist_rtl_outlined,
-                        label: 'PJPs (This Month)',
-                        value: stats.monthlyPjpCount.toString(),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _StatCard(
+                      _ActionListTile(
                         icon: Icons.task_alt_outlined,
-                        label: 'Tasks Done',
-                        value: stats.allTimeCompletedTasksCount.toString(),
+                        title: 'Completed Tasks',
+                        trailing: stats.allTimeCompletedTasksCount.toString(),
+                        onTap: () {},
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                _PerformanceChart(
-                  reportCount: stats.monthlyReportCount.toDouble(),
-                  pjpCount: stats.monthlyPjpCount.toDouble(),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ActionCard(
+                      _ActionListTile(
                         icon: Icons.event_note_outlined,
-                        label: 'Apply for Leave',
-                        onPressed: () {},
+                        title: 'Apply for Leave',
+                        onTap: () {},
                       ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: _ActionCard(
+                       _ActionListTile(
                         icon: Icons.map_outlined,
-                        label: 'Brand Mapping',
-                        onPressed: () {},
+                        title: 'Brand Mapping',
+                        onTap: () {},
+                        hideBorder: true, // No border on the last item
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                
-                // --- ✅ NEW: THEME TOGGLE ADDED ---
-                const Divider(height: 48),
-                Text(
-                  'Theme Preference',
-                  style: textTheme.titleSmall,
-                ),
-                const SizedBox(height: 8),
-                SegmentedButton<ThemeMode>(
-                  segments: const [
-                    ButtonSegment(
-                      value: ThemeMode.light,
-                      label: Text('Light'),
-                      icon: Icon(Icons.light_mode_outlined),
-                    ),
-                    ButtonSegment(
-                      value: ThemeMode.dark,
-                      label: Text('Dark'),
-                      icon: Icon(Icons.dark_mode_outlined),
-                    ),
-                    ButtonSegment(
-                      value: ThemeMode.system,
-                      label: Text('System'),
-                      icon: Icon(Icons.phone_android_outlined),
-                    ),
-                  ],
-                  selected: { themeProvider.themeMode },
-                  onSelectionChanged: (Set<ThemeMode> newSelection) {
-                    themeProvider.setThemeMode(newSelection.first);
-                  },
-                  style: ButtonStyle(
-                    backgroundColor: MaterialStateProperty.resolveWith<Color?>(
-                      (Set<MaterialState> states) {
-                        if (states.contains(MaterialState.selected)) {
-                          return theme.colorScheme.secondary; // Orange
-                        }
-                        return theme.colorScheme.surface; // Card color
-                      },
-                    ),
-                    foregroundColor: MaterialStateProperty.resolveWith<Color?>(
-                       (Set<MaterialState> states) {
-                        if (states.contains(MaterialState.selected)) {
-                          return theme.colorScheme.onSecondary; // Black
-                        }
-                        return theme.colorScheme.onSurface.withOpacity(0.7);
-                      },
+
+                // --- 3. NEW Settings Section ---
+                const _SectionHeader('App Settings'),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Theme Preference',
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        SegmentedButton<ThemeMode>(
+                          segments: const [
+                            ButtonSegment(
+                              value: ThemeMode.light,
+                              label: Text('Light'),
+                              icon: Icon(Icons.light_mode_outlined),
+                            ),
+                            ButtonSegment(
+                              value: ThemeMode.dark,
+                              label: Text('Dark'),
+                              icon: Icon(Icons.dark_mode_outlined),
+                            ),
+                            ButtonSegment(
+                              value: ThemeMode.system,
+                              label: Text('System'),
+                              icon: Icon(Icons.phone_android_outlined),
+                            ),
+                          ],
+                          selected: { themeProvider.themeMode },
+                          onSelectionChanged: (Set<ThemeMode> newSelection) {
+                            themeProvider.setThemeMode(newSelection.first);
+                          },
+                        ),
+                      ],
                     ),
                   ),
                 ),
-                // --- END NEW: THEME TOGGLE ---
-
+                
+                // --- 4. Logout Button (Unchanged) ---
                 const SizedBox(height: 32),
                 _LogoutButton(),
               ],
@@ -352,130 +264,163 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   }
 }
 
-// --- (PerformanceChart class remains the same) ---
-class _PerformanceChart extends StatelessWidget {
-  final double reportCount;
-  final double pjpCount;
+// --- ✅ NEW WIDGET: A clean header for the user's profile info ---
+class _ProfileHeaderCard extends StatelessWidget {
+  final String initials;
+  final String displayName;
+  final String email;
+  final String role;
 
-  const _PerformanceChart({required this.reportCount, required this.pjpCount});
+  const _ProfileHeaderCard({
+    required this.initials,
+    required this.displayName,
+    required this.email,
+    required this.role,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(20.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.military_tech_outlined,
-                  color: Colors.amber,
-                  size: 28,
-                ),
-                const SizedBox(width: 16),
-                Text(
-                  'MONTHLY PERFORMANCE (${DateFormat('MMMM').format(DateTime.now())})',
-                  style: theme.textTheme.bodyLarge?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            SizedBox(
-              height: 150,
-              child: BarChart(
-                BarChartData(
-                  alignment: BarChartAlignment.spaceAround,
-                  maxY: (reportCount > pjpCount ? reportCount : pjpCount) * 1.2 + 5,
-                  barTouchData: BarTouchData(
-                    touchTooltipData: BarTouchTooltipData(
-                      getTooltipColor: (_) => Colors.blueGrey,
-                      getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                        String label = rod.toY.round().toString();
-                        return BarTooltipItem(
-                          label,
-                          const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        );
-                      },
-                    ),
-                    handleBuiltInTouches: true,
-                  ),
-                  titlesData: FlTitlesData(
-                    show: true,
-                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        getTitlesWidget: (value, meta) => _getBottomTitles(value, meta, theme),
-                        reservedSize: 38,
-                      ),
-                    ),
-                  ),
-                  borderData: FlBorderData(show: false),
-                  gridData: const FlGridData(show: false),
-                  barGroups: [
-                    _makeBarGroup(0, reportCount, Colors.blueAccent),
-                    _makeBarGroup(1, pjpCount, Colors.amber),
-                  ],
+            CircleAvatar(
+              radius: 40,
+              backgroundColor: theme.colorScheme.primary,
+              child: Text(
+                initials,
+                style: textTheme.headlineLarge?.copyWith(
+                  color: theme.colorScheme.onPrimary,
                 ),
               ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              displayName,
+              style: textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              email,
+              style: textTheme.bodyLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Chip(
+              avatar: Icon(
+                Icons.work_outline,
+                color: theme.colorScheme.onSurfaceVariant,
+                size: 18,
+              ),
+              label: Text(
+                role,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              backgroundColor: theme.colorScheme.surfaceVariant.withOpacity(0.5),
+              side: BorderSide.none,
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  BarChartGroupData _makeBarGroup(int x, double y, Color color) {
-    return BarChartGroupData(
-      x: x,
-      barRods: [
-        BarChartRodData(
-          toY: y,
-          color: color,
-          width: 22,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(6),
-            topRight: Radius.circular(6),
+// --- ✅ NEW WIDGET: A clean, reusable list tile for actions ---
+class _ActionListTile extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final VoidCallback onTap;
+  final String? trailing;
+  final bool hideBorder;
+
+  const _ActionListTile({
+    required this.title,
+    required this.icon,
+    required this.onTap,
+    this.trailing,
+    this.hideBorder = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: hideBorder
+                ? BorderSide.none
+                : BorderSide(color: theme.colorScheme.outline.withOpacity(0.2)),
           ),
         ),
-      ],
+        child: Row(
+          children: [
+            Icon(icon, color: theme.colorScheme.primary, size: 28),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+            ),
+            if (trailing != null)
+              Text(
+                trailing!,
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.bold,
+                ),
+              )
+            else
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+              ),
+          ],
+        ),
+      ),
     );
-  }
-
-  static Widget _getBottomTitles(double value, TitleMeta meta, ThemeData theme) {
-    final style = TextStyle(
-      color: theme.colorScheme.onSurface.withOpacity(0.7),
-      fontWeight: FontWeight.bold,
-      fontSize: 14,
-    );
-    
-    Widget text;
-    switch (value.toInt()) {
-      case 0:
-        text = Text('Reports', style: style);
-        break;
-      case 1:
-        text = Text('PJPs', style: style);
-        break;
-      default:
-        text = Text('', style: style);
-        break;
-    }
-    return SideTitleWidget(axisSide: meta.axisSide, child: text);
   }
 }
+
+// --- ✅ NEW WIDGET: A simple header for sections ---
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  const _SectionHeader(this.title); // <-- Positional argument
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8.0, 24.0, 8.0, 8.0),
+      child: Text(
+        title.toUpperCase(),
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.8,
+            ),
+      ),
+    );
+  }
+}
+
+// --- (PerformanceChart class was removed) ---
 
 // --- (_ManageDealersContent class remains the same) ---
 class _ManageDealersContent extends StatefulWidget {
@@ -507,8 +452,6 @@ class _ManageDealersContentState extends State<_ManageDealersContent> {
     if (mounted) {
       setState(() {
         _dealersFuture = _apiService.fetchDealers(
-          // --- ✅ BUG FIX: The employeeId is a String, but the API needs an int. ---
-          // This is LINE 486
           userId: int.parse(widget.employee.id), 
         );
       });
@@ -521,7 +464,6 @@ class _ManageDealersContentState extends State<_ManageDealersContent> {
   }
 
   void _deleteDealer(String dealerId) async {
-    // ... (rest of this function is fine) ...
      final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -678,6 +620,7 @@ class _ManageDealersContentState extends State<_ManageDealersContent> {
                 itemBuilder: (context, index) {
                   final dealer = dealers[index];
                   return ListTile(
+                    leading: Icon(Icons.store_outlined, color: theme.colorScheme.primary),
                     title: Text(
                       dealer.name,
                       style: TextStyle(
@@ -688,6 +631,8 @@ class _ManageDealersContentState extends State<_ManageDealersContent> {
                     subtitle: Text(
                       dealer.address,
                       style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     trailing: Icon(
                       Icons.more_vert,
@@ -701,108 +646,6 @@ class _ManageDealersContentState extends State<_ManageDealersContent> {
           ),
         ),
       ],
-    );
-  }
-}
-
-// --- (_StatCard class remains the same) ---
-class _StatCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final VoidCallback? onTap;
-
-  const _StatCard({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Icon(
-                    icon, 
-                    color: theme.colorScheme.onSurface.withOpacity(0.7), 
-                    size: 28
-                  ),
-                  Text(
-                    value,
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      color: theme.colorScheme.onSurface,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                label, 
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.7)
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// --- (_ActionCard class remains the same) ---
-class _ActionCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onPressed;
-
-  const _ActionCard({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            children: [
-              Icon(
-                icon, 
-                color: theme.colorScheme.onSurface, 
-                size: 32
-              ),
-              const SizedBox(height: 12),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
@@ -833,4 +676,3 @@ class _LogoutButton extends StatelessWidget {
     );
   }
 }
-

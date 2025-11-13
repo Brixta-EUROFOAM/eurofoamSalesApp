@@ -72,7 +72,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
 
   // --- ✅ NEW TIMER STATE ---
   Timer? _autoSubmitTimer;
-  static const int _minVisitMinutes = 10;
+  static const int _minVisitMinutes = 1;
   static const int _maxVisitMinutes = 60;
   // ---
 

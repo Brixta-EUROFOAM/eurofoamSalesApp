@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1004141461365",
+    "project_id": "bestauthotp",
+    "storage_bucket": "bestauthotp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1004141461365:android:62c203e2cd8af9f0f2dd3c",
+        "android_client_info": {
+          "package_name": "com.example.assetarchiverflutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDjQ177qpFfzm1wVnZAKlJLYXgQdx4CfGo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
