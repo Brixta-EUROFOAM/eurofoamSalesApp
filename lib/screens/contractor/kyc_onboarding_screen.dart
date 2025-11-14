@@ -17,15 +17,22 @@ class KycOnboardingScreen extends StatefulWidget {
 }
 
 class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
-  final bool _useRealKyc = true; // <-- YOUR SWITCH
+  // This switch is still here from your old file
+  final bool _useRealKyc = true;
 
   final _formKey = GlobalKey<FormState>();
   late Mason _localMason;
+  final _api = ApiService();
+
+  // --- Form Controllers ---
   final _aadhaarController = TextEditingController();
   final _panController = TextEditingController();
   final _voterController = TextEditingController();
   final _remarkController = TextEditingController();
-  final TextEditingController _tsoIdController = TextEditingController();
+
+  // --- TSO Autocomplete State ---
+  int? _selectedTsoId; // The ID of the TSO we select
+  late Future<List<TsoUser>> _tsoListFuture;
 
   File? _aadhaarFrontFile;
   File? _aadhaarBackFile;
@@ -34,12 +41,15 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
 
   bool _isSubmitting = false;
   final ImagePicker _picker = ImagePicker();
-  final ApiService _api = ApiService();
 
   @override
   void initState() {
     super.initState();
     _localMason = widget.mason;
+
+    // --- ✅ NEW: Listen to TSO search field ---
+    _tsoListFuture = _api.searchTso("");
+    // ---
   }
 
   @override
@@ -48,11 +58,11 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
     _panController.dispose();
     _voterController.dispose();
     _remarkController.dispose();
-    _tsoIdController.dispose();
+
     super.dispose();
   }
 
-  // --- (All your image picking functions are unchanged) ---
+  // --- (Image picking functions are unchanged) ---
   Future<void> _showPickOptions(String which) async {
     FocusScope.of(context).unfocus();
     await showModalBottomSheet(
@@ -87,8 +97,10 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
 
   Future<void> _pickFile(ImageSource source, String which) async {
     try {
-      final XFile? picked =
-          await _picker.pickImage(source: source, imageQuality: 80);
+      final XFile? picked = await _picker.pickImage(
+        source: source,
+        imageQuality: 80,
+      );
       if (picked == null) return;
       setState(() {
         final file = File(picked.path);
@@ -109,8 +121,7 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
       });
     } catch (e) {
       debugPrint('Pick file error: $e');
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Failed to pick image')));
+      _toast('Failed to pick image');
     }
   }
 
@@ -142,11 +153,7 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
       return publicUrl;
     } catch (e) {
       debugPrint('Upload failed: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(
-                'Upload failed for ${f.path.split('/').last}. Please try again.')),
-      );
+      _toast('Upload failed for ${f.path.split('/').last}. Please try again.');
       throw Exception('Upload failed');
     }
   }
@@ -155,17 +162,33 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
+  // --- (End of unchanged image functions) ---
 
+  // --- ✅ NEW: THE CORRECT SEQUENTIAL SUBMIT LOGIC ---
   Future<void> _submitKyc() async {
     if (_isSubmitting) return;
     if (!_formKey.currentState!.validate()) {
-      _toast('Please fill in all required fields.');
+      _toast('Please fix the errors in the required fields.');
+      return;
+    }
+
+    // --- 1. Check if at least one doc number OR one image is present ---
+    final bool hasDocNumber =
+        _aadhaarController.text.isNotEmpty ||
+        _panController.text.isNotEmpty ||
+        _voterController.text.isNotEmpty;
+
+    final bool hasDocImage =
+        _aadhaarFrontFile != null || _panFile != null || _voterFile != null;
+
+    if (!hasDocNumber && !hasDocImage) {
+      _toast('Please provide at least one document (ID number or image).');
       return;
     }
 
     setState(() => _isSubmitting = true);
 
-    // --- Bypass Logic ---
+    // --- Bypass Logic (Updated to use new TSO ID) ---
     if (!_useRealKyc) {
       try {
         await Future.delayed(const Duration(milliseconds: 1500));
@@ -173,16 +196,14 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
 
         final completeMason = _localMason.copyWith(
           kycStatus: 'pending',
-          userId: _tsoIdController.text.isNotEmpty
-              ? int.tryParse(_tsoIdController.text)
+          userId: _selectedTsoId, // Use selected ID
+          kycDocumentName: _aadhaarController.text.isNotEmpty
+              ? 'Aadhaar Card'
               : null,
-          kycDocumentName:
-              _aadhaarController.text.isNotEmpty ? 'Aadhaar Card' : null,
           kycDocumentIdNum: _aadhaarController.text.trim(),
         );
 
         if (mounted) {
-          // --- ✅ NAVIGATION FIX ---
           Navigator.of(context).pushNamedAndRemoveUntil(
             '/contractor_nav', // <-- Go to the Nav Shell
             (_) => false,
@@ -198,59 +219,71 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
     }
     // --- End Bypass Logic ---
 
-    // --- Real Logic ---
+    // --- 2. REAL SEQUENTIAL API LOGIC ---
     try {
       _toast('Uploading images...');
-      final aadhaarFrontUrl = await _uploadIfPresent(_aadhaarFrontFile);
-      final aadhaarBackUrl = await _uploadIfPresent(_aadhaarBackFile);
-      final panUrl = await _uploadIfPresent(_panFile);
-      final voterUrl = await _uploadIfPresent(_voterFile);
+      // Step 2a: Upload all images in parallel
+      final [
+        aadhaarFrontUrl,
+        aadhaarBackUrl,
+        panUrl,
+        voterUrl,
+      ] = await Future.wait([
+        _uploadIfPresent(_aadhaarFrontFile),
+        _uploadIfPresent(_aadhaarBackFile),
+        _uploadIfPresent(_panFile),
+        _uploadIfPresent(_voterFile),
+      ]);
 
+      // Step 2b: Collect image URLs
       final Map<String, String> documents = {};
-      if (aadhaarFrontUrl != null) documents['aadhaarFrontUrl'] = aadhaarFrontUrl;
+      if (aadhaarFrontUrl != null)
+        documents['aadhaarFrontUrl'] = aadhaarFrontUrl;
       if (aadhaarBackUrl != null) documents['aadhaarBackUrl'] = aadhaarBackUrl;
       if (panUrl != null) documents['panUrl'] = panUrl;
       if (voterUrl != null) documents['voterUrl'] = voterUrl;
 
-      final completeMason = _localMason.copyWith(
-        kycDocumentName:
-            _aadhaarController.text.isNotEmpty ? 'Aadhaar Card' : null,
-        kycDocumentIdNum: _aadhaarController.text.trim(),
-        userId: _tsoIdController.text.isNotEmpty
-            ? int.tryParse(_tsoIdController.text)
+      // Step 2c: Prepare the payload to UPDATE the mason
+      // This is correct because the Mason is created during login.
+      _toast('Updating profile...');
+      final masonUpdatePayload = <String, dynamic>{
+        'kycStatus': 'pending', // Set status to pending
+        'userId': _selectedTsoId, // Assign the selected TSO ID
+        'kycDocumentName': _aadhaarController.text.isNotEmpty
+            ? 'Aadhaar Card'
             : null,
-        kycStatus: 'pending',
+        'kycDocumentIdNum': _aadhaarController.text.trim().isEmpty
+            ? null
+            : _aadhaarController.text.trim(),
+      };
+
+      // This is the first call: UPDATE the Mason record
+      final updatedMason = await _api.updateMason(
+        _localMason.id!, // Use the ID of the mason passed into the widget
+        masonUpdatePayload,
       );
 
-      _toast('Submitting details...');
-      dev.log('Submitting Complete Mason: ${completeMason.toJson()}',
-          name: 'KYC');
+      // Step 2d: Prepare the payload for the KYC submission task
+      _toast('Submitting for review...');
 
-      final results = await Future.wait([
-        () {
-          final payload = completeMason.toJson();
-          payload.remove('id');
-          return _api.createMason(Mason.fromJson(payload));
-        }(),
-        _api.submitKyc(
-          masonId: completeMason.id!,
-          aadhaarNumber: _aadhaarController.text.trim(),
-          panNumber: _panController.text.trim(),
-          voterIdNumber: _voterController.text.trim(),
-          documents: documents,
-          remark: _remarkController.text.trim(),
-        ),
-      ]);
+      // This is the second call: CREATE the review task
+      await _api.submitKyc(
+        masonId: _localMason.id!, // Use the same mason ID
+        aadhaarNumber: _aadhaarController.text.trim(),
+        panNumber: _panController.text.trim(),
+        voterIdNumber: _voterController.text.trim(),
+        documents: documents,
+        remark: _remarkController.text.trim(),
+      );
 
-      final createdMason = results[0] as Mason;
       _toast('KYC Submitted! Awaiting approval.');
 
       if (mounted) {
-        // --- ✅ NAVIGATION FIX ---
+        // Navigate to the Nav Shell, which will now show the 'pending' screen
         Navigator.of(context).pushNamedAndRemoveUntil(
-          '/contractor_nav', // <-- Go to the Nav Shell
+          '/contractor_nav',
           (_) => false,
-          arguments: createdMason,
+          arguments: updatedMason, // Pass the *updated* mason object
         );
       }
     } catch (e, st) {
@@ -261,7 +294,6 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
     }
   }
 
-  // --- (Your build() method is unchanged) ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -277,119 +309,194 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // header
+              // --- (Header is unchanged) ---
               CircleAvatar(
-                  radius: 40,
-                  child: Text(
-                      _localMason.name.isNotEmpty ? _localMason.name[0] : '?')),
+                radius: 40,
+                child: Text(
+                  _localMason.name.isNotEmpty ? _localMason.name[0] : '?',
+                ),
+              ),
               const SizedBox(height: 8),
-              Text(_localMason.name,
-                  style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                _localMason.name,
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 8),
-              Text(_localMason.phoneNumber,
-                  style: Theme.of(context).textTheme.bodyMedium),
-
+              Text(
+                _localMason.phoneNumber,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
               const SizedBox(height: 16),
 
-              // Aadhaar
+              // --- (Document fields are unchanged) ---
               TextFormField(
                 controller: _aadhaarController,
                 decoration: const InputDecoration(
-                    labelText: 'Aadhaar Number (optional)'),
+                  labelText: 'Aadhaar Number (optional)',
+                ),
                 keyboardType: TextInputType.number,
                 validator: (v) {
-                  if (v != null && v.isNotEmpty && v.length > 20)
+                  if (v != null && v.isNotEmpty && v.length > 20) {
                     return 'Max 20 chars';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 8),
-              _fileTile('Aadhaar Front', _aadhaarFrontFile,
-                  () => _showPickOptions('aadhaarFront')),
-              const SizedBox(height: 8),
-              _fileTile('Aadhaar Back', _aadhaarBackFile,
-                  () => _showPickOptions('aadhaarBack')),
-              const SizedBox(height: 12),
-
-              // PAN
-              TextFormField(
-                controller: _panController,
-                decoration:
-                    const InputDecoration(labelText: 'PAN Number (optional)'),
-                textCapitalization: TextCapitalization.characters,
-                validator: (v) {
-                  if (v != null && v.isNotEmpty && v.length > 20)
-                    return 'Max 20 chars';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 8),
-              _fileTile('PAN Document', _panFile, () => _showPickOptions('pan')),
-              const SizedBox(height: 12),
-
-              // Voter
-              TextFormField(
-                controller: _voterController,
-                decoration:
-                    const InputDecoration(labelText: 'Voter ID (optional)'),
-                validator: (v) {
-                  if (v != null && v.isNotEmpty && v.length > 20)
-                    return 'Max 20 chars';
+                  }
                   return null;
                 },
               ),
               const SizedBox(height: 8),
               _fileTile(
-                  'Voter Document', _voterFile, () => _showPickOptions('voter')),
-              const SizedBox(height: 12),
-
-              // --- TSO ID ---
-              const Divider(),
-              const SizedBox(height: 16),
-              Text('TSO Agent ID (Optional)',
-                  style: Theme.of(context).textTheme.titleMedium),
+                'Aadhaar Front',
+                _aadhaarFrontFile,
+                () => _showPickOptions('aadhaarFront'),
+              ),
               const SizedBox(height: 8),
+              _fileTile(
+                'Aadhaar Back',
+                _aadhaarBackFile,
+                () => _showPickOptions('aadhaarBack'),
+              ),
+              const SizedBox(height: 12),
               TextFormField(
-                controller: _tsoIdController,
-                keyboardType: TextInputType.number,
+                controller: _panController,
                 decoration: const InputDecoration(
-                  labelText: 'TSO User ID (If known)',
-                  hintText: 'e.g., 42',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.person_pin),
+                  labelText: 'PAN Number (optional)',
                 ),
+                textCapitalization: TextCapitalization.characters,
                 validator: (v) {
-                  if (v != null && v.isNotEmpty && int.tryParse(v) == null) {
-                    return 'Must be a number';
+                  if (v != null && v.isNotEmpty && v.length > 20) {
+                    return 'Max 20 chars';
                   }
                   return null;
                 },
               ),
-              const SizedBox(height: 24),
-              // --- END TSO ID ---
+              const SizedBox(height: 8),
+              _fileTile(
+                'PAN Document',
+                _panFile,
+                () => _showPickOptions('pan'),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _voterController,
+                decoration: const InputDecoration(
+                  labelText: 'Voter ID (optional)',
+                ),
+                validator: (v) {
+                  if (v != null && v.isNotEmpty && v.length > 20) {
+                    return 'Max 20 chars';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 8),
+              _fileTile(
+                'Voter Document',
+                _voterFile,
+                () => _showPickOptions('voter'),
+              ),
+              const SizedBox(height: 12),
 
-              // remark
+              // --- ✅ NEW: TSO AGENT ID (UPGRADED to Dropdown) ---
+              const Divider(),
+              const SizedBox(height: 16),
+              Text(
+                'TSO Agent ID (Optional)',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+
+              FutureBuilder<List<TsoUser>>(
+                future: _tsoListFuture,
+                builder: (context, snapshot) {
+                  // Loading state
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.all(8.0),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+
+                  // Error state
+                  if (snapshot.hasError || !snapshot.hasData) {
+                    return TextFormField(
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Could not load TSOs',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(
+                          Icons.error_outline,
+                          color: Colors.red,
+                        ),
+                      ),
+                    );
+                  }
+
+                  // Success state
+                  final tsoList = snapshot.data!;
+
+                  return DropdownButtonFormField<int>(
+                    value: _selectedTsoId,
+                    hint: const Text('Select TSO (If known)'),
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person_pin),
+                    ),
+                    // Allow clearing the selection
+                    items: [
+                      const DropdownMenuItem<int>(
+                        value: null,
+                        child: Text(
+                          'None',
+                          style: TextStyle(fontStyle: FontStyle.italic),
+                        ),
+                      ),
+                      ...tsoList.map((TsoUser tso) {
+                        return DropdownMenuItem<int>(
+                          value: tso.id,
+                          child: Text(tso.name),
+                        );
+                      }),
+                    ],
+                    onChanged: (int? newValue) {
+                      setState(() {
+                        _selectedTsoId = newValue;
+                      });
+                    },
+                    validator: (v) {
+                      // No validation needed for an optional field
+                      return null;
+                    },
+                  );
+                },
+              ),
+
+              // --- ✅ END OF TSO UPGRADE ---
+              const SizedBox(height: 24),
               TextFormField(
                 controller: _remarkController,
-                decoration:
-                    const InputDecoration(labelText: 'Remark (optional)'),
+                decoration: const InputDecoration(
+                  labelText: 'Remark (optional)',
+                ),
                 maxLines: 3,
               ),
 
               const SizedBox(height: 20),
-
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _isSubmitting ? null : _submitKyc,
-                  style:
-                      ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                  ),
                   child: _isSubmitting
                       ? const SizedBox(
                           height: 18,
                           width: 18,
                           child: CircularProgressIndicator(
-                              color: Colors.white, strokeWidth: 2))
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
                       : const Text('SUBMIT KYC'),
                 ),
               ),

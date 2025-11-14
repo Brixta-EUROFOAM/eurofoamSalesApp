@@ -39,10 +39,10 @@ class TsoUser {
 /// Authorization header is attached to subsequent requests.
 class ApiService {
   static const String _baseUrl = 'https://myserverbymycoco.onrender.com';
-  
+
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
-  
+
   // --- ✅ ADDED TOKEN STORAGE ---
   static String? _authToken;
 
@@ -61,7 +61,7 @@ class ApiService {
   }
 
   // --- GENERAL HELPERS ---
-  
+
   Map<String, String> get _authHeaders => {
     'Content-Type': 'application/json',
     if (_authToken != null) 'Authorization': 'Bearer $_authToken',
@@ -72,8 +72,9 @@ class ApiService {
     dev.log('GET: $url', name: 'ApiService');
 
     try {
-      final response =
-          await _client.get(url, headers: _authHeaders).timeout(const Duration(seconds: 45)); // USE _client
+      final response = await _client
+          .get(url, headers: _authHeaders)
+          .timeout(const Duration(seconds: 45)); // USE _client
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 200) {
         if (jsonData['success'] == true && jsonData['data'] != null) {
@@ -108,13 +109,14 @@ class ApiService {
     headers['Content-Type'] = 'application/json; charset=UTF-8';
 
     try {
-      final response = await _client // USE _client
-          .post(
-            url,
-            headers: headers, // Use updated headers
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 45));
+      final response =
+          await _client // USE _client
+              .post(
+                url,
+                headers: headers, // Use updated headers
+                body: jsonEncode(body),
+              )
+              .timeout(const Duration(seconds: 45));
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 201 || response.statusCode == 200) {
         // Special case for login which returns data directly
@@ -153,13 +155,14 @@ class ApiService {
     headers['Content-Type'] = 'application/json; charset=UTF-8';
 
     try {
-      final response = await _client // USE _client
-          .patch(
-            url,
-            headers: headers, // Use updated headers
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 45));
+      final response =
+          await _client // USE _client
+              .patch(
+                url,
+                headers: headers, // Use updated headers
+                body: jsonEncode(body),
+              )
+              .timeout(const Duration(seconds: 45));
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 200) {
         if (jsonData['success'] == true && jsonData['data'] != null) {
@@ -184,9 +187,10 @@ class ApiService {
     dev.log('DELETE: $url', name: 'ApiService');
 
     try {
-      final response = await _client // USE _client
-          .delete(url, headers: _authHeaders)
-          .timeout(const Duration(seconds: 45));
+      final response =
+          await _client // USE _client
+              .delete(url, headers: _authHeaders)
+              .timeout(const Duration(seconds: 45));
       if (response.statusCode != 200 && response.statusCode != 204) {
         final jsonData = jsonDecode(response.body);
         throw Exception(
@@ -214,11 +218,17 @@ class ApiService {
         final body = jsonDecode(res.body);
         if (body['success'] == true && body['data'] is List) {
           return (body['data'] as List)
-              .map((json) => SchemeEnrollment.fromJson(json as Map<String, dynamic>))
+              .map(
+                (json) =>
+                    SchemeEnrollment.fromJson(json as Map<String, dynamic>),
+              )
               .toList();
         }
       }
-      dev.log('Failed to fetch schemes: ${res.statusCode} ${res.body}', name: 'ApiService');
+      dev.log(
+        'Failed to fetch schemes: ${res.statusCode} ${res.body}',
+        name: 'ApiService',
+      );
       return [];
     } catch (e) {
       dev.log('Network error fetching schemes: $e', name: 'ApiService');
@@ -228,29 +238,32 @@ class ApiService {
 
   /// POST /api/masons-on-scheme
   Future<SchemeEnrollment?> enrollMasonInScheme({
-    required String masonId, 
-    required String schemeId
+    required String masonId,
+    required String schemeId,
   }) async {
     final uri = Uri.parse('$_baseUrl/api/masons-on-scheme');
     try {
-      final res = await _client // USE _client
-          .post(
-            uri, 
-            headers: _authHeaders,
-            body: jsonEncode({
-              'masonId': masonId, 
-              'schemeId': schemeId,
-            })
-          );
+      final res =
+          await _client // USE _client
+              .post(
+                uri,
+                headers: _authHeaders,
+                body: jsonEncode({'masonId': masonId, 'schemeId': schemeId}),
+              );
 
       if (res.statusCode == 201) {
         final body = jsonDecode(res.body);
         if (body['success'] == true && body['data'] != null) {
           // NOTE: Enrollment model only uses the base fields, not the joined scheme details
-          return SchemeEnrollment.fromJson(body['data'] as Map<String, dynamic>);
+          return SchemeEnrollment.fromJson(
+            body['data'] as Map<String, dynamic>,
+          );
         }
       }
-      dev.log('Enrollment failed: ${res.statusCode} ${res.body}', name: 'ApiService');
+      dev.log(
+        'Enrollment failed: ${res.statusCode} ${res.body}',
+        name: 'ApiService',
+      );
       return null;
     } catch (e) {
       dev.log('Network error during enrollment: $e', name: 'ApiService');
@@ -274,8 +287,8 @@ class ApiService {
         await http.MultipartFile.fromPath('file', imageFile.path),
       );
       final streamedResponse = await request.send().timeout(
-            const Duration(seconds: 90),
-          );
+        const Duration(seconds: 90),
+      );
       final response = await http.Response.fromStream(streamedResponse);
       final jsonData = jsonDecode(response.body);
       if (response.statusCode == 200) {
@@ -303,9 +316,13 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> performOcr(
-      String imageUrl, String docType) async {
-    dev.log('Performing MOCK OCR for $docType on $imageUrl',
-        name: 'ApiService');
+    String imageUrl,
+    String docType,
+  ) async {
+    dev.log(
+      'Performing MOCK OCR for $docType on $imageUrl',
+      name: 'ApiService',
+    );
     await Future.delayed(const Duration(seconds: 2));
     return {};
   }
@@ -365,30 +382,19 @@ class ApiService {
     );
   }
 
-  Future<Dealer> createDealer(
-    Dealer dealer, {
-    double? radius,
-  }) async {
+  Future<Dealer> createDealer(Dealer dealer, {double? radius}) async {
     final body = dealer.toJson();
     if (radius != null) {
       body['radius'] = radius.toString();
     }
-    return _post(
-      'dealers',
-      body,
-      (json) => Dealer.fromJson(json),
-    );
+    return _post('dealers', body, (json) => Dealer.fromJson(json));
   }
 
   Future<Dealer> updateDealer(
     String dealerId,
     Map<String, dynamic> data,
   ) async {
-    return _patch(
-      'dealERS/$dealerId',
-      data,
-      (json) => Dealer.fromJson(json),
-    );
+    return _patch('dealERS/$dealerId', data, (json) => Dealer.fromJson(json));
   }
 
   Future<Dealer> updateDealerGeofence({
@@ -402,11 +408,7 @@ class ApiService {
       'longitude': longitude,
       'radius': radius,
     };
-    return _patch(
-      'dealers/$dealerId',
-      body,
-      (json) => Dealer.fromJson(json),
-    );
+    return _patch('dealers/$dealerId', body, (json) => Dealer.fromJson(json));
   }
 
   Future<void> deleteDealer(String dealerId) => _delete('dealers/$dealerId');
@@ -435,10 +437,7 @@ class ApiService {
   }
 
   Future<Pjp> fetchPjpById(String pjpId) async {
-    return _get(
-      'pjp/$pjpId',
-      (json) => Pjp.fromJson(json),
-    );
+    return _get('pjp/$pjpId', (json) => Pjp.fromJson(json));
   }
 
   Future<List<Pjp>> fetchPjpsByStatus(
@@ -485,13 +484,12 @@ class ApiService {
           dealerId: dealerId,
         ),
       ]);
-      return PjpData(
-        pendingPjps: results[0],
-        verifiedPjps: results[1],
-      );
+      return PjpData(pendingPjps: results[0], verifiedPjps: results[1]);
     } catch (e) {
-      dev.log('Failed to fetch PENDING and VERIFIED PJPs: $e',
-          name: 'ApiService');
+      dev.log(
+        'Failed to fetch PENDING and VERIFIED PJPs: $e',
+        name: 'ApiService',
+      );
       return PjpData(pendingPjps: [], verifiedPjps: []);
     }
   }
@@ -645,8 +643,7 @@ class ApiService {
     );
   }
 
-  Future<void> deleteDvr(String dvrId) =>
-      _delete('daily-visit-reports/$dvrId');
+  Future<void> deleteDvr(String dvrId) => _delete('daily-visit-reports/$dvrId');
   Future<List<TechnicalVisitReport>> fetchTvrsForUser(
     int userId, {
     String? startDate,
@@ -694,10 +691,7 @@ class ApiService {
   }
 
   Future<Mason> fetchMasonById(String masonId) {
-    return _get(
-      'masons/$masonId',
-      (json) => Mason.fromJson(json),
-    );
+    return _get('masons/$masonId', (json) => Mason.fromJson(json));
   }
 
   Future<List<Mason>> fetchMasonsByUserId(
@@ -729,21 +723,13 @@ class ApiService {
 
   Future<Mason> createMason(Mason mason) {
     final body = mason.toJson()..removeWhere((k, v) => v == null);
-    return _post(
-      'masons',
-      body,
-      (json) => Mason.fromJson(json),
-    );
+    return _post('masons', body, (json) => Mason.fromJson(json));
   }
 
   Future<Mason> updateMason(String masonId, Map<String, dynamic> data) {
-    final body =
-        Map<String, dynamic>.from(data)..removeWhere((k, v) => v == null);
-    return _patch(
-      'masons/$masonId',
-      body,
-      (json) => Mason.fromJson(json),
-    );
+    final body = Map<String, dynamic>.from(data)
+      ..removeWhere((k, v) => v == null);
+    return _patch('masons/$masonId', body, (json) => Mason.fromJson(json));
   }
 
   Future<void> deleteMason(String masonId) async {
@@ -769,29 +755,25 @@ class ApiService {
       if (remark != null && remark.isNotEmpty) 'remark': remark,
     }..removeWhere((k, v) => v == null);
 
-    return _post(
-      'kyc-submissions',
-      body,
-      (json) {
-        return json as Map<String, dynamic>;
-      },
-    );
+    return _post('kyc-submissions', body, (json) {
+      return json as Map<String, dynamic>;
+    });
   }
 
   Future<List<TsoUser>> searchTso(String query) async {
+    // It now queries for isTechnicalRole=true
     return _get(
-      'users?search=$query&role=tso',
+      'users?search=$query&isTechnicalRole=true',
       (json) => (json as List).map((item) => TsoUser.fromJson(item)).toList(),
     );
   }
 
   Future<Employee> adminLogin(String loginId, String password) async {
     dev.log('Admin Login Step 1: Authenticating', name: 'ApiService');
-    final loginResponse = await _post(
-      'auth/login',
-      {'loginId': loginId, 'password': password},
-      (json) => json as Map<String, dynamic>,
-    );
+    final loginResponse = await _post('auth/login', {
+      'loginId': loginId,
+      'password': password,
+    }, (json) => json as Map<String, dynamic>);
 
     final token = loginResponse['token'] as String?;
     final userId = loginResponse['userId']?.toString();
@@ -803,8 +785,10 @@ class ApiService {
     _authToken = token;
     dev.log('Admin Login Step 2: Token stored.', name: 'ApiService');
 
-    dev.log('Admin Login Step 3: Fetching profile for user $userId',
-        name: 'ApiService');
+    dev.log(
+      'Admin Login Step 3: Fetching profile for user $userId',
+      name: 'ApiService',
+    );
     return fetchEmployeeProfile(userId);
   }
 
@@ -825,7 +809,9 @@ class ApiService {
   }
 
   Future<Map<String, dynamic>> reviewKycSubmission(
-      String submissionId, String status) async {
+    String submissionId,
+    String status,
+  ) async {
     final body = {'status': status};
     return _patch(
       'kyc-submissions/$submissionId',
