@@ -128,8 +128,7 @@ class _ContractorNavScreenState extends State<ContractorNavScreen> {
           // --- App Content ---
           Expanded(
             child: AbsorbPointer(
-              // App is ONLY disabled if 'pending', not if 'needed'
-              absorbing: isPending, 
+              absorbing: false, 
               child: IndexedStack(
                 index: _selectedIndex,
                 children: _pages,
@@ -153,7 +152,7 @@ class _ContractorNavScreenState extends State<ContractorNavScreen> {
         selectedFontSize: 12,
         unselectedFontSize: 12,
         currentIndex: _selectedIndex,
-        onTap: isPending ? null : _onItemTapped,
+        onTap: _onItemTapped,
         elevation: 8,
       ),
     );

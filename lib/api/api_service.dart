@@ -14,7 +14,8 @@ import '../models/geotracking_data_model.dart';
 import '../models/competition_report_model.dart';
 import '../models/mason_model.dart';
 import '../models/employee_model.dart';
-import '../models/scheme_enrollment_model.dart'; // NEW IMPORT
+import '../models/scheme_enrollment_model.dart';
+import '../models/bag_lift_model.dart';
 
 // --- ✅ 1. (NEW) TSO USER HELPER CLASS (DEFINED HERE) ---
 class TsoUser {
@@ -817,6 +818,39 @@ class ApiService {
       'kyc-submissions/$submissionId',
       body,
       (json) => json as Map<String, dynamic>,
+    );
+  }
+
+  /// POST /api/bag-lifts
+  /// Submits a new bag lift entry for a mason.
+  Future<BagLift> submitBags({
+    required String masonId,
+    required int bagCount,
+    required String? dealerId,
+  }) async {
+    final body = {
+      'masonId': masonId,
+      'bagCount': bagCount,
+      'purchaseDate': DateTime.now().toIso8601String(),
+      'dealerId': dealerId,
+      'pointsCredited': 0,
+    };
+    return _post(
+      'bag-lifts',
+      body,
+      // We assume the backend returns the created object,
+      // wrapped in { "success": true, "data": { ... } }
+      (json) => BagLift.fromJson(json),
+    );
+  }
+
+  /// GET /api/bag-lifts/mason/:masonId
+  /// Fetches the bag submission history for a specific mason.
+  Future<List<BagLift>> fetchBagHistory(String masonId) async {
+    // Assuming your backend route is set up like this
+    return _get(
+      'bag-lifts/mason/$masonId',
+      (json) => (json as List).map((item) => BagLift.fromJson(item)).toList(),
     );
   }
 }
