@@ -1,6 +1,9 @@
+// lib/screens/contractor/contractor_login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:assetarchiverflutter/api/firebase_auth.dart'; // Import the new AuthService
+import 'package:assetarchiverflutter/api/firebase_auth.dart';
+import 'package:assetarchiverflutter/models/mason_model.dart';
+import 'dart:developer' as dev; // Import for better logging
 
 class ContractorLoginScreen extends StatefulWidget {
   const ContractorLoginScreen({super.key});
@@ -10,29 +13,16 @@ class ContractorLoginScreen extends StatefulWidget {
 }
 
 class _ContractorLoginScreenState extends State<ContractorLoginScreen> {
-  // --- ⬇️ START NEW BYPASS SWITCH ⬇️ ---
-  //
-  // Set this to 'true' to use the real Firebase OTP flow.
-  // Set this to 'false' to bypass OTP and log in instantly
-  // (requires backend bypass route to be running).
-  //
-  final bool _useRealOtp = true; // <-- ❄️ YOUR NEW SWITCH ❄️
-  //
-  // --- ⬆️ END NEW BYPASS SWITCH ⬆️ ---
-
+  final _formKey = GlobalKey<FormState>();
+  final _nameController = TextEditingController();
   final _phoneController = TextEditingController(text: '+91');
   final _otpController = TextEditingController();
 
-  final _auth = FirebaseAuth.instance;
+  final bool _useRealOtp = true;
 
-  // --- ⚠️ EMULATOR SETTING ---
-  //
-  // '10.0.2.2' is the special alias for the Android Emulator
-  // to connect to your computer's 'localhost'.
-  //
-  // --- END FIX ---
+  final _auth = FirebaseAuth.instance;
   final _authService = AuthService(
-    baseUrl: 'https://myserverbymycoco.onrender.com', // <-- REVERTED FOR EMULATOR
+    baseUrl: 'https://myserverbymycoco.onrender.com',
   );
 
   bool _isOtpSent = false;
@@ -40,51 +30,132 @@ class _ContractorLoginScreenState extends State<ContractorLoginScreen> {
   String? _verificationId;
   int? _resendToken;
 
-  // --- ⬇️ REMOVED BYPASS MODIFICATION ⬇️ ---
-  // Magic credentials no longer needed
-  // final String _devPhone = '+910000000000';
-  // final String _devOtp = '000000';
-  // final String _devVerificationId = 'dev-bypass';
-  // --- ⬆️ END BYPASS MODIFICATION ⬆️ ---
+  // --- NEW: State for Auto-Login Check ---
+  bool _isCheckingSession = true; 
+  // --- NEW: State for UI adjustment on failed auto-login ---
+  bool _isReturningUserUI = false;
+  // ---------------------------------------
 
-  // ------------- SEND OTP (Firebase) -------------
+  @override
+  void initState() {
+    super.initState();
+    // Start checking for an existing session immediately
+    _attemptAutoLogin(); 
+  }
+
+  // ------------------------------------------------------------
+  // NEW: AUTO-LOGIN HANDLER
+  // ------------------------------------------------------------
+  Future<void> _attemptAutoLogin() async {
+    dev.log('Starting auto-login attempt.', name: 'AuthDebug');
+    
+    // 1. Check for stored JWT
+    final storedJwt = await _authService.getStoredJwt();
+    dev.log('Stored JWT found? ${storedJwt != null}', name: 'AuthDebug'); 
+    
+    // If no JWT is found, show the manual login screen.
+    if (storedJwt == null) {
+      setState(() => _isCheckingSession = false);
+      dev.log('No stored JWT. Showing manual login.', name: 'AuthDebug');
+      return; 
+    }
+
+    // 2. Session found: attempt to validate it on backend
+    try {
+      _toast('Session found. Validating...');
+      final serverStub = await _authService.tryAutoLogin(); 
+      
+      dev.log('Server response received. Null? ${serverStub == null}', name: 'AuthDebug');
+      if (serverStub != null) {
+        dev.log('Server response has Mason? ${serverStub['mason'] != null}', name: 'AuthDebug');
+      }
+      
+      if (serverStub != null && serverStub['mason'] != null) {
+        _toast('Welcome back!');
+        
+        // Use the validated data from the server
+        final masonData = serverStub['mason'];
+
+        final Mason localMason = Mason(
+          id: masonData['id'],
+          firebaseUid: masonData['firebaseUid'],
+          name: masonData['name'] ?? '',
+          phoneNumber: masonData['phoneNumber'] ?? '',
+          kycStatus: masonData['kycStatus'] ?? 'none',
+          pointsBalance: masonData['pointsBalance'] ?? 0,
+        );
+
+        if (!mounted) return;
+        
+        dev.log('Auto-login SUCCESS. Navigating to /contractor_home', name: 'AuthDebug'); // <-- SUCCESS PATH
+        
+        // Navigate directly to the KYC Router
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/contractor_home', 
+          (_) => false,
+          arguments: localMason,
+        );
+        return; // Exit after successful navigation
+      }
+    } catch (e) {
+      dev.log('Auto-login network/parsing error: $e', name: 'AuthDebug');
+    }
+    
+    // 3. Fallback: Show the manual login screen but customize UI
+    final storedDetails = await _authService.getStoredMasonDetails();
+    
+    // If we have stored details, it means the user has logged in before.
+    if (storedDetails['masonName'] != null && storedDetails['masonPhone'] != null) {
+      _nameController.text = storedDetails['masonName']!;
+      _phoneController.text = storedDetails['masonPhone']!;
+      // Activate the returning user UI state
+      _isReturningUserUI = true;
+    } 
+    
+    dev.log('Auto-login FAILED. Setting _isReturningUserUI: $_isReturningUserUI', name: 'AuthDebug'); // <-- FAILURE PATH
+    setState(() => _isCheckingSession = false);
+  }
+
+  // ------------------------------------------------------------
+  // SEND OTP
+  // ------------------------------------------------------------
   Future<void> _sendOtp({bool isResend = false}) async {
+    // Only validate phone if we are a returning user, otherwise validate name too.
+    if (!_isReturningUserUI && !_formKey.currentState!.validate()) return;
+    if (_isReturningUserUI && _phoneController.text.trim().isEmpty) {
+      _toast('Please enter your phone number.');
+      return;
+    }
+    
     final phone = _phoneController.text.trim();
 
     if (!phone.startsWith('+') || phone.length < 10) {
-      _toast('Use E.164 format: +9198xxxxxxxx');
+      _toast('Use E.164 format: +91...');
       return;
     }
 
     setState(() => _isLoading = true);
 
-    // --- ⬇️ NEW BYPASS SWITCH LOGIC ⬇️ ---
     if (!_useRealOtp) {
-      _toast('DEBUG BYPASS: OTP step skipped. Enter any 6 digits.');
+      _toast('DEBUG BYPASS: OTP skipped.');
       setState(() {
-        _verificationId = 'dev-bypass'; // Just a placeholder
-        _resendToken = null;
+        _verificationId = 'dev-bypass';
         _isOtpSent = true;
         _isLoading = false;
       });
       return;
     }
-    // --- ⬆️ END BYPASS SWITCH LOGIC ⬆️ ---
 
-    // This code only runs if _useRealOtp is true
     try {
       await _auth.verifyPhoneNumber(
         phoneNumber: phone,
         timeout: const Duration(seconds: 60),
         forceResendingToken: isResend ? _resendToken : null,
         verificationCompleted: (PhoneAuthCredential cred) async {
-          // Android may auto-verify; sign in silently.
           try {
             await _auth.signInWithCredential(cred);
             await _finishBackendHandshake();
-          } catch (_) {
-            // fallback to manual entry; ignore errors here
-          }
+          } catch (_) {}
         },
         verificationFailed: (FirebaseAuthException e) {
           _toast('Verification failed: ${e.code}');
@@ -109,25 +180,24 @@ class _ContractorLoginScreenState extends State<ContractorLoginScreen> {
     }
   }
 
-  // ------------- VERIFY OTP (Firebase) -------------
+  // ------------------------------------------------------------
+  // VERIFY OTP
+  // ------------------------------------------------------------
   Future<void> _verifyOtp() async {
     final code = _otpController.text.trim();
+
     if ((_verificationId ?? '').isEmpty || code.length < 4) {
-      _toast('Enter the 6-digit OTP');
+      _toast('Enter OTP');
       return;
     }
 
     setState(() => _isLoading = true);
 
-    // --- ⬇️ NEW BYPASS SWITCH LOGIC ⬇️ ---
     if (!_useRealOtp) {
-      _toast('DEBUG BYPASS: Logging in...');
-      await _finishBackendBypass(); // Call the bypass handshake
+      await _finishBackendBypass();
       return;
     }
-    // --- ⬆️ END BYPASS SWITCH LOGIC ⬆️ ---
 
-    // This code only runs if _useRealOtp is true
     try {
       final cred = PhoneAuthProvider.credential(
         verificationId: _verificationId!,
@@ -138,8 +208,8 @@ class _ContractorLoginScreenState extends State<ContractorLoginScreen> {
     } on FirebaseAuthException catch (e) {
       final msg = switch (e.code) {
         'invalid-verification-code' => 'Invalid OTP',
-        'session-expired' => 'OTP expired. Resend.',
-        'too-many-requests' => 'Too many attempts. Try later.',
+        'session-expired' => 'OTP expired',
+        'too-many-requests' => 'Too many attempts',
         _ => 'Auth error: ${e.code}',
       };
       _toast(msg);
@@ -150,60 +220,95 @@ class _ContractorLoginScreenState extends State<ContractorLoginScreen> {
     }
   }
 
-  // ------------- BACKEND HANDSHAKE (Refactored) -------------
+  // ------------------------------------------------------------
+  // BACKEND HANDSHAKE (MODIFIED TO NAVIGATE TO /contractor_home)
+  // ------------------------------------------------------------
   Future<void> _finishBackendHandshake() async {
+    setState(() => _isLoading = true);
+
     final idToken = await _auth.currentUser?.getIdToken(true);
+
+    dev.log('idToken null? ${idToken == null}', name: 'Auth');
+
     if (idToken == null) {
-      _toast('Could not get Firebase token');
+      _toast('No Firebase token');
       setState(() => _isLoading = false);
       return;
     }
 
-    // Use the AuthService to handle the backend call and token storage
-    final masonData = await _authService.sendFirebaseIdToken(idToken);
+    final serverStub = await _authService.sendFirebaseIdToken(idToken);
 
-    if (masonData != null) {
+    if (serverStub != null && serverStub['mason'] != null) {
       _toast('Login successful');
+
+      final masonData = serverStub['mason'];
+      
+      // Use stored name if not provided by the server/input (for returning users)
+      final userName = masonData['name'] ?? _nameController.text.trim();
+
+      final Mason localMason = Mason(
+        id: masonData['id'],
+        firebaseUid: masonData['firebaseUid'],
+        name: userName,
+        phoneNumber: _phoneController.text.trim(),
+        kycStatus: masonData['kycStatus'] ?? 'none',
+        pointsBalance: masonData['pointsBalance'] ?? 0,
+      );
+
       if (!mounted) return;
-      // Navigate to contractor home, passing the mason data
-      // This assumes you have a '/contractor_home' route defined in your main.dart
-      // that can accept a Map<String, dynamic> as arguments.
+
+      // Navigate to /contractor_home which is the KYC Router
       Navigator.of(context).pushNamedAndRemoveUntil(
-        '/contractor_home',
+        '/contractor_home', 
         (_) => false,
-        arguments: masonData, // Pass the user data
+        arguments: localMason,
       );
     } else {
-      _toast('Server auth failed. Please try again.');
+      _toast('Server auth failed.');
     }
 
     setState(() => _isLoading = false);
   }
 
-  // ------------- NEW: BACKEND BYPASS HANDSHAKE -------------
+  // ------------------------------------------------------------
+  // DEV BYPASS (MODIFIED TO NAVIGATE TO /contractor_home)
+  // ------------------------------------------------------------
   Future<void> _finishBackendBypass() async {
-    // This function calls the new 'sendDevBypassLogin' method in your
-    // auth service, which hits the new backend route.
-    final masonData =
+    setState(() => _isLoading = true);
+
+    final serverStub =
         await _authService.sendDevBypassLogin(_phoneController.text.trim());
 
-    if (masonData != null) {
+    if (serverStub != null && serverStub['mason'] != null) {
       _toast('DEBUG BYPASS: Login successful');
+
+      final masonData = serverStub['mason'];
+      final userName = masonData['name'] ?? _nameController.text.trim();
+
+
+      final Mason localMason = Mason(
+        id: masonData['id'],
+        firebaseUid: masonData['firebaseUid'],
+        name: userName,
+        phoneNumber: _phoneController.text.trim(),
+        kycStatus: masonData['kycStatus'] ?? 'none',
+        pointsBalance: masonData['pointsBalance'] ?? 0,
+      );
+
       if (!mounted) return;
-      // Navigate to contractor home, passing the mason data
+
+      // Navigate to /contractor_home which is the KYC Router
       Navigator.of(context).pushNamedAndRemoveUntil(
-        '/contractor_home',
+        '/contractor_home', 
         (_) => false,
-        arguments: masonData, // Pass the user data
+        arguments: localMason,
       );
     } else {
-      _toast('DEBUG BYPASS: Server auth failed. Is backend running?');
+      _toast('DEBUG BYPASS: Server auth failed');
     }
 
     setState(() => _isLoading = false);
   }
-
-  // --- ⬆️ END BYPASS MODIFICATION ⬆️ ---
 
   void _toast(String m) {
     if (!mounted) return;
@@ -212,13 +317,34 @@ class _ContractorLoginScreenState extends State<ContractorLoginScreen> {
 
   @override
   void dispose() {
+    _nameController.dispose();
     _phoneController.dispose();
     _otpController.dispose();
     super.dispose();
   }
 
+  // ------------------------------------------------------------
+  // UI - Conditional Render
+  // ------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
+    // Show splash/loading screen while checking session
+    if (_isCheckingSession) {
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Checking saved session...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Original login UI if no session is found
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -236,65 +362,80 @@ class _ContractorLoginScreenState extends State<ContractorLoginScreen> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
-        child: Column(
-          children: [
-            Text(
-              _isOtpSent ? 'Verify your number' : 'Sign in with your phone',
-              style: theme.textTheme.headlineSmall
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _isOtpSent
-                  // --- ⬇️ NEW BYPASS SWITCH TEXT ⬇️ ---
-                  ? (_useRealOtp
-                      ? 'Enter the 6-digit code sent to ${_phoneController.text}'
-                      : 'BYPASS: Enter any 6+ digits to continue')
-                  // --- ⬆️ END BYPASS SWITCH TEXT ⬆️ ---
-                  : 'We will send a one-time password (OTP) to your mobile number.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              Text(
+                _isOtpSent 
+                    ? 'Verify your number' 
+                    : (_isReturningUserUI
+                        ? 'Welcome back, ${_nameController.text}!'
+                        : 'Sign in with your phone'),
+                style: theme.textTheme.headlineSmall
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-            TextFormField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Phone Number',
-                hintText: '+919876543210',
-                prefixIcon: Icon(Icons.phone),
-                border: OutlineInputBorder(),
-              ),
-              readOnly: _isOtpSent,
-            ),
-            if (_isOtpSent) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
+              
+              // --- FULL NAME FIELD (Hidden for Returning Users) ---
+              if (!_isReturningUserUI) ...[
+                TextFormField(
+                  controller: _nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Full Name',
+                    prefixIcon: Icon(Icons.person),
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Enter name' : null,
+                  readOnly: _isOtpSent,
+                ),
+                const SizedBox(height: 16),
+              ],
+              // ----------------------------------------------------
+
               TextFormField(
-                controller: _otpController,
-                keyboardType: TextInputType.number,
-                autofillHints: const [AutofillHints.oneTimeCode],
-                decoration: const InputDecoration(
-                  labelText: 'OTP',
-                  hintText: '123456',
-                  prefixIcon: Icon(Icons.password),
-                  border: OutlineInputBorder(),
+                controller: _phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: InputDecoration(
+                  labelText: _isReturningUserUI ? 'Your Phone Number' : 'Phone Number',
+                  prefixIcon: const Icon(Icons.phone),
+                  border: const OutlineInputBorder(),
                 ),
+                validator: (v) =>
+                    (v == null || !v.startsWith('+') || v.length < 10)
+                        ? 'Use +91...'
+                        : null,
+                // Phone is read-only if we detected a returning user
+                readOnly: _isOtpSent || _isReturningUserUI,
               ),
+
+              if (_isOtpSent) ...[
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _otpController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'OTP',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 24),
+
+              if (_isLoading)
+                const CircularProgressIndicator()
+              else
+                ElevatedButton(
+                  onPressed: _isOtpSent ? _verifyOtp : _sendOtp,
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                  ),
+                  child: Text(_isOtpSent ? 'SIGN IN' : (_isReturningUserUI ? 'GET OTP' : 'SEND OTP')),
+                ),
             ],
-            const SizedBox(height: 24),
-            if (_isLoading)
-              const CircularProgressIndicator()
-            else
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 50),
-                ),
-                onPressed: _isOtpSent ? _verifyOtp : _sendOtp,
-                child: Text(_isOtpSent ? 'SIGN IN / SIGN UP' : 'SEND OTP'),
-              ),
-          ],
+          ),
         ),
       ),
     );

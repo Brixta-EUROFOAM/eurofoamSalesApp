@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 
+// This screen is from your first README, now updated with the Admin Portal.
+
 class AppSelectorScreen extends StatelessWidget {
   const AppSelectorScreen({super.key});
-
-  // This is the new entry point of your app.
-  // It has two buttons.
 
   @override
   Widget build(BuildContext context) {
@@ -12,7 +11,6 @@ class AppSelectorScreen extends StatelessWidget {
     
     return Scaffold(
       body: Container(
-        // Use your app's gradient or a clean background
         decoration: BoxDecoration(
           color: theme.colorScheme.background,
         ),
@@ -60,6 +58,20 @@ class AppSelectorScreen extends StatelessWidget {
                   onTap: () {
                     // This will navigate to your NEW login flow
                     Navigator.of(context).pushNamed('/contractor_login');
+                  },
+                ),
+
+                const SizedBox(height: 24),
+
+                // --- ✅ NEW Button 3: Admin Portal ---
+                _PortalCard(
+                  theme: theme,
+                  icon: Icons.admin_panel_settings_outlined,
+                  title: 'Admin Portal',
+                  subtitle: 'For TSO and internal staff.',
+                  onTap: () {
+                    // This will navigate to your NEW Admin login flow
+                    Navigator.of(context).pushNamed('/admin_login');
                   },
                 ),
               ],

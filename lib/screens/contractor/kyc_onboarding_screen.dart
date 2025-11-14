@@ -1,14 +1,12 @@
-// lib/screens/contractor/kyc_onboarding_screen.dart
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:http/http.dart' as http;
+import 'dart:async';
+import 'dart:developer' as dev;
 
 import 'package:assetarchiverflutter/models/mason_model.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
-import 'kyc_pending_screen.dart'; // <-- ADDED: ensure this file exists
 
 class KycOnboardingScreen extends StatefulWidget {
   final Mason mason;
@@ -19,25 +17,20 @@ class KycOnboardingScreen extends StatefulWidget {
 }
 
 class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
-  // --- ⬇️ START NEW BYPASS SWITCH ⬇️ ---
-  //
-  // Set this to 'true' to run the real R2 uploads and API call.
-  // Set this to 'false' to instantly bypass and "mock" a successful submission.
-  //
-  final bool _useRealKyc = false; // <-- ❄️ YOUR NEW SWITCH ❄️
-  //
-  // --- ⬆️ END NEW BYPASS SWITCH ⬆️ ---
+  final bool _useRealKyc = true; // <-- YOUR SWITCH
 
   final _formKey = GlobalKey<FormState>();
 
-  late TextEditingController _nameController;
-  late TextEditingController _phoneController;
+  late Mason _localMason; // The local model we'll build
 
   // KYC fields
   final _aadhaarController = TextEditingController();
   final _panController = TextEditingController();
   final _voterController = TextEditingController();
   final _remarkController = TextEditingController();
+
+  // --- TSO is OPTIONAL and manually entered as a string placeholder ---
+  final TextEditingController _tsoIdController = TextEditingController(); // Manual input for TSO ID
 
   // file pickers
   File? _aadhaarFrontFile;
@@ -49,29 +42,60 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
 
   final ImagePicker _picker = ImagePicker();
   final ApiService _api = ApiService();
-  static const String _baseUrl = 'https://myserverbymycoco.onrender.com';
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.mason.name);
-    _phoneController = TextEditingController(text: widget.mason.phoneNumber);
+    _localMason = widget.mason;
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _phoneController.dispose();
     _aadhaarController.dispose();
     _panController.dispose();
     _voterController.dispose();
     _remarkController.dispose();
+    _tsoIdController.dispose(); 
     super.dispose();
+  }
+
+  // --- Image Pick Functions ---
+  Future<void> _showPickOptions(String which) async {
+    FocusScope.of(context).unfocus();
+    await showModalBottomSheet(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take Photo'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickFile(ImageSource.camera, which);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from Gallery'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickFile(ImageSource.gallery, which);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _pickFile(ImageSource source, String which) async {
     try {
-      final XFile? picked = await _picker.pickImage(source: source, imageQuality: 80);
+      final XFile? picked =
+          await _picker.pickImage(source: source, imageQuality: 80);
       if (picked == null) return;
       setState(() {
         final file = File(picked.path);
@@ -92,7 +116,8 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
       });
     } catch (e) {
       debugPrint('Pick file error: $e');
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to pick image')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Failed to pick image')));
     }
   }
 
@@ -120,112 +145,143 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
   Future<String?> _uploadIfPresent(File? f) async {
     if (f == null) return null;
     try {
-      // Use your existing ApiService uploader so you don't reinvent signed-URL hell
       final publicUrl = await _api.uploadImageToR2(f);
       return publicUrl;
     } catch (e) {
       debugPrint('Upload failed: $e');
-      return null;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                'Upload failed for ${f.path.split('/').last}. Please try again.')),
+      );
+      throw Exception('Upload failed');
     }
   }
 
+  void _toast(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
+
+  // --- MODIFIED SUBMIT FUNCTION ---
   Future<void> _submitKyc() async {
     if (_isSubmitting) return;
-    if (!_formKey.currentState!.validate()) return;
-
-    if (widget.mason.id == null || widget.mason.id!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid Mason ID. Cannot submit KYC.')),
-      );
+    if (!_formKey.currentState!.validate()) {
+      _toast('Please fill in all required fields.');
       return;
     }
+    
+    // --- TSO IS OPTIONAL, NO VALIDATION REQUIRED ---
 
     setState(() => _isSubmitting = true);
 
-    // --- ⬇️ START BYPASS MODIFICATION ⬇️ ---
+    // --- Bypass Logic ---
     if (!_useRealKyc) {
       try {
-        // 1. Simulate a network delay
         await Future.delayed(const Duration(milliseconds: 1500));
-        
-        // 2. Mock a successful response
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('DEBUG BYPASS: KYC submitted successfully.')),
+        _toast('DEBUG BYPASS: KYC submitted successfully.');
+
+        // Update local mason to navigate correctly
+        final completeMason = _localMason.copyWith(
+          kycStatus: 'pending',
+          userId: _tsoIdController.text.isNotEmpty ? int.tryParse(_tsoIdController.text) : null,
+          kycDocumentName:
+              _aadhaarController.text.isNotEmpty ? 'Aadhaar Card' : null,
+          kycDocumentIdNum: _aadhaarController.text.trim(),
         );
-        
-        // 3. --- ✅ THE FIX ---
-        // Replace the 'pop' with 'pushReplacement' to go to the pending screen
+
         if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const KycPendingScreen()),
+          // Navigate to home, which will route to pending screen
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/contractor_home',
+            (_) => false,
+            arguments: completeMason,
           );
         }
       } catch (e) {
         debugPrint('Bypass submit error: $e');
       } finally {
-        // This will still run, but the screen will likely be disposed after pushReplacement
         if (mounted) setState(() => _isSubmitting = false);
       }
-      return; // <-- IMPORTANT: Exit function here to skip real logic
+      return; // <-- IMPORTANT: Exit function here
     }
-    // --- ⬆️ END BYPASS MODIFICATION ⬆️ ---
+    // --- End Bypass Logic ---
 
-    // --- ⬇️ YOUR REAL LOGIC (Runs only if _useRealKyc is true) ⬇️ ---
+    // --- Real Logic (YOUR FLOW) ---
     try {
-      // 1) Upload files (if any). Uploads happen sequentially to keep things simple.
+      // 1) Upload files (if any).
+      _toast('Uploading images...');
       final aadhaarFrontUrl = await _uploadIfPresent(_aadhaarFrontFile);
       final aadhaarBackUrl = await _uploadIfPresent(_aadhaarBackFile);
       final panUrl = await _uploadIfPresent(_panFile);
       final voterUrl = await _uploadIfPresent(_voterFile);
 
-      // 2) Build documents object only with keys that exist
+      // 2) Build documents object
       final Map<String, String> documents = {};
       if (aadhaarFrontUrl != null) documents['aadhaarFrontUrl'] = aadhaarFrontUrl;
       if (aadhaarBackUrl != null) documents['aadhaarBackUrl'] = aadhaarBackUrl;
       if (panUrl != null) documents['panUrl'] = panUrl;
       if (voterUrl != null) documents['voterUrl'] = voterUrl;
 
-      // 3) Build request body
-      final body = <String, dynamic>{
-        'masonId': widget.mason.id,
-        'aadhaarNumber': _aadhaarController.text.trim().isEmpty ? null : _aadhaarController.text.trim(),
-        'panNumber': _panController.text.trim().isEmpty ? null : _panController.text.trim(),
-        'voterIdNumber': _voterController.text.trim().isEmpty ? null : _voterController.text.trim(),
-        'documents': documents.isEmpty ? null : documents,
-        'remark': _remarkController.text.trim().isEmpty ? null : _remarkController.text.trim(),
-      }..removeWhere((k, v) => v == null);
+      // 3) (YOUR FLOW) Fill up the local Mason model
+      final completeMason = _localMason.copyWith(
+        // Use Aadhaar as the primary doc name/id if present
+        kycDocumentName:
+            _aadhaarController.text.isNotEmpty ? 'Aadhaar Card' : null,
+        kycDocumentIdNum: _aadhaarController.text.trim(),
+        // --- TSO IS OPTIONAL: Try to parse, otherwise null ---
+        userId: _tsoIdController.text.isNotEmpty ? int.tryParse(_tsoIdController.text) : null,
+        kycStatus: 'pending', // <-- SET STATUS TO PENDING
+      );
 
-      // 4) POST to your kyc-submissions route
-      final url = Uri.parse('$_baseUrl/api/kyc-submissions');
-      final response = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json; charset=UTF-8'},
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 60));
+      _toast('Submitting details...');
+      dev.log('Submitting Complete Mason: ${completeMason.toJson()}',
+          name: 'KYC');
 
-      final jsonData = jsonDecode(response.body);
-      if (response.statusCode == 201 && jsonData['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('KYC submitted and pending approval.')),
+      // 4) (YOUR FLOW) Make the TWO API calls in parallel
+      final results = await Future.wait([
+        // Call 1: POST /api/masons
+        // FIX: The payload is copied, and the 'id' is removed for the POST request
+        () {
+          final payload = completeMason.toJson();
+          payload.remove('id'); 
+          return _api.createMason(Mason.fromJson(payload)); 
+        }(),
+
+        // Call 2: POST /api/kyc-submissions
+        _api.submitKyc(
+          masonId: completeMason.id!, 
+          aadhaarNumber: _aadhaarController.text.trim(),
+          panNumber: _panController.text.trim(),
+          voterIdNumber: _voterController.text.trim(),
+          documents: documents,
+          remark: _remarkController.text.trim(),
+        ),
+      ]);
+
+      // Both calls succeeded. Get the final mason from Call 1
+      final createdMason = results[0] as Mason;
+
+      _toast('KYC Submitted! Awaiting approval.');
+
+      // 5) Navigate to the home page (which will show the pending banner)
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/contractor_home',
+          (_) => false,
+          arguments: createdMason, // Pass the final, complete Mason object
         );
-        // Navigate to pending screen instead of popping the last route
-        if (mounted) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const KycPendingScreen()),
-          );
-        }
-      } else {
-        final err = jsonData['error'] ?? 'Unknown server error';
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('KYC failed: $err')));
       }
     } catch (e, st) {
-      debugPrint('KYC submit error: $e\n$st');
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to submit KYC.')));
+      // 6) Handle failure
+      dev.log('KYC submit error: $e\n$st', name: 'KYC');
+      _toast('Failed to submit KYC: $e');
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
+  // --- BUILD METHOD ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -239,64 +295,105 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
         child: Form(
           key: _formKey,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // header
-              CircleAvatar(radius: 40, child: Text(widget.mason.name.isNotEmpty ? widget.mason.name[0] : '?')),
+              CircleAvatar(
+                  radius: 40,
+                  child: Text(
+                      _localMason.name.isNotEmpty ? _localMason.name[0] : '?')),
               const SizedBox(height: 8),
-              Text(widget.mason.name, style: Theme.of(context).textTheme.titleLarge),
+              Text(_localMason.name,
+                  style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 8),
-              Text(widget.mason.phoneNumber, style: Theme.of(context).textTheme.bodyMedium),
+              Text(_localMason.phoneNumber,
+                  style: Theme.of(context).textTheme.bodyMedium),
 
               const SizedBox(height: 16),
 
               // Aadhaar
               TextFormField(
                 controller: _aadhaarController,
-                decoration: const InputDecoration(labelText: 'Aadhaar Number (optional)'),
+                decoration: const InputDecoration(
+                    labelText: 'Aadhaar Number (optional)'),
                 keyboardType: TextInputType.number,
                 validator: (v) {
-                  if (v != null && v.isNotEmpty && v.length > 20) return 'Max 20 chars';
+                  if (v != null && v.isNotEmpty && v.length > 20)
+                    return 'Max 20 chars';
                   return null;
                 },
               ),
               const SizedBox(height: 8),
-
-              _fileTile('Aadhaar Front', _aadhaarFrontFile, () => _pickFile(ImageSource.gallery, 'aadhaarFront')),
+              _fileTile('Aadhaar Front', _aadhaarFrontFile,
+                  () => _showPickOptions('aadhaarFront')),
               const SizedBox(height: 8),
-              _fileTile('Aadhaar Back', _aadhaarBackFile, () => _pickFile(ImageSource.gallery, 'aadhaarBack')),
+              _fileTile('Aadhaar Back', _aadhaarBackFile,
+                  () => _showPickOptions('aadhaarBack')),
               const SizedBox(height: 12),
 
               // PAN
               TextFormField(
                 controller: _panController,
-                decoration: const InputDecoration(labelText: 'PAN Number (optional)'),
+                decoration:
+                    const InputDecoration(labelText: 'PAN Number (optional)'),
                 textCapitalization: TextCapitalization.characters,
                 validator: (v) {
-                  if (v != null && v.isNotEmpty && v.length > 20) return 'Max 20 chars';
+                  if (v != null && v.isNotEmpty && v.length > 20)
+                    return 'Max 20 chars';
                   return null;
                 },
               ),
               const SizedBox(height: 8),
-              _fileTile('PAN Document', _panFile, () => _pickFile(ImageSource.gallery, 'pan')),
+              _fileTile('PAN Document', _panFile, () => _showPickOptions('pan')),
               const SizedBox(height: 12),
 
               // Voter
               TextFormField(
                 controller: _voterController,
-                decoration: const InputDecoration(labelText: 'Voter ID (optional)'),
+                decoration:
+                    const InputDecoration(labelText: 'Voter ID (optional)'),
                 validator: (v) {
-                  if (v != null && v.isNotEmpty && v.length > 20) return 'Max 20 chars';
+                  if (v != null && v.isNotEmpty && v.length > 20)
+                    return 'Max 20 chars';
                   return null;
                 },
               ),
               const SizedBox(height: 8),
-              _fileTile('Voter Document', _voterFile, () => _pickFile(ImageSource.gallery, 'voter')),
+              _fileTile(
+                  'Voter Document', _voterFile, () => _showPickOptions('voter')),
               const SizedBox(height: 12),
+
+              // --- ⬇️ TSO ID (OPTIONAL MANUAL INPUT) ⬇️ ---
+              const Divider(),
+              const SizedBox(height: 16),
+              Text('TSO Agent ID (Optional)',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+
+              TextFormField(
+                controller: _tsoIdController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'TSO User ID (If known)',
+                  hintText: 'e.g., 42',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.person_pin),
+                ),
+                validator: (v) {
+                  if (v != null && v.isNotEmpty && int.tryParse(v) == null) {
+                    return 'Must be a number';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 24),
+              // --- ⬆️ END TSO ID ⬆️ ---
 
               // remark
               TextFormField(
                 controller: _remarkController,
-                decoration: const InputDecoration(labelText: 'Remark (optional)'),
+                decoration:
+                    const InputDecoration(labelText: 'Remark (optional)'),
                 maxLines: 3,
               ),
 
@@ -306,8 +403,15 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: _isSubmitting ? null : _submitKyc,
-                  style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
-                  child: _isSubmitting ? const SizedBox(height: 18, width: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('SUBMIT KYC'),
+                  style:
+                      ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                      : const Text('SUBMIT KYC'),
                 ),
               ),
             ],

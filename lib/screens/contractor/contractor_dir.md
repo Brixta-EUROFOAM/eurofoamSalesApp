@@ -395,3 +395,72 @@ POST /api/contractor/work-report:
 Action: Submits the new ContractorWorkReportForm.
 
 Body: { "jobId": "...", "remarks": "...", "beforeImageUrl": "...", "afterImageUrl": "..." }
+
+
+
+WHOLE project STRUCTURE:
+Here is a basic file structure based on the files you've provided.
+
+# Basic File Structure
+
+This structure assumes all Dart files are located within the `lib/` folder of a standard Flutter project and that the `.md` file is at the project root.
+
+```
+(project_root)/
+├── lib/
+│   ├── auth/
+│   │   ├── app_selector_screen.dart
+│   │   ├── contractor_login_screen.dart
+│   │   ├── login_screen.dart
+│   │   └── salesforce_splash_screen.dart
+│   │
+│   ├── contractor/
+│   │   ├── kyc_onboarding_screen.dart
+│   │   └── kyc_pending_screen.dart
+│   │
+│   ├── contractor_drawer.dart
+│   ├── contractor_home_screen.dart
+│   ├── contractor_jobs_screen.dart
+│   ├── contractor_nav_screen.dart
+│   └── contractor_profile_screen.dart
+│
+└── contractor_dir.md
+```
+
+-----
+
+## Directory Descriptions
+
+### contractor\_dir.md
+
+(Root) The technical README file describing the contractor portal implementation.
+
+### lib/
+
+The main folder containing all your Dart code.
+
+### lib/auth/
+
+This directory holds all screens related to authentication for different user types:
+
+  * **app\_selector\_screen.dart**: The initial screen to choose between "Salesforce" and "Contractor" portals.
+  * **contractor\_login\_screen.dart**: The OTP-based login screen for contractors.
+  * **login\_screen.dart**: The traditional email/password login screen for internal Salesforce employees.
+  * **salesforce\_splash\_screen.dart**: A splash screen that checks for a saved Salesforce session.
+
+### lib/contractor/
+
+This subdirectory holds specific screens for the contractor's KYC (Know Your Customer) workflow:
+
+  * **kyc\_onboarding\_screen.dart**: The form where contractors submit their KYC documents and details.
+  * **kyc\_pending\_screen.dart**: The status screen shown after a contractor has submitted their KYC documents for approval.
+
+### lib/ (Root Files)
+
+These files appear to be the core screens for the logged-in contractor experience:
+
+  * **contractor\_nav\_screen.dart**: The main navigation shell (holding the bottom navigation bar) for the contractor app.
+  * **contractor\_home\_screen.dart**: A placeholder screen, likely intended to be the main dashboard (though `contractor_nav_screen.dart` currently points to `contractor_jobs_screen.dart` as the "Home" tab).
+  * **contractor\_jobs\_screen.dart**: The screen that lists "Assigned Jobs" and "Completed Jobs" for the contractor. This is the first tab in the nav bar.
+  * **contractor\_profile\_screen.dart**: The contractor's profile page, showing their details and a "Log Out" button. This is the second tab in the nav bar.
+  * **contractor\_drawer.dart**: The slide-out menu (Drawer) for the contractor portal, containing links to profile, support, and logout.
