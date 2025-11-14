@@ -16,6 +16,9 @@ import '../models/mason_model.dart';
 import '../models/employee_model.dart';
 import '../models/scheme_enrollment_model.dart';
 import '../models/bag_lift_model.dart';
+import '../models/reward_category_model.dart';
+import '../models/reward_model.dart';
+import '../models/reward_redemption_model.dart';
 
 // --- ✅ 1. (NEW) TSO USER HELPER CLASS (DEFINED HERE) ---
 class TsoUser {
@@ -213,7 +216,7 @@ class ApiService {
   Future<List<SchemeEnrollment>> fetchEnrolledSchemes(String masonId) async {
     final uri = Uri.parse('$_baseUrl/api/masons-on-scheme/mason/$masonId');
     try {
-      final res = await _client.get(uri, headers: _authHeaders); 
+      final res = await _client.get(uri, headers: _authHeaders);
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
@@ -232,7 +235,10 @@ class ApiService {
       );
       return [];
     } catch (e) {
-      dev.log('Network error fetching enrolled schemes: $e', name: 'ApiService');
+      dev.log(
+        'Network error fetching enrolled schemes: $e',
+        name: 'ApiService',
+      );
       return [];
     }
   }
@@ -280,6 +286,70 @@ class ApiService {
       return null;
     }
   }
+
+  // --- ✅ NEW: REWARD & REDEMPTION ENDPOINTS ---
+
+  /// GET /api/reward-categories
+  Future<List<RewardCategory>> fetchRewardCategories() async {
+    return _get(
+      'reward-categories',
+      (json) => (json as List)
+          .map((item) => RewardCategory.fromJson(item as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  /// GET /api/rewards
+  Future<List<Reward>> fetchRewards({int? categoryId}) async {
+    // Fetches active rewards only.
+    String endpoint = 'rewards?isActive=true';
+    if (categoryId != null) {
+      endpoint += '&categoryId=$categoryId';
+    }
+
+    return _get(
+      endpoint,
+      (json) => (json as List)
+          .map((item) => Reward.fromJson(item as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  /// GET /api/rewards-redemption/mason/:masonId
+  Future<List<RewardRedemption>> fetchMyRedemptions(String masonId) async {
+    return _get(
+      'rewards-redemption/mason/$masonId',
+      (json) => (json as List)
+          .map(
+            (item) => RewardRedemption.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(),
+    );
+  }
+
+  /// POST /api/rewards-redemption
+  Future<RewardRedemption?> redeemReward({
+    required String masonId,
+    required int rewardId,
+    required int quantity,
+    required int pointsDebited,
+    required Map<String, String> deliveryDetails,
+  }) async {
+    final body = {
+      'masonId': masonId,
+      'rewardId': rewardId,
+      'quantity': quantity,
+      'pointsDebited': pointsDebited,
+      ...deliveryDetails, // Adds deliveryName, deliveryPhone, etc.
+    };
+
+    return _post(
+      'rewards-redemption',
+      body,
+      (json) => RewardRedemption.fromJson(json),
+    );
+  }
+  // --- (END OF NEW REWARD METHODS) ---
 
   // -------------------------------------------------------------------
   // LEGACY/CORE METHODS (Kept for completeness)
