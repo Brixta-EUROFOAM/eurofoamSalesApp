@@ -9,6 +9,7 @@ class BagLift {
   final int pointsCredited;
   final String status;
   final DateTime? approvedAt;
+  final String? imageUrl;
 
   BagLift({
     required this.id,
@@ -18,6 +19,7 @@ class BagLift {
     required this.pointsCredited,
     required this.status,
     this.approvedAt,
+    this.imageUrl,
   });
 
   factory BagLift.fromJson(Map<String, dynamic> json) {
@@ -44,6 +46,7 @@ class BagLift {
       status: json['status'] as String? ?? 'pending',
       // Use approvedAt, matching your schema
       approvedAt: parseDate(json['approvedAt']),
+      imageUrl: json['imageUrl'] as String? ?? json['image_url'] as String?,
     );
   }
 }

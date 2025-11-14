@@ -8,6 +8,8 @@ import 'dart:async'; // For FutureBuilder
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/models/bag_lift_model.dart';
 import 'package:intl/intl.dart'; // For date formatting
+import 'dart:io'; // --- ✅ ADD THIS ---
+import 'package:image_picker/image_picker.dart';
 // ---
 
 // ✅ CONVERTED TO STATEFULWIDGET
@@ -25,6 +27,8 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
   final _bagCountController = TextEditingController();
   late Future<List<BagLift>> _historyFuture;
   bool _isSubmitting = false;
+  File? _bagImageFile; // --- ✅ ADD THIS ---
+  final ImagePicker _picker = ImagePicker();
   // ---
 
   @override
@@ -53,8 +57,64 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
     });
   }
 
+  // --- ✅ START: IMAGE PICKER METHODS ---
+  Future<void> _showPickOptions() async {
+    FocusScope.of(context).unfocus(); // Hide keyboard
+    await showModalBottomSheet(
+      context: context,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take Photo'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickFile(ImageSource.camera);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from Gallery'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickFile(ImageSource.gallery);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickFile(ImageSource source) async {
+    try {
+      final XFile? picked = await _picker.pickImage(
+        source: source,
+        imageQuality: 80, // Compress image
+      );
+      if (picked == null) return;
+      setState(() {
+        _bagImageFile = File(picked.path);
+      });
+    } catch (e) {
+      _toast('Failed to pick image: $e', isError: true);
+    }
+  }
+  // --- ✅ END: IMAGE PICKER METHODS ---
+
   Future<void> _submitBags() async {
     if (_isSubmitting) return;
+
+    // --- ✅ 1. VALIDATE IMAGE FIRST ---
+    if (_bagImageFile == null) {
+      _toast('Please take a picture of the bags.', isError: true);
+      return;
+    }
+    // ---
 
     final count = int.tryParse(_bagCountController.text);
     if (count == null || count <= 0) {
@@ -62,22 +122,33 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
       return;
     }
 
-    // --- ✅ FIX: We no longer check for dealerId. ---
-    // We just get it, and it's fine if it's null.
     final dealerId = widget.mason.dealerId;
 
     setState(() => _isSubmitting = true);
 
     try {
-      // The apiService.submitBags function already accepts a
-      // nullable dealerId (String?), so this will work perfectly.
+      // --- ✅ 2. UPLOAD IMAGE FIRST ---
+      _toast('Uploading image...');
+      final imageUrl = await _api.uploadImageToR2(_bagImageFile!);
+      // ---
+
+      // --- ✅ 3. SUBMIT WITH IMAGE URL ---
+      _toast('Submitting bag count...');
       await _api.submitBags(
         masonId: widget.mason.id!,
         bagCount: count,
-        dealerId: dealerId, // ✅ PASS IT HERE (it's ok if null)
+        dealerId: dealerId,
+        imageUrl: imageUrl, // <-- Pass the URL
       );
+      // ---
+
       _toast('Bag submission successful! Awaiting approval.');
       _bagCountController.clear();
+      // --- ✅ 4. CLEAR IMAGE ON SUCCESS ---
+      setState(() {
+        _bagImageFile = null;
+      });
+      // ---
       _loadHistory(); // Refresh the history list
     } catch (e) {
       _toast('Submission failed: $e', isError: true);
@@ -93,7 +164,7 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
+        backgroundColor: isError ? Theme.of(context).colorScheme.error : Colors.green,
       ),
     );
   }
@@ -138,7 +209,7 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
 
               const SizedBox(height: 24),
 
-              // --- 3. SUBMIT BAGS CARD (NOW WIRED) ---
+              // --- 3. SUBMIT BAGS CARD (REFINED) ---
               _buildSubmitCard(context),
 
               const SizedBox(height: 32),
@@ -192,7 +263,7 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
     );
   }
 
-  // --- WIDGET 3: SUBMIT BAGS CARD (WIRED UP) ---
+  // --- WIDGET 3: SUBMIT BAGS CARD (REFINED) ---
   Widget _buildSubmitCard(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
@@ -211,8 +282,58 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
               ),
             ),
             const SizedBox(height: 16),
+
+            // --- IMAGE PICKER BUTTON ---
+            OutlinedButton.icon(
+              icon: Icon(
+                _bagImageFile == null
+                    ? Icons.camera_alt_outlined
+                    : Icons.check_circle,
+                color: _bagImageFile == null
+                    ? theme.colorScheme.primary
+                    : Colors.green,
+              ),
+              label: Text(
+                _bagImageFile == null ? 'Take Photo of Bags' : 'Change Photo',
+                style: TextStyle(
+                  color: _bagImageFile == null
+                      ? theme.colorScheme.primary
+                      : Colors.green,
+                ),
+              ),
+              onPressed: _showPickOptions,
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(
+                  color: _bagImageFile == null
+                      ? theme.colorScheme.primary.withOpacity(0.5)
+                      : Colors.green.withOpacity(0.5),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+
+            // --- Image Thumbnail ---
+            if (_bagImageFile != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 16.0),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.file(
+                    _bagImageFile!,
+                    height: 150,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+              ),
+            
+            // --- BAG COUNT TEXTFIELD (Restored) ---
+            const SizedBox(height: 16),
             TextField(
-              controller: _bagCountController, // ✅ WIRED
+              controller: _bagCountController,
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               decoration: InputDecoration(
@@ -224,6 +345,8 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
                 border: const OutlineInputBorder(),
               ),
             ),
+
+            // --- SUBMIT BUTTON (Restored) ---
             const SizedBox(height: 16),
             ElevatedButton(
               onPressed: _isSubmitting ? null : _submitBags, // ✅ WIRED
@@ -252,8 +375,8 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
                       ),
                     ),
             ),
-            // ✅ This "Pending" chip is just static UI,
-            // the real status is in the history list.
+            
+            // --- PENDING CHIP ---
             const SizedBox(height: 8),
             Align(
               alignment: Alignment.center,
@@ -346,6 +469,7 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
         statusText = 'Pending';
     }
 
+    // --- ✅ NEW: Add tap to view image ---
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(vertical: 8),
       leading: Icon(
@@ -369,6 +493,47 @@ class _ContractorHomeScreenState extends State<ContractorHomeScreen> {
         backgroundColor: statusColor,
         side: BorderSide.none,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      // --- ✅ NEW: Add tap to view image ---
+      onTap: item.imageUrl != null
+          ? () => _showImageDialog(item.imageUrl!)
+          : null,
+    );
+  }
+  
+  // --- ✅ NEW: Show Image Dialog ---
+  void _showImageDialog(String imageUrl) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        contentPadding: const EdgeInsets.all(8),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.network(
+              imageUrl,
+              loadingBuilder: (context, child, progress) {
+                if (progress == null) return child;
+                return const SizedBox(
+                  height: 200,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              },
+              errorBuilder: (context, error, stack) {
+                return const SizedBox(
+                  height: 200,
+                  child: Center(child: Icon(Icons.error, color: Colors.red)),
+                );
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }

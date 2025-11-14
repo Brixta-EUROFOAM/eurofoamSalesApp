@@ -836,6 +836,7 @@ class ApiService {
     required String masonId,
     required int bagCount,
     required String? dealerId,
+    required String? imageUrl,
   }) async {
     final body = {
       'masonId': masonId,
@@ -843,6 +844,7 @@ class ApiService {
       'purchaseDate': DateTime.now().toIso8601String(),
       'dealerId': dealerId,
       'pointsCredited': 0,
+      'imageUrl': imageUrl,
     };
     return _post(
       'bag-lifts',
