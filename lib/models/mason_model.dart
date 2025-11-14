@@ -1,7 +1,8 @@
 // lib/models/mason_model.dart
 import 'dart:convert';
 
-import 'employee_model.dart'; // for Mason.fromEmployee convenience constructor
+// Assuming you have this file for the .fromEmployee factory
+import 'employee_model.dart'; 
 
 Mason masonFromJson(String str) => Mason.fromJson(json.decode(str));
 String masonToJson(Mason data) => json.encode(data.toJson());

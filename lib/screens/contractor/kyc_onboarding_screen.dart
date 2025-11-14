@@ -1,5 +1,5 @@
+// lib/screens/contractor/kyc_onboarding_screen.dart
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:async';
@@ -20,26 +20,19 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
   final bool _useRealKyc = true; // <-- YOUR SWITCH
 
   final _formKey = GlobalKey<FormState>();
-
-  late Mason _localMason; // The local model we'll build
-
-  // KYC fields
+  late Mason _localMason;
   final _aadhaarController = TextEditingController();
   final _panController = TextEditingController();
   final _voterController = TextEditingController();
   final _remarkController = TextEditingController();
+  final TextEditingController _tsoIdController = TextEditingController();
 
-  // --- TSO is OPTIONAL and manually entered as a string placeholder ---
-  final TextEditingController _tsoIdController = TextEditingController(); // Manual input for TSO ID
-
-  // file pickers
   File? _aadhaarFrontFile;
   File? _aadhaarBackFile;
   File? _panFile;
   File? _voterFile;
 
   bool _isSubmitting = false;
-
   final ImagePicker _picker = ImagePicker();
   final ApiService _api = ApiService();
 
@@ -55,11 +48,11 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
     _panController.dispose();
     _voterController.dispose();
     _remarkController.dispose();
-    _tsoIdController.dispose(); 
+    _tsoIdController.dispose();
     super.dispose();
   }
 
-  // --- Image Pick Functions ---
+  // --- (All your image picking functions are unchanged) ---
   Future<void> _showPickOptions(String which) async {
     FocusScope.of(context).unfocus();
     await showModalBottomSheet(
@@ -163,15 +156,12 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
-  // --- MODIFIED SUBMIT FUNCTION ---
   Future<void> _submitKyc() async {
     if (_isSubmitting) return;
     if (!_formKey.currentState!.validate()) {
       _toast('Please fill in all required fields.');
       return;
     }
-    
-    // --- TSO IS OPTIONAL, NO VALIDATION REQUIRED ---
 
     setState(() => _isSubmitting = true);
 
@@ -181,19 +171,20 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
         await Future.delayed(const Duration(milliseconds: 1500));
         _toast('DEBUG BYPASS: KYC submitted successfully.');
 
-        // Update local mason to navigate correctly
         final completeMason = _localMason.copyWith(
           kycStatus: 'pending',
-          userId: _tsoIdController.text.isNotEmpty ? int.tryParse(_tsoIdController.text) : null,
+          userId: _tsoIdController.text.isNotEmpty
+              ? int.tryParse(_tsoIdController.text)
+              : null,
           kycDocumentName:
               _aadhaarController.text.isNotEmpty ? 'Aadhaar Card' : null,
           kycDocumentIdNum: _aadhaarController.text.trim(),
         );
 
         if (mounted) {
-          // Navigate to home, which will route to pending screen
+          // --- ✅ NAVIGATION FIX ---
           Navigator.of(context).pushNamedAndRemoveUntil(
-            '/contractor_home',
+            '/contractor_nav', // <-- Go to the Nav Shell
             (_) => false,
             arguments: completeMason,
           );
@@ -203,54 +194,46 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
       } finally {
         if (mounted) setState(() => _isSubmitting = false);
       }
-      return; // <-- IMPORTANT: Exit function here
+      return;
     }
     // --- End Bypass Logic ---
 
-    // --- Real Logic (YOUR FLOW) ---
+    // --- Real Logic ---
     try {
-      // 1) Upload files (if any).
       _toast('Uploading images...');
       final aadhaarFrontUrl = await _uploadIfPresent(_aadhaarFrontFile);
       final aadhaarBackUrl = await _uploadIfPresent(_aadhaarBackFile);
       final panUrl = await _uploadIfPresent(_panFile);
       final voterUrl = await _uploadIfPresent(_voterFile);
 
-      // 2) Build documents object
       final Map<String, String> documents = {};
       if (aadhaarFrontUrl != null) documents['aadhaarFrontUrl'] = aadhaarFrontUrl;
       if (aadhaarBackUrl != null) documents['aadhaarBackUrl'] = aadhaarBackUrl;
       if (panUrl != null) documents['panUrl'] = panUrl;
       if (voterUrl != null) documents['voterUrl'] = voterUrl;
 
-      // 3) (YOUR FLOW) Fill up the local Mason model
       final completeMason = _localMason.copyWith(
-        // Use Aadhaar as the primary doc name/id if present
         kycDocumentName:
             _aadhaarController.text.isNotEmpty ? 'Aadhaar Card' : null,
         kycDocumentIdNum: _aadhaarController.text.trim(),
-        // --- TSO IS OPTIONAL: Try to parse, otherwise null ---
-        userId: _tsoIdController.text.isNotEmpty ? int.tryParse(_tsoIdController.text) : null,
-        kycStatus: 'pending', // <-- SET STATUS TO PENDING
+        userId: _tsoIdController.text.isNotEmpty
+            ? int.tryParse(_tsoIdController.text)
+            : null,
+        kycStatus: 'pending',
       );
 
       _toast('Submitting details...');
       dev.log('Submitting Complete Mason: ${completeMason.toJson()}',
           name: 'KYC');
 
-      // 4) (YOUR FLOW) Make the TWO API calls in parallel
       final results = await Future.wait([
-        // Call 1: POST /api/masons
-        // FIX: The payload is copied, and the 'id' is removed for the POST request
         () {
           final payload = completeMason.toJson();
-          payload.remove('id'); 
-          return _api.createMason(Mason.fromJson(payload)); 
+          payload.remove('id');
+          return _api.createMason(Mason.fromJson(payload));
         }(),
-
-        // Call 2: POST /api/kyc-submissions
         _api.submitKyc(
-          masonId: completeMason.id!, 
+          masonId: completeMason.id!,
           aadhaarNumber: _aadhaarController.text.trim(),
           panNumber: _panController.text.trim(),
           voterIdNumber: _voterController.text.trim(),
@@ -259,21 +242,18 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
         ),
       ]);
 
-      // Both calls succeeded. Get the final mason from Call 1
       final createdMason = results[0] as Mason;
-
       _toast('KYC Submitted! Awaiting approval.');
 
-      // 5) Navigate to the home page (which will show the pending banner)
       if (mounted) {
+        // --- ✅ NAVIGATION FIX ---
         Navigator.of(context).pushNamedAndRemoveUntil(
-          '/contractor_home',
+          '/contractor_nav', // <-- Go to the Nav Shell
           (_) => false,
-          arguments: createdMason, // Pass the final, complete Mason object
+          arguments: createdMason,
         );
       }
     } catch (e, st) {
-      // 6) Handle failure
       dev.log('KYC submit error: $e\n$st', name: 'KYC');
       _toast('Failed to submit KYC: $e');
     } finally {
@@ -281,7 +261,7 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
     }
   }
 
-  // --- BUILD METHOD ---
+  // --- (Your build() method is unchanged) ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -363,13 +343,12 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
                   'Voter Document', _voterFile, () => _showPickOptions('voter')),
               const SizedBox(height: 12),
 
-              // --- ⬇️ TSO ID (OPTIONAL MANUAL INPUT) ⬇️ ---
+              // --- TSO ID ---
               const Divider(),
               const SizedBox(height: 16),
               Text('TSO Agent ID (Optional)',
                   style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
-
               TextFormField(
                 controller: _tsoIdController,
                 keyboardType: TextInputType.number,
@@ -387,7 +366,7 @@ class _KycOnboardingScreenState extends State<KycOnboardingScreen> {
                 },
               ),
               const SizedBox(height: 24),
-              // --- ⬆️ END TSO ID ⬆️ ---
+              // --- END TSO ID ---
 
               // remark
               TextFormField(

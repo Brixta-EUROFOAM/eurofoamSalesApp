@@ -14,27 +14,26 @@ class _AdminKycDetailScreenState extends State<AdminKycDetailScreen> {
   final ApiService _api = ApiService();
   bool _isLoading = false;
 
-  // Documents are stored as a JSON string in the DB, 
-  // but your API returns it as a Map.
+  // Documents can be a JSON string or a Map.
+  // This state variable will hold the parsed Map.
   late final Map<String, dynamic> documents;
 
   @override
   void initState() {
     super.initState();
-    // Your API service fetches the full submission object, 
-    // which includes 'documents' as a JSON string.
-    // We need to parse it.
+    
+    // Safely parse the 'documents' field
     var docData = widget.submission['documents'];
     if (docData is String) {
       try {
         documents = jsonDecode(docData);
       } catch (e) {
-        documents = {};
+        documents = {}; // Default to empty map on parse error
       }
     } else if (docData is Map) {
       documents = docData.cast<String, dynamic>();
     } else {
-      documents = {};
+      documents = {}; // Default if null or wrong type
     }
   }
 
@@ -44,6 +43,7 @@ class _AdminKycDetailScreenState extends State<AdminKycDetailScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // Call the API to update the submission status
       await _api.reviewKycSubmission(widget.submission['id'], status);
 
       if (mounted) {
@@ -54,6 +54,7 @@ class _AdminKycDetailScreenState extends State<AdminKycDetailScreen> {
           ),
         );
         // Pop the screen and return 'true' to signal a refresh
+        // to the AdminDashboard.
         Navigator.of(context).pop(true);
       }
     } catch (e) {
@@ -68,6 +69,7 @@ class _AdminKycDetailScreenState extends State<AdminKycDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Safely access the nested mason object
     final mason = widget.submission['mason'] as Map<String, dynamic>? ?? {};
 
     return Scaffold(
@@ -154,6 +156,7 @@ class _AdminKycDetailScreenState extends State<AdminKycDetailScreen> {
             const Divider(height: 24),
             if (documents.isEmpty)
               const Center(child: Text('No documents were uploaded.')),
+            // Dynamically show images based on keys in the documents map
             if (documents.containsKey('aadhaarFrontUrl'))
               _ImageRow(label: 'Aadhaar Front', url: documents['aadhaarFrontUrl']),
             if (documents.containsKey('aadhaarBackUrl'))
@@ -169,6 +172,7 @@ class _AdminKycDetailScreenState extends State<AdminKycDetailScreen> {
   }
 }
 
+// Helper widget for a clean "Label: Value" row
 class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
@@ -190,6 +194,7 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
+// Helper widget to display an image from a URL
 class _ImageRow extends StatelessWidget {
   final String label;
   final String url;
@@ -213,6 +218,7 @@ class _ImageRow extends StatelessWidget {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
+              // Use Image.network to load the image from your server/R2
               child: Image.network(
                 url,
                 fit: BoxFit.contain,

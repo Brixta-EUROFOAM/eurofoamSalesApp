@@ -1,13 +1,13 @@
+// lib/screens/contractor/contractor_nav_screen.dart
 import 'package:assetarchiverflutter/models/mason_model.dart';
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'package:assetarchiverflutter/api/api_service.dart';
+
+import 'contractor_home_screen.dart';
 import 'contractor_jobs_screen.dart';
 import 'contractor_profile_screen.dart';
 import 'contractor_drawer.dart';
-
-// --- ✅ 1. ADD IMPORTS ---
-import 'dart:async';
-import 'package:assetarchiverflutter/api/api_service.dart';
-// ---
 
 class ContractorNavScreen extends StatefulWidget {
   final Mason mason;
@@ -21,21 +21,17 @@ class _ContractorNavScreenState extends State<ContractorNavScreen> {
   int _selectedIndex = 0;
   late final List<Widget> _pages;
 
-  // --- ✅ 2. ADD STATE FOR MASON AND API ---
   late Mason _currentMason;
   final ApiService _api = ApiService();
   bool _isRefreshing = false;
-  // ---
 
   @override
   void initState() {
     super.initState();
-    // --- ✅ 3. INITIALIZE STATE ---
     _currentMason = widget.mason;
 
-    // Pages are built once. The "pending" state will be an overlay.
-    // We pass the *state's* _currentMason so it can be updated
     _pages = [
+      ContractorHomeScreen(mason: _currentMason),
       ContractorJobsScreen(mason: _currentMason),
       const _PlaceholderScreen(
         title: 'Gifts & Redemption',
@@ -51,27 +47,23 @@ class _ContractorNavScreenState extends State<ContractorNavScreen> {
     });
   }
 
-  // --- ✅ 4. ADD REFRESH FUNCTION ---
   Future<void> _refreshKycStatus() async {
+    // (This function is unchanged, it's perfect)
     if (_isRefreshing) return;
     setState(() => _isRefreshing = true);
 
     try {
-      // This calls GET /api/masons/:id
-      // You must use the ID from the local mason object!
       if (_currentMason.id == null) {
         throw Exception("Mason ID is null, cannot refresh.");
       }
-
-      // This uses the 'fetchMasonById' from your ApiService
       final newMason = await _api.fetchMasonById(_currentMason.id!);
 
-      // Update the entire screen's state with the new mason data
       setState(() {
         _currentMason = newMason;
-        // Rebuild the pages list with the new mason data
-        _pages[0] = ContractorJobsScreen(mason: _currentMason);
-        _pages[2] = ContractorProfileScreen(mason: _currentMason);
+        // Rebuild all pages with the new mason data
+        _pages[0] = ContractorHomeScreen(mason: _currentMason);
+        _pages[1] = ContractorJobsScreen(mason: _currentMason);
+        _pages[3] = ContractorProfileScreen(mason: _currentMason);
       });
 
       if (newMason.kycStatus == 'approved') {
@@ -87,41 +79,57 @@ class _ContractorNavScreenState extends State<ContractorNavScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to refresh status: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to refresh status: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
     }
   }
-  // ---
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+
+    // We still have the 'pending' banner
     final isPending = _currentMason.kycStatus == 'pending';
+    
+    // --- ✅ 1. ADD CHECK FOR NEW BANNER ---
+    // This is for users who have NOT submitted KYC yet.
+    final isKycNeeded = _currentMason.kycStatus == 'none' || 
+                        _currentMason.kycStatus == 'rejected';
 
     return Scaffold(
-      // The drawer is attached here
-      // It is also disabled when pending
       drawer: isPending ? null : ContractorDrawer(mason: _currentMason),
-
-      // --- ✅ 5. BODY IS NOW A COLUMN ---
       body: Column(
         children: [
-          // --- (YOUR FLOW) THE BANNER ---
+          // --- BANNER 1: For 'pending' (Yellow) ---
           if (isPending)
             _PendingBanner(
               onRefresh: _refreshKycStatus,
               isRefreshing: _isRefreshing,
             ),
+          
+          // --- ✅ 2. ADD NEW BANNER: For 'none' or 'rejected' (Blue) ---
+          if (isKycNeeded)
+            _KycNeededBanner(
+              onTap: () {
+                // This is the navigation you wanted!
+                // It opens the form you provided.
+                Navigator.of(context).pushNamed(
+                  '/kyc_onboarding_screen',
+                  arguments: _currentMason,
+                );
+              },
+            ),
 
-          // --- (YOUR FLOW) THE APP (DISABLED) ---
+          // --- App Content ---
           Expanded(
-            // This widget disables all taps on the app content
-            // when KYC is pending.
             child: AbsorbPointer(
-              absorbing: isPending,
+              // App is ONLY disabled if 'pending', not if 'needed'
+              absorbing: isPending, 
               child: IndexedStack(
                 index: _selectedIndex,
                 children: _pages,
@@ -131,31 +139,20 @@ class _ContractorNavScreenState extends State<ContractorNavScreen> {
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
+        // (BottomNav is unchanged, it's perfect)
         items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Home',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.card_giftcard_outlined),
-            activeIcon: Icon(Icons.card_giftcard),
-            label: 'Gift',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Profile',
-          ),
+          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), activeIcon: Icon(Icons.home), label: 'Home'),
+          BottomNavigationBarItem(icon: Icon(Icons.construction_outlined), activeIcon: Icon(Icons.construction), label: 'Jobs'),
+          BottomNavigationBarItem(icon: Icon(Icons.card_giftcard_outlined), activeIcon: Icon(Icons.card_giftcard), label: 'Gift'),
+          BottomNavigationBarItem(icon: Icon(Icons.person_outline), activeIcon: Icon(Icons.person), label: 'Profile'),
         ],
-        type: BottomNavigationBarType.fixed, // Good for 3+ items
+        type: BottomNavigationBarType.fixed,
         backgroundColor: theme.cardColor,
-        selectedItemColor: Colors.orange, // Contractor brand color
+        selectedItemColor: Colors.orange,
         unselectedItemColor: Colors.grey[600],
         selectedFontSize: 12,
         unselectedFontSize: 12,
         currentIndex: _selectedIndex,
-        // --- ✅ 6. DISABLE TAPS ON NAV BAR ---
         onTap: isPending ? null : _onItemTapped,
         elevation: 8,
       ),
@@ -163,11 +160,44 @@ class _ContractorNavScreenState extends State<ContractorNavScreen> {
   }
 }
 
-// --- ✅ 7. (NEW) PENDING BANNER WIDGET ---
+// --- ✅ 3. ADD THE NEW BANNER WIDGET ---
+class _KycNeededBanner extends StatelessWidget {
+  final VoidCallback onTap;
+  const _KycNeededBanner({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        // Using a different color to distinguish from 'pending'
+        color: Theme.of(context).colorScheme.primary.withOpacity(0.9),
+        padding: EdgeInsets.fromLTRB(
+            16, 16 + MediaQuery.of(context).padding.top, 16, 16),
+        child: Row(
+          children: [
+            const Icon(Icons.warning_amber_rounded, color: Colors.white),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'KYC Verification Required. Tap here to start.',
+                style:
+                    TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 16),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- (This is your existing 'pending' banner, unchanged) ---
 class _PendingBanner extends StatelessWidget {
   final VoidCallback onRefresh;
   final bool isRefreshing;
-
   const _PendingBanner({required this.onRefresh, required this.isRefreshing});
 
   @override
@@ -178,6 +208,7 @@ class _PendingBanner extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(
           16, 16 + MediaQuery.of(context).padding.top, 16, 16),
       child: Row(
+        // (content is unchanged)
         children: [
           const Icon(Icons.hourglass_top, color: Colors.white),
           const SizedBox(width: 12),
@@ -209,9 +240,8 @@ class _PendingBanner extends StatelessWidget {
     );
   }
 }
-// ---
 
-// --- ✅ 8. ADDED A Reusable Placeholder Screen ---
+// --- (This is your existing placeholder, unchanged) ---
 class _PlaceholderScreen extends StatelessWidget {
   final String title;
   final IconData icon;

@@ -1,241 +1,282 @@
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
-import 'package:assetarchiverflutter/api/api_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:developer' as dev;
 
+/// Manages the "hybrid" authentication flow.
+/// - Handles Firebase OTP verification.
+/// - Exchanges Firebase token for a backend JWT and Session Token.
+/// - Securely stores and retrieves tokens.
+/// - Implements session validation and silent refresh.
 class AuthService {
-  final _secure = const FlutterSecureStorage();
   final String baseUrl;
+  final _storage = const FlutterSecureStorage();
+  final _client = http.Client();
+
+  // Storage keys
+  static const _jwtKey = 'app_jwt';
+  static const _sessionTokenKey = 'session_token';
+  static const _masonDetailsKey = 'mason_details';
 
   AuthService({required this.baseUrl});
 
-  // -------------------------------------------------------------------
-  // 1. INITIAL LOGIN HANDLER (Saves long-lived session_token)
-  // -------------------------------------------------------------------
+  /// --- PRIVATE TOKEN HELPERS ---
 
-  /// Sends the Firebase ID token to your backend.
-  ///
-  /// On success, saves app_jwt and session_token, and returns the full response.
-  Future<Map<String, dynamic>?> sendFirebaseIdToken(String idToken) async {
-    final uri = Uri.parse('$baseUrl/api/auth/firebase');
-    try {
-      final res = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'idToken': idToken}),
-      );
-
-      dev.log('POST $uri status=${res.statusCode} body=${res.body}', name: 'AuthService');
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-
-        final appJwt = data['jwt'] as String?;
-        final sessionToken = data['sessionToken'] as String?;
-        final masonData = data['mason'] as Map<String, dynamic>?;
-
-        // Save tokens and basic user data for future auto-login
-        if (appJwt != null && sessionToken != null && masonData != null) {
-          await _saveSession(appJwt, sessionToken, masonData);
-          dev.log('Stored server JWT and Session Token successfully.', name: 'AuthService');
-        }
-
-        return data;
-      } else {
-        dev.log('Server error (${res.statusCode}): ${res.body}', name: 'AuthService');
-        return null;
-      }
-    } catch (e, st) {
-      dev.log('AuthService error: $e\n$st', name: 'AuthService');
-      return null;
-    }
-  }
-
-  // --- Session Storage Helper ---
-  Future<void> _saveSession(String appJwt, String sessionToken, Map<String, dynamic> masonData) async {
-    await _secure.write(key: 'app_jwt', value: appJwt);
-    await _secure.write(key: 'session_token', value: sessionToken);
+  /// Stores all tokens and user info securely.
+  Future<void> _storeTokens({
+    required String jwt,
+    required String sessionToken,
+    required Map<String, dynamic> mason,
+  }) async {
+    await _storage.write(key: _jwtKey, value: jwt);
+    await _storage.write(key: _sessionTokenKey, value: sessionToken);
     
-    // Save primary user details for returning user UI (ContractorLoginScreen)
-    await _secure.write(key: 'masonName', value: masonData['name'] ?? '');
-    await _secure.write(key: 'masonPhone', value: masonData['phoneNumber'] ?? '');
-    
-    // Set global token for all future API calls
-    ApiService.setAuthToken(appJwt);
+    // Store basic user details for UI hints on next login
+    // This helps pre-fill the "Welcome back, [Name]!" text
+    await _storage.write(
+      key: _masonDetailsKey,
+      value: jsonEncode({
+        'masonId': mason['id'],
+        'masonName': mason['name'],
+        'masonPhone': mason['phoneNumber'],
+      }),
+    );
+    dev.log('Tokens and user details stored.', name: 'AuthService');
   }
 
-  // -------------------------------------------------------------------
-  // 2. SESSION VALIDATION HELPERS
-  // -------------------------------------------------------------------
-
-  /// Checks the current stored JWT against the server. Returns Mason data if valid.
-  Future<Map<String, dynamic>?> _validateSession() async {
-    final jwt = await _secure.read(key: 'app_jwt');
-    if (jwt == null) return null;
-
-    final uri = Uri.parse('$baseUrl/api/auth/validate');
-    try {
-      final res = await http.get(
-        uri,
-        // MUST explicitly set the Authorization header for this call
-        headers: {
-          'Authorization': 'Bearer $jwt',
-        },
-      );
-
-      dev.log('GET /auth/validate status=${res.statusCode}', name: 'AuthService');
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        return data; // Returns { success: true, mason: {...} }
-      }
-      return null;
-    } catch (e, st) {
-      dev.log('Validation error: $e\n$st', name: 'AuthService');
-      return null;
-    }
+  /// Retrieves the stored JWT and Session Token.
+  Future<Map<String, String?>> _getTokens() async {
+    final jwt = await _storage.read(key: _jwtKey);
+    final sessionToken = await _storage.read(key: _sessionTokenKey);
+    return {'jwt': jwt, 'sessionToken': sessionToken};
   }
 
-  /// Attempts to get a new JWT using the stored long-lived session_token.
-  /// If successful, saves the NEW tokens and returns true.
-  Future<bool> _refreshSession() async {
-    final sessionToken = await _secure.read(key: 'session_token');
-    if (sessionToken == null) return false;
-
-    final uri = Uri.parse('$baseUrl/api/auth/refresh');
-    try {
-      final res = await http.post(
-        uri,
-        // Sends the long-lived token via custom header
-        headers: {'x-session-token': sessionToken},
-      );
-      
-      dev.log('POST /auth/refresh status=${res.statusCode}', name: 'AuthService');
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final newAppJwt = data['jwt'] as String?;
-        final newSessionToken = data['sessionToken'] as String?;
-
-        if (newAppJwt != null && newSessionToken != null) {
-          // We need Mason data to proceed, but /refresh doesn't return it.
-          // We must save the new tokens and proceed to validate them.
-          await _secure.write(key: 'app_jwt', value: newAppJwt);
-          await _secure.write(key: 'session_token', value: newSessionToken);
-          ApiService.setAuthToken(newAppJwt);
-          return true; // Successfully refreshed!
-        }
-      }
-      return false; // Refresh failed (token truly expired/invalid)
-    } catch (e, st) {
-      dev.log('Refresh network error: $e\n$st', name: 'AuthService');
-      return false;
-    }
+  /// Clears all authentication data from storage.
+  Future<void> _clearTokens() async {
+    await _storage.delete(key: _jwtKey);
+    await _storage.delete(key: _sessionTokenKey);
+    await _storage.delete(key: _masonDetailsKey);
+    dev.log('All tokens cleared.', name: 'AuthService');
   }
 
+  /// --- PUBLIC SESSION MANAGEMENT ---
 
-  // -------------------------------------------------------------------
-  // 3. CORE AUTO-LOGIN LOGIC
-  // -------------------------------------------------------------------
-
-  /// Main function for auto-login/session restoration.
-  /// 
-  /// Tries to validate the JWT. If validation fails with 401, attempts a silent refresh.
+  /// Tries to log the user in automatically.
+  /// This implements the "Validate -> Refresh" flow.
+  /// Returns mason data if successful, null otherwise.
   Future<Map<String, dynamic>?> tryAutoLogin() async {
-    // 1. Attempt standard validation (JWT should be valid here)
-    var serverStub = await _validateSession();
+    dev.log('Attempting auto-login...', name: 'AuthService');
+    final tokens = await _getTokens();
+    final jwt = tokens['jwt'];
+    final sessionToken = tokens['sessionToken'];
 
-    if (serverStub != null) {
-      dev.log('Validation SUCCESS.', name: 'AuthService');
-      return serverStub;
+    if (jwt == null || sessionToken == null) {
+      dev.log('No tokens found. Auto-login failed.', name: 'AuthService');
+      return null;
     }
-    
-    dev.log('Validation FAILED (Token expired or invalid).', name: 'AuthService');
 
-    // 2. Validation failed: Attempt silent session refresh
-    final didRefresh = await _refreshSession();
-
-    if (didRefresh) {
-      dev.log('Silent Refresh SUCCESS. Re-validating new JWT.', name: 'AuthService');
-      // 3. Refresh successful: Re-validate using the newly saved JWT
-      serverStub = await _validateSession(); 
-      
-      if (serverStub != null) {
-        dev.log('Re-validation SUCCESS with new JWT.', name: 'AuthService');
-        return serverStub;
-      }
+    // Step 1: Try to validate the current JWT with the backend
+    dev.log('Validating stored JWT...', name: 'AuthService');
+    final validationResponse = await _validateSession(jwt);
+    if (validationResponse != null) {
+      dev.log('JWT is valid. Auto-login successful.', name: 'AuthService');
+      return validationResponse; // Success! Session is active.
     }
-    
-    // 4. Final fail: Clear everything and require manual login
-    dev.log('Refresh or Re-validation FAILED. Clearing session.', name: 'AuthService');
-    await logout(notifyServer: false); 
+
+    // Step 2: JWT is invalid or expired. Try to refresh using the session token.
+    dev.log('JWT invalid. Attempting to refresh session...', name: 'AuthService');
+    final refreshResponse = await _refreshSession(sessionToken);
+    if (refreshResponse != null) {
+      dev.log('Session refresh successful. Auto-login successful.', name: 'AuthService');
+      return refreshResponse; // Success! New tokens are stored.
+    }
+
+    // Step 3: Both validation and refresh failed.
+    dev.log('Session refresh failed. Clearing tokens.', name: 'AuthService');
+    await _clearTokens(); // Clear bad tokens
     return null;
   }
 
-  // --- Other Methods ---
+  /// Fetches basic stored user details to pre-fill login form.
+  Future<Map<String, String?>> getStoredMasonDetails() async {
+    final detailsString = await _storage.read(key: _masonDetailsKey);
+    if (detailsString != null) {
+      try {
+        final data = jsonDecode(detailsString) as Map<String, dynamic>;
+        // Ensure all values are returned as strings
+        return {
+          'masonId': data['masonId']?.toString(),
+          'masonName': data['masonName']?.toString(),
+          'masonPhone': data['masonPhone']?.toString(),
+        };
+      } catch (e) {
+        dev.log('Could not parse stored mason details: $e', name: 'AuthService');
+        return {};
+      }
+    }
+    return {};
+  }
 
-  // ... (sendDevBypassLogin is unchanged) ...
-  Future<Map<String, dynamic>?> sendDevBypassLogin(String phone) async {
-    final uri = Uri.parse('$baseUrl/api/auth/firebase-dev-bypass');
+  /// --- BACKEND API CALLS ---
+
+  /// Step 1 (Manual Login): Exchange Firebase ID token for our backend tokens.
+  /// The `name` is only sent during the *first* sign-up.
+  Future<Map<String, dynamic>?> sendFirebaseIdToken(String idToken, String? name) async {
+    final url = Uri.parse('$baseUrl/api/auth/firebase');
+    dev.log('Sending Firebase ID token to backend...', name: 'AuthService');
     try {
-      final res = await http.post(
-        uri,
+      final response = await _client.post(
+        url,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'phone': phone}),
+        // Send the name along with the token.
+        // The backend will only use it if it's a new user.
+        body: jsonEncode({
+          'idToken': idToken,
+          'name': name, 
+        }),
       );
 
-      dev.log('POST (bypass) $uri status=${res.statusCode} body=${res.body}', name: 'AuthService');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true) {
+          final jwt = data['jwt'] as String;
+          final sessionToken = data['sessionToken'] as String;
+          final mason = data['mason'] as Map<String, dynamic>;
 
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final appJwt = data['jwt'] as String?;
-        final sessionToken = data['sessionToken'] as String?;
-        final masonData = data['mason'] as Map<String, dynamic>?;
-
-        if (appJwt != null && sessionToken != null && masonData != null) {
-          await _saveSession(appJwt, sessionToken, masonData);
-          dev.log('Stored server JWT for bypass.', name: 'AuthService');
+          // Store tokens securely
+          await _storeTokens(jwt: jwt, sessionToken: sessionToken, mason: mason);
+          return {'mason': mason};
         }
-        return data;
-      } else {
-        dev.log('Server error (${res.statusCode}): ${res.body}', name: 'AuthService');
-        return null;
       }
-    } catch (e, st) {
-      dev.log('AuthService (Bypass) error: $e\n$st', name: 'AuthService');
+      dev.log('Backend handshake failed: ${response.body}', name: 'AuthService');
+      return null;
+    } catch (e) {
+      dev.log('Error in sendFirebaseIdToken: $e', name: 'AuthService');
       return null;
     }
   }
 
+  /// Step 2 (Auto-Login): Validate the stored JWT.
+  /// Hits GET /api/auth/validate
+  Future<Map<String, dynamic>?> _validateSession(String jwt) async {
+    final url = Uri.parse('$baseUrl/api/auth/validate');
+    try {
+      final response = await _client.get(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $jwt', // Send the JWT
+        },
+      );
 
-  /// Logs the user out by invalidating the session on the backend
-  /// and clearing local tokens.
-  Future<void> logout({bool notifyServer = true}) async {
-    final sessionToken = await _secure.read(key: 'session_token');
-    if (sessionToken != null && notifyServer) {
-      final uri = Uri.parse('$baseUrl/api/auth/logout');
-      try {
-        await http.post(uri, headers: {'x-session-token': sessionToken});
-      } catch (e) {
-        dev.log('Logout network error: $e', name: 'AuthService');
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true) {
+          return {'mason': data['mason']}; // Session is valid
+        }
       }
+      // Any non-200 status means validation failed
+      return null; 
+    } catch (e) {
+      dev.log('Error in _validateSession: $e', name: 'AuthService');
+      return null;
     }
-    await _secure.delete(key: 'app_jwt');
-    await _secure.delete(key: 'session_token');
-    await _secure.delete(key: 'masonName');
-    await _secure.delete(key: 'masonPhone');
-    ApiService.setAuthToken(null);
   }
 
-  /// Retrieves the stored app_jwt.
-  Future<String?> getStoredJwt() => _secure.read(key: 'app_jwt');
+  /// Step 3 (Auto-Login): Refresh the session using the session token.
+  /// Hits POST /api/auth/refresh
+  Future<Map<String, dynamic>?> _refreshSession(String sessionToken) async {
+    final url = Uri.parse('$baseUrl/api/auth/refresh');
+    try {
+      final response = await _client.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-token': sessionToken, // Send the session token
+        },
+      );
 
-  /// Retrieves stored name and phone for returning user UI.
-  Future<Map<String, String?>> getStoredMasonDetails() async {
-    return {
-      'masonName': await _secure.read(key: 'masonName'),
-      'masonPhone': await _secure.read(key: 'masonPhone'),
-    };
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true) {
+          final newJwt = data['jwt'] as String;
+          final newSessionToken = data['sessionToken'] as String;
+          final mason = data['mason'] as Map<String, dynamic>;
+
+          // Store the NEW tokens
+          await _storeTokens(jwt: newJwt, sessionToken: newSessionToken, mason: mason);
+          return {'mason': mason};
+        }
+      }
+      // Any non-200 status means refresh failed
+      return null;
+    } catch (e) {
+      dev.log('Error in _refreshSession: $e', name: 'AuthService');
+      return null;
+    }
+  }
+
+  /// (Dev Only) Bypass login
+  /// Hits POST /api/auth/dev-bypass
+  Future<Map<String, dynamic>?> sendDevBypassLogin(String phone, String name) async {
+    final url = Uri.parse('$baseUrl/api/auth/dev-bypass');
+    try {
+      final response = await _client.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'phone': phone,
+          'name': name,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        if (data['success'] == true) {
+          final jwt = data['jwt'] as String;
+          final sessionToken = data['sessionToken'] as String;
+          final mason = data['mason'] as Map<String, dynamic>;
+          await _storeTokens(jwt: jwt, sessionToken: sessionToken, mason: mason);
+          return {'mason': mason};
+        }
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Logout: Clears local tokens and invalidates server session.
+  /// Hits POST /api/auth/logout
+  Future<void> logout() async {
+    final tokens = await _getTokens();
+    final sessionToken = tokens['sessionToken'];
+
+    if (sessionToken != null) {
+      final url = Uri.parse('$baseUrl/api/auth/logout');
+      try {
+        // Tell the server to delete this session
+        await _client.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-session-token': sessionToken,
+          },
+        ).timeout(const Duration(seconds: 5));
+      } catch (e) {
+        // Don't block logout if server call fails
+        dev.log('Server logout failed, clearing local tokens anyway.', name: 'AuthService');
+      }
+    }
+    // Always clear local data
+    await _clearTokens();
+    await FirebaseAuth.instance.signOut(); // Also sign out from Firebase
+    dev.log('Logged out.', name: 'AuthService');
+  }
+
+  /// Helper to get the currently stored JWT (for ApiService)
+  Future<String?> getStoredJwt() async {
+    return await _storage.read(key: _jwtKey);
   }
 }
