@@ -242,14 +242,10 @@ class _ContractorLoginScreenState extends State<ContractorLoginScreen> {
       return;
     }
 
-    // --- ⬇️ *** FIX *** ⬇️ ---
-    // Send name ONLY if it's a new user (i.e., NOT a returning user)
-    // If it's a returning user, we send `null` and the backend ignores it.
-    final name = _isReturningUserUI ? null : _nameController.text.trim();
+    final name = _nameController.text.trim();
 
     final serverResponse =
         await _authService.sendFirebaseIdToken(idToken, name);
-    // --- ⬆️ *** END FIX *** ⬆️ ---
 
     if (serverResponse != null && serverResponse['mason'] != null) {
       _toast('Login successful');
