@@ -1,3 +1,9 @@
+def keystorePropertiesFile = rootProject.file('../key.properties')
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -29,9 +35,10 @@ android {
         versionName = flutter.versionName
     }
 
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig signingConfigs.release
         }
     }
 }
