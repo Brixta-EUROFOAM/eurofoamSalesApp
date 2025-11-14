@@ -4,8 +4,12 @@ import 'package:assetarchiverflutter/models/scheme_enrollment_model.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:flutter/material.dart';
 import 'dart:developer' as dev;
+import 'package:intl/intl.dart'; // For formatting dates
 
-enum ScreenState { loading, notEnrolled, enrolledPending, enrolledApproved }
+// --- ✅ MODIFIED STATE ---
+// We simplify the state. We just load the data.
+// The UI will be built based on what's in the lists.
+enum ScreenState { loading, loaded, error }
 
 class ContractorJobsScreen extends StatefulWidget {
   final Mason mason;
@@ -18,391 +22,401 @@ class ContractorJobsScreen extends StatefulWidget {
 class _ContractorJobsScreenState extends State<ContractorJobsScreen> {
   ScreenState _screenState = ScreenState.loading;
   final ApiService _api = ApiService();
+  bool _isEnrolling = false;
+
+  // --- ✅ NEW STATE VARIABLES ---
   List<SchemeEnrollment> _enrollments = [];
-  
-  static const String _defaultSchemeId = 'd0c41829-5775-4d7a-8f78-3a936a285d8e'; 
+  List<Scheme> _activeSchemes = [];
+  String _error = '';
+  // ---
 
   @override
   void initState() {
     super.initState();
-    _fetchEnrollmentStatus();
+    _loadSchemeData();
   }
 
   @override
   void didUpdateWidget(ContractorJobsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // Refresh data if the mason object itself changes
     if (widget.mason.id != oldWidget.mason.id) {
-      _fetchEnrollmentStatus();
+      _loadSchemeData();
     }
   }
 
-  Future<void> _fetchEnrollmentStatus() async {
-    // (This function is unchanged)
+  // --- ✅ RENAMED & UPDATED to fetch BOTH endpoints ---
+  Future<void> _loadSchemeData() async {
     final masonId = widget.mason.id;
 
     if (masonId == null) {
       dev.log('Mason ID missing. Cannot fetch schemes.', name: 'Scheme');
-      if (mounted) setState(() => _screenState = ScreenState.notEnrolled); 
+      if (mounted) {
+        setState(() {
+          _screenState = ScreenState.error;
+          _error = 'Your user ID is missing. Cannot fetch schemes.';
+        });
+      }
       return;
     }
 
     if (mounted) setState(() => _screenState = ScreenState.loading);
 
-    final schemes = await _api.fetchEnrolledSchemes(masonId);
+    try {
+      // Fetch both lists in parallel
+      final results = await Future.wait([
+        _api.fetchEnrolledSchemes(masonId),
+        _api.fetchActiveSchemes(),
+      ]);
 
-    if (mounted) {
-      if (schemes.isEmpty) {
+      if (mounted) {
         setState(() {
-          _enrollments = [];
-          _screenState = ScreenState.notEnrolled;
+          _enrollments = results[0] as List<SchemeEnrollment>;
+          _activeSchemes = results[1] as List<Scheme>;
+          _screenState = ScreenState.loaded;
         });
-      } else {
-        final currentEnrollment = schemes.firstWhere(
-          (e) => e.schemeId == _defaultSchemeId,
-          orElse: () => schemes.first,
-        );
-        
+      }
+    } catch (e) {
+      dev.log('Failed to load scheme data: $e', name: 'Scheme');
+      if (mounted) {
         setState(() {
-          _enrollments = schemes;
-          switch (currentEnrollment.status) {
-            case 'approved':
-              _screenState = ScreenState.enrolledApproved;
-              break;
-            case 'pending':
-              _screenState = ScreenState.enrolledPending;
-              break;
-            default:
-              _screenState = ScreenState.notEnrolled;
-          }
+          _screenState = ScreenState.error;
+          _error = 'Failed to load scheme data. Please try again.';
         });
       }
     }
   }
-  
-  Future<void> _enrollInScheme() async {
-    // (This function is unchanged and will just sit here until you need it)
+
+  Future<void> _enrollInScheme(String schemeId) async {
+    if (_isEnrolling) return;
+    setState(() => _isEnrolling = true);
+
     final masonId = widget.mason.id;
-    if (masonId == null) return;
+    if (masonId == null) {
+      _toast('Cannot enroll: User ID is missing.', isError: true);
+      setState(() => _isEnrolling = false);
+      return;
+    }
 
-    if (mounted) setState(() => _screenState = ScreenState.loading);
+    try {
+      final enrollment =
+          await _api.enrollMasonInScheme(masonId: masonId, schemeId: schemeId);
 
-    final enrollment = await _api.enrollMasonInScheme(
-      masonId: masonId, 
-      schemeId: _defaultSchemeId
-    );
-
-    if (mounted) {
-      if (enrollment != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enrollment successful! Awaiting admin approval.')),
-        );
-        await _fetchEnrollmentStatus(); 
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enrollment failed. Please try again.')),
-        );
-        setState(() => _screenState = ScreenState.notEnrolled);
+      if (mounted) {
+        if (enrollment != null) {
+          _toast('Enrollment successful! Awaiting admin approval.');
+          _loadSchemeData(); // Refresh all data
+        } else {
+          _toast('Enrollment failed. Please try again.', isError: true);
+        }
+      }
+    } catch (e) {
+      _toast('An error occurred: $e', isError: true);
+    } finally {
+      if (mounted) {
+        setState(() => _isEnrolling = false);
       }
     }
   }
 
-  // --- (This view is unchanged) ---
-  Widget _buildEnrolledSchemeView() {
-    final activeEnrollment = _enrollments.isNotEmpty 
-        ? _enrollments.firstWhere(
-            (e) => e.status == 'approved' || e.schemeId == _defaultSchemeId, 
-            orElse: () => _enrollments.first,
-          )
-        : null;
-
-    final schemeName = activeEnrollment?.scheme?.name ?? 'Reward Scheme';
-    final pointsPerUnit = activeEnrollment?.scheme?.pointsPerUnit ?? 0;
-    final mason = widget.mason;
-
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.star, size: 80, color: Colors.amber),
-          const SizedBox(height: 16),
-          Text('Welcome to $schemeName!', style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(height: 8),
-          Text('Your Current Points: ${mason.pointsBalance}', style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 24),
-          Text('You earn $pointsPerUnit points per unit purchase.', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 48),
-          _buildJobList(context),
-        ],
+  void _toast(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Theme.of(context).colorScheme.error : Colors.green,
       ),
     );
   }
 
-  // --- ✅ 1. THIS IS THE NEW INFORMATIONAL VIEW ---
-  Widget _buildSchemeDetailsView() {
-    final theme = Theme.of(context);
+  // --- ✅ NEW: Main UI Builder ---
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Schemes & Offers'),
+      ),
+      body: RefreshIndicator(
+        onRefresh: _loadSchemeData,
+        child: _buildBody(),
+      ),
+    );
+  }
 
-    // No Stack, no button. Just a scrollable list of info.
-    return SingleChildScrollView(
+  Widget _buildBody() {
+    switch (_screenState) {
+      case ScreenState.loading:
+        return const Center(child: CircularProgressIndicator());
+      case ScreenState.error:
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              _error,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        );
+      case ScreenState.loaded:
+        return _buildLoadedView();
+    }
+  }
+
+  // --- ✅ NEW: Loaded View ---
+  Widget _buildLoadedView() {
+    // Find schemes the user is NOT enrolled in
+    final enrolledSchemeIds = _enrollments.map((e) => e.schemeId).toSet();
+    final availableSchemes = _activeSchemes
+        .where((s) => !enrolledSchemeIds.contains(s.id))
+        .toList();
+
+    return ListView(
       padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          // --- Main Offer Card ---
-          Card(
-            elevation: 2,
-            shadowColor: Colors.black.withOpacity(0.1),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Mason Gifting',
-                    style: theme.textTheme.titleMedium
-                        ?.copyWith(color: theme.colorScheme.primary),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Dual Points Offer',
-                    style: theme.textTheme.headlineLarge
-                        ?.copyWith(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '2X POINTS',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: theme.colorScheme.primary),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // --- 4 Info Cards ---
-          GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            childAspectRatio: 1.25,
-            children: const [
-              _InfoCard(
-                icon: Icons.person_outline,
-                title: 'Eligibility',
-                body: 'Open to all registered masons',
-              ),
-              _InfoCard(
-                icon: Icons.add_shopping_cart,
-                title: 'How to Earn',
-                body: 'Lift bags to earn 2 points per bag',
-              ),
-              _InfoCard(
-                icon: Icons.calendar_today_outlined,
-                title: 'Caps & Validity',
-                body: 'Maximum of 50 points per week. Offer valid through May 31, 2024',
-              ),
-              _InfoCard(
-                icon: Icons.check_circle_outline,
-                title: 'Claim Process',
-                body: 'Submit bag lifting proof for verification. Requires admin review',
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-
-          // --- Link Tiles ---
-          _LinkTile(
-            icon: Icons.quiz_outlined,
-            title: 'FAQ',
-            onTap: () {},
-          ),
-          _LinkTile(
-            icon: Icons.support_agent_outlined,
-            title: 'Contact Support',
-            onTap: () {},
-          ),
-        ],
-      ),
-    );
-  }
-  
-  // --- (This view is unchanged) ---
-  Widget _buildPendingApprovalView() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.access_time_filled, size: 80, color: Colors.blueGrey),
-            const SizedBox(height: 16),
-            Text('Enrollment Pending', style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 8),
-            Text('Your application to the rewards scheme has been submitted and is awaiting approval from an administrator.', 
-              textAlign: TextAlign.center, 
-              style: Theme.of(context).textTheme.titleMedium
-            ),
-            const SizedBox(height: 32),
-            Text('We will notify you once approved!', style: Theme.of(context).textTheme.bodyLarge),
-          ],
-        ),
-      ),
-    );
-  }
-  
-  // --- (This view is unchanged) ---
-  Widget _buildLoadingView() {
-    return const Center(child: CircularProgressIndicator());
-  }
-  
-  // --- (This view is unchanged) ---
-  Widget _buildJobList(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 48),
-        Text("Assigned Jobs (For Reference)", style: Theme.of(context).textTheme.headlineSmall),
-        Text("Upcoming Jobs", style: Theme.of(context).textTheme.titleLarge),
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.construction, color: Colors.orange),
-            title: const Text("Job: Fix Leaking Pipe"),
-            subtitle: const Text("Site: ABC Apartments, Site 10B"),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {},
-          ),
+        // --- 1. Enrolled Schemes Section ---
+        Text(
+          'Your Enrolled Schemes',
+          style: Theme.of(context)
+              .textTheme
+              .headlineSmall
+              ?.copyWith(fontWeight: FontWeight.bold),
         ),
-        Card(
-            child: ListTile(
-              leading: const Icon(Icons.construction, color: Colors.orange),
-              title: const Text("Job: Install New Fixture"),
-              subtitle: const Text("Site: Downtown Plaza, Unit 5"),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {},
-            ),
-          ),
-          const SizedBox(height: 24),
-          Text("Completed Jobs", style: Theme.of(context).textTheme.titleLarge),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.check_circle, color: Colors.green),
-              title: const Text("Job: Repaired Generator"),
-              subtitle: const Text("Site: Hilltop Towers"),
-              onTap: () {},
-            ),
-          ),
+        const SizedBox(height: 8),
+        _buildEnrolledList(),
+        
+        const SizedBox(height: 24),
+
+        // --- 2. Available Schemes Section ---
+        Text(
+          'Available Schemes',
+          style: Theme.of(context)
+              .textTheme
+              .headlineSmall
+              ?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        _buildAvailableList(availableSchemes),
       ],
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    Widget bodyContent;
-    String appBarTitle;
-
-    switch (_screenState) {
-      case ScreenState.loading:
-        appBarTitle = 'Loading...';
-        bodyContent = _buildLoadingView();
-        break;
-      case ScreenState.notEnrolled:
-        appBarTitle = 'Scheme Details'; // From screenshot
-        bodyContent = _buildSchemeDetailsView(); // The new UI
-        break;
-      case ScreenState.enrolledPending:
-        appBarTitle = 'Enrollment Pending';
-        bodyContent = _buildPendingApprovalView();
-        break;
-      case ScreenState.enrolledApproved:
-        appBarTitle = 'Your Jobs & Scheme'; 
-        bodyContent = SingleChildScrollView(
-          padding: const EdgeInsets.all(16.0),
-          child: _buildEnrolledSchemeView()
-        );
-        break;
+  // --- ✅ NEW: Enrolled List Builder ---
+  Widget _buildEnrolledList() {
+    if (_enrollments.isEmpty) {
+      return Card(
+        elevation: 0,
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+        child: const Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Center(
+            child: Text('You are not enrolled in any schemes yet.'),
+          ),
+        ),
+      );
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(appBarTitle),
-        // --- ✅ 2. REMOVED CUSTOM APPBAR COLORING ---
-        // This will now just follow your app's theme
-      ),
-      body: bodyContent,
+    return ListView.builder(
+      itemCount: _enrollments.length,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemBuilder: (context, index) {
+        final enrollment = _enrollments[index];
+        final scheme = enrollment.scheme;
+        return _SchemeCard(
+          scheme: scheme,
+          status: enrollment.status, // Pass the enrollment status
+          onEnroll: null, // No enroll button for already-enrolled schemes
+          isEnrolling: _isEnrolling,
+        );
+      },
+    );
+  }
+
+  // --- ✅ NEW: Available List Builder ---
+  Widget _buildAvailableList(List<Scheme> availableSchemes) {
+    if (availableSchemes.isEmpty) {
+      return Card(
+        elevation: 0,
+        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.3),
+        child: const Padding(
+          padding: EdgeInsets.all(16.0),
+          child: Center(
+            child: Text('No other schemes are available to join right now.'),
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: availableSchemes.length,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemBuilder: (context, index) {
+        final scheme = availableSchemes[index];
+        return _SchemeCard(
+          scheme: scheme,
+          status: null, // No status, it's just available
+          onEnroll: () => _enrollInScheme(scheme.id),
+          isEnrolling: _isEnrolling,
+        );
+      },
     );
   }
 }
 
+// --- ✅ NEW: Reusable Scheme Card Widget ---
+class _SchemeCard extends StatelessWidget {
+  final Scheme? scheme;
+  final String? status; // 'pending', 'approved', 'rejected', or null
+  final VoidCallback? onEnroll;
+  final bool isEnrolling;
 
-// --- ✅ 3. HELPER WIDGETS FOR THE NEW UI ---
-// (These are styled to work with both light and dark themes)
+  const _SchemeCard({
+    required this.scheme,
+    this.status,
+    this.onEnroll,
+    required this.isEnrolling,
+  });
 
-class _InfoCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String body;
-  const _InfoCard({required this.icon, required this.title, required this.body});
+  String _formatDate(DateTime? date) {
+    if (date == null) return 'N/A';
+    return DateFormat('MMM d, yyyy').format(date);
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    
+    if (scheme == null) {
+      return const Card(
+        margin: EdgeInsets.only(bottom: 12),
+        child: ListTile(title: Text('Scheme details not available.')),
+      );
+    }
+
     return Card(
-      elevation: 0,
-      // Use a subtle color from the theme
-      color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: theme.colorScheme.primary, size: 28),
+            // --- Header with Title and Status/Button ---
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    scheme!.name,
+                    style: theme.textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (status != null) // Show status chip
+                  _buildStatusChip(status!, theme)
+                else if (onEnroll != null) // Show enroll button
+                  ElevatedButton(
+                    onPressed: isEnrolling ? null : onEnroll,
+                    child: isEnrolling 
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Enroll'),
+                  ),
+              ],
+            ),
             const SizedBox(height: 12),
-            Text(
-              title,
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
+
+            // --- Description ---
+            if (scheme!.description.isNotEmpty) ...[
+              Text(
+                scheme!.description,
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 16),
+            ],
+
+            // --- Details (Dates, Points) ---
+            _buildDetailRow(
+              theme,
+              Icons.calendar_today_outlined,
+              'Start Date',
+              _formatDate(scheme!.startDate),
             ),
-            const SizedBox(height: 4),
-            Text(
-              body,
-              style: theme.textTheme.bodySmall
-                  ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: 8),
+            _buildDetailRow(
+              theme,
+              Icons.event_busy_outlined,
+              'End Date',
+              _formatDate(scheme!.endDate),
             ),
+            if (scheme!.pointsPerUnit > 0) ...[
+              const SizedBox(height: 8),
+              _buildDetailRow(
+                theme,
+                Icons.star_outline,
+                'Points per Unit',
+                scheme!.pointsPerUnit.toString(),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
-}
 
-class _LinkTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final VoidCallback onTap;
-  const _LinkTile({required this.icon, required this.title, required this.onTap});
+  // Helper for status chip
+  Widget _buildStatusChip(String status, ThemeData theme) {
+    Color color;
+    String text;
+    switch (status.toLowerCase()) {
+      case 'approved':
+        color = Colors.green;
+        text = 'Approved';
+        break;
+      case 'pending':
+        color = Colors.orange;
+        text = 'Pending';
+        break;
+      case 'rejected':
+        color = theme.colorScheme.error;
+        text = 'Rejected';
+        break;
+      default:
+        color = Colors.grey;
+        text = status.toUpperCase();
+    }
+    return Chip(
+      label: Text(text, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      backgroundColor: color,
+      side: BorderSide.none,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      elevation: 0,
-      color: theme.colorScheme.surfaceVariant.withOpacity(0.3),
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        leading: Icon(icon, color: theme.colorScheme.onSurfaceVariant),
-        title: Text(
-          title,
-          style: theme.textTheme.titleMedium
+  // Helper for detail rows
+  Widget _buildDetailRow(
+      ThemeData theme, IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+        const SizedBox(width: 8),
+        Text(
+          '$label: ',
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        Text(
+          value,
+          style: theme.textTheme.bodyMedium
               ?.copyWith(fontWeight: FontWeight.bold),
         ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
-      ),
+      ],
     );
   }
 }

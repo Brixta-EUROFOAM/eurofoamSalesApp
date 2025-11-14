@@ -213,7 +213,7 @@ class ApiService {
   Future<List<SchemeEnrollment>> fetchEnrolledSchemes(String masonId) async {
     final uri = Uri.parse('$_baseUrl/api/masons-on-scheme/mason/$masonId');
     try {
-      final res = await _client.get(uri, headers: _authHeaders); // USE _client
+      final res = await _client.get(uri, headers: _authHeaders); 
 
       if (res.statusCode == 200) {
         final body = jsonDecode(res.body);
@@ -227,14 +227,23 @@ class ApiService {
         }
       }
       dev.log(
-        'Failed to fetch schemes: ${res.statusCode} ${res.body}',
+        'Failed to fetch enrolled schemes: ${res.statusCode} ${res.body}',
         name: 'ApiService',
       );
       return [];
     } catch (e) {
-      dev.log('Network error fetching schemes: $e', name: 'ApiService');
+      dev.log('Network error fetching enrolled schemes: $e', name: 'ApiService');
       return [];
     }
+  }
+
+  Future<List<Scheme>> fetchActiveSchemes() async {
+    return _get(
+      'schemes?activeNow=true', // Your new endpoint
+      (json) => (json as List)
+          .map((item) => Scheme.fromJson(item as Map<String, dynamic>))
+          .toList(),
+    );
   }
 
   /// POST /api/masons-on-scheme
