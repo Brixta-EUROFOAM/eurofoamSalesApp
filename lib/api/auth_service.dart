@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 import '../models/employee_model.dart'; // Make sure this path is correct for your project
 
 class AuthService {
-  static const String _baseUrl = 'https://myserverbymycoco.onrender.com';
+  static const String _baseUrl = 'http://13.203.79.51';
   final _storage = const FlutterSecureStorage();
 
   /// Saves the JWT to the device's secure storage.

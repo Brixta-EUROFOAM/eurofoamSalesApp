@@ -12,13 +12,8 @@ import '../models/daily_visit_report_model.dart';
 import '../models/technical_visit_report_model.dart';
 import '../models/geotracking_data_model.dart';
 import '../models/competition_report_model.dart';
-import '../models/mason_model.dart';
 import '../models/employee_model.dart';
-import '../models/scheme_enrollment_model.dart';
-import '../models/bag_lift_model.dart';
-import '../models/reward_category_model.dart';
-import '../models/reward_model.dart';
-import '../models/reward_redemption_model.dart';
+
 
 // --- ✅ 1. (NEW) TSO USER HELPER CLASS (DEFINED HERE) ---
 class TsoUser {
@@ -42,7 +37,7 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  static const String _baseUrl = 'https://myserverbymycoco.onrender.com';
+  static const String _baseUrl = 'http://13.203.79.51';
 
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
@@ -206,148 +201,6 @@ class ApiService {
       dev.log('API Error on DELETE $endpoint', error: e, name: 'ApiService');
       rethrow;
     }
-  }
-
-  // -------------------------------------------------------------------
-  // SCHEME ENROLLMENT ENDPOINTS (NEW)
-  // -------------------------------------------------------------------
-
-  /// GET /api/masons-on-scheme/mason/:masonId
-  Future<List<SchemeEnrollment>> fetchEnrolledSchemes(String masonId) async {
-    final uri = Uri.parse('$_baseUrl/api/masons-on-scheme/mason/$masonId');
-    try {
-      final res = await _client.get(uri, headers: _authHeaders);
-
-      if (res.statusCode == 200) {
-        final body = jsonDecode(res.body);
-        if (body['success'] == true && body['data'] is List) {
-          return (body['data'] as List)
-              .map(
-                (json) =>
-                    SchemeEnrollment.fromJson(json as Map<String, dynamic>),
-              )
-              .toList();
-        }
-      }
-      dev.log(
-        'Failed to fetch enrolled schemes: ${res.statusCode} ${res.body}',
-        name: 'ApiService',
-      );
-      return [];
-    } catch (e) {
-      dev.log(
-        'Network error fetching enrolled schemes: $e',
-        name: 'ApiService',
-      );
-      return [];
-    }
-  }
-
-  Future<List<Scheme>> fetchActiveSchemes() async {
-    return _get(
-      'schemes?activeNow=true', // Your new endpoint
-      (json) => (json as List)
-          .map((item) => Scheme.fromJson(item as Map<String, dynamic>))
-          .toList(),
-    );
-  }
-
-  /// POST /api/masons-on-scheme
-  Future<SchemeEnrollment?> enrollMasonInScheme({
-    required String masonId,
-    required String schemeId,
-  }) async {
-    final uri = Uri.parse('$_baseUrl/api/masons-on-scheme');
-    try {
-      final res =
-          await _client // USE _client
-              .post(
-                uri,
-                headers: _authHeaders,
-                body: jsonEncode({'masonId': masonId, 'schemeId': schemeId}),
-              );
-
-      if (res.statusCode == 201) {
-        final body = jsonDecode(res.body);
-        if (body['success'] == true && body['data'] != null) {
-          // NOTE: Enrollment model only uses the base fields, not the joined scheme details
-          return SchemeEnrollment.fromJson(
-            body['data'] as Map<String, dynamic>,
-          );
-        }
-      }
-      dev.log(
-        'Enrollment failed: ${res.statusCode} ${res.body}',
-        name: 'ApiService',
-      );
-      return null;
-    } catch (e) {
-      dev.log('Network error during enrollment: $e', name: 'ApiService');
-      return null;
-    }
-  }
-
-  // --- ✅ NEW: REWARD & REDEMPTION ENDPOINTS ---
-
-  /// GET /api/reward-categories
-  Future<List<RewardCategory>> fetchRewardCategories() async {
-    return _get(
-      'reward-categories',
-      (json) => (json as List)
-          .map((item) => RewardCategory.fromJson(item as Map<String, dynamic>))
-          .toList(),
-    );
-  }
-
-  /// GET /api/rewards
-  Future<List<Reward>> fetchRewards({int? categoryId}) async {
-    // Fetches active rewards only.
-    String endpoint = 'rewards?isActive=true';
-    if (categoryId != null) {
-      endpoint += '&categoryId=$categoryId';
-    }
-
-    return _get(
-      endpoint,
-      (json) => (json as List)
-          .map((item) => Reward.fromJson(item as Map<String, dynamic>))
-          .toList(),
-    );
-  }
-
-  /// GET /api/rewards-redemption/mason/:masonId
-  Future<List<RewardRedemption>> fetchMyRedemptions(String masonId) async {
-    return _get(
-      'rewards-redemption/mason/$masonId',
-      (json) => (json as List)
-          .map(
-            (item) => RewardRedemption.fromJson(item as Map<String, dynamic>),
-          )
-          .toList(),
-    );
-  }
-
-  /// POST /api/rewards-redemption
-  Future<RewardRedemption?> redeemReward({
-    required String masonId,
-    required int rewardId,
-    required int quantity,
-    required int pointsDebited,
-    required Map<String, String> deliveryDetails,
-  }) async {
-    final body = {
-      'masonId': masonId,
-      'rewardId': rewardId,
-      'quantity': quantity,
-      'pointsDebited': pointsDebited,
-      ...deliveryDetails, // Adds deliveryName, deliveryPhone, etc.
-    };
-
-    return _post(
-      'rewards-redemption',
-      body,
-      (json) => RewardRedemption.fromJson(json),
-    );
   }
   // --- (END OF NEW REWARD METHODS) ---
 
@@ -757,97 +610,6 @@ class ApiService {
   Future<void> deleteSalesOrder(String orderId) =>
       _delete('sales-orders/$orderId');
 
-  Future<List<Mason>> fetchMasons({
-    int page = 1,
-    int limit = 50,
-    String? sortBy,
-    int? userId,
-    String? dealerId,
-    String? kycStatus,
-    bool? isReferred,
-    String? search,
-  }) async {
-    throw Exception('Failed to fetch masons.');
-  }
-
-  Future<Mason> fetchMasonById(String masonId) {
-    return _get('masons/$masonId', (json) => Mason.fromJson(json));
-  }
-
-  Future<List<Mason>> fetchMasonsByUserId(
-    int userId, {
-    int page = 1,
-    int limit = 50,
-    String? sortBy,
-    String? sortDir,
-    String? dealerId,
-    String? kycStatus,
-    bool? isReferred,
-    String? search,
-  }) async {
-    throw Exception('Failed to fetch masons.');
-  }
-
-  Future<List<Mason>> fetchMasonsByDealerId(
-    String dealerId, {
-    int page = 1,
-    int limit = 50,
-    String? sortBy,
-    String? sortDir,
-    String? kycStatus,
-    bool? isReferred,
-    String? search,
-  }) async {
-    throw Exception('Failed to fetch masons.');
-  }
-
-  Future<Mason> createMason(Mason mason) {
-    final body = mason.toJson()..removeWhere((k, v) => v == null);
-    return _post('masons', body, (json) => Mason.fromJson(json));
-  }
-
-  Future<Mason> updateMason(String masonId, Map<String, dynamic> data) {
-    final body = Map<String, dynamic>.from(data)
-      ..removeWhere((k, v) => v == null);
-    return _patch('masons/$masonId', body, (json) => Mason.fromJson(json));
-  }
-
-  Future<void> deleteMason(String masonId) async {
-    return _delete('masons/$masonId');
-  }
-
-  Future<Map<String, dynamic>> submitKyc({
-    required String masonId,
-    String? aadhaarNumber,
-    String? panNumber,
-    String? voterIdNumber,
-    Map<String, String>? documents,
-    String? remark,
-  }) async {
-    final body = <String, dynamic>{
-      'masonId': masonId,
-      if (aadhaarNumber != null && aadhaarNumber.isNotEmpty)
-        'aadhaarNumber': aadhaarNumber,
-      if (panNumber != null && panNumber.isNotEmpty) 'panNumber': panNumber,
-      if (voterIdNumber != null && voterIdNumber.isNotEmpty)
-        'voterIdNumber': voterIdNumber,
-      if (documents != null && documents.isNotEmpty) 'documents': documents,
-      if (remark != null && remark.isNotEmpty) 'remark': remark,
-    }..removeWhere((k, v) => v == null);
-
-    return _post('kyc-submissions', body, (json) {
-      return json as Map<String, dynamic>;
-    });
-  }
-
-  Future<List<TsoUser>> searchTso(String query) async {
-    // It now queries for isTechnicalRole=true
-    return _get(
-      'users?search=$query&isTechnicalRole=true',
-      (json) => (json as List).map((item) => TsoUser.fromJson(item)).toList(),
-    );
-  }
-
   Future<Employee> adminLogin(String loginId, String password) async {
     dev.log('Admin Login Step 1: Authenticating', name: 'ApiService');
     final loginResponse = await _post('auth/login', {
@@ -897,41 +659,6 @@ class ApiService {
       'kyc-submissions/$submissionId',
       body,
       (json) => json as Map<String, dynamic>,
-    );
-  }
-
-  /// POST /api/bag-lifts
-  /// Submits a new bag lift entry for a mason.
-  Future<BagLift> submitBags({
-    required String masonId,
-    required int bagCount,
-    required String? dealerId,
-    required String? imageUrl,
-  }) async {
-    final body = {
-      'masonId': masonId,
-      'bagCount': bagCount,
-      'purchaseDate': DateTime.now().toIso8601String(),
-      'dealerId': dealerId,
-      'pointsCredited': 0,
-      'imageUrl': imageUrl,
-    };
-    return _post(
-      'bag-lifts',
-      body,
-      // We assume the backend returns the created object,
-      // wrapped in { "success": true, "data": { ... } }
-      (json) => BagLift.fromJson(json),
-    );
-  }
-
-  /// GET /api/bag-lifts/mason/:masonId
-  /// Fetches the bag submission history for a specific mason.
-  Future<List<BagLift>> fetchBagHistory(String masonId) async {
-    // Assuming your backend route is set up like this
-    return _get(
-      'bag-lifts/mason/$masonId',
-      (json) => (json as List).map((item) => BagLift.fromJson(item)).toList(),
     );
   }
 }
