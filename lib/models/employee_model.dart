@@ -9,9 +9,12 @@ class Employee {
   final String? lastName;
   final String? email;
   final String? loginId;
+  final String? area;
+  final String? region;
   final String? companyName;
-  // HIGHLIGHT: ADDED THE ROLE PROPERTY
   final String? role;
+  final bool isTechnicalRole;
+  final String? techLoginId;
 
   String get displayName {
     if (firstName != null && lastName != null && firstName!.isNotEmpty && lastName!.isNotEmpty) {
@@ -25,10 +28,13 @@ class Employee {
     this.firstName,
     this.lastName,
     this.email,
+    this.area,
+    this.region,
     this.loginId,
     this.companyName,
-    // HIGHLIGHT: ADDED ROLE TO THE CONSTRUCTOR
     this.role,
+    this.isTechnicalRole = false,
+    this.techLoginId,
   });
 
   // HIGHLIGHT: THE fromJson FACTORY IS NOW SMARTER
@@ -48,11 +54,14 @@ class Employee {
       firstName: json["firstName"] as String?,
       lastName: json["lastName"] as String?,
       email: json["email"] as String?,
+      area: json["area"] as String?,
+      region: json["region"] as String?,
       loginId: json["salesmanLoginId"] as String?,
-      // Use the correctly extracted company name
       companyName: extractedCompanyName,
-      // Parse the role from the JSON
       role: json["role"] as String?,
+      // Backend sends 'isTechnicalRole' (bool) and 'techLoginId' (string)
+      isTechnicalRole: json["isTechnicalRole"] == true,
+      techLoginId: json["techLoginId"] as String?,
     );
   }
 
@@ -62,18 +71,26 @@ class Employee {
     String? firstName,
     String? lastName,
     String? email,
+    String? area,
+    String? region,
     String? loginId,
     String? companyName,
     String? role,
+    bool? isTechnicalRole,
+    String? techLoginId,
   }) {
     return Employee(
       id: id ?? this.id,
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
       email: email ?? this.email,
+      area: area ?? this.area,
+      region: region ?? this.region,
       loginId: loginId ?? this.loginId,
       companyName: companyName ?? this.companyName,
       role: role ?? this.role,
+      isTechnicalRole: isTechnicalRole ?? this.isTechnicalRole,
+      techLoginId: techLoginId ?? this.techLoginId,
     );
   }
 
@@ -83,8 +100,12 @@ class Employee {
         "firstName": firstName,
         "lastName": lastName,
         "email": email,
+        "area": area,
+        "region": region,
         "loginId": loginId,
         "companyName": companyName,
         "role": role,
+        "isTechnicalRole": isTechnicalRole,
+        "techLoginId": techLoginId,
       };
 }

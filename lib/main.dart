@@ -8,6 +8,8 @@ import 'package:assetarchiverflutter/widgets/theme_provider.dart';
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:assetarchiverflutter/screens/auth/login_screen.dart';
 import 'package:assetarchiverflutter/screens/nav_screen.dart';
+import 'package:assetarchiverflutter/technicalSide/screens/technical_nav_screen.dart';
+import 'package:assetarchiverflutter/screens/app_selector_screen.dart'; // NEW SELECTOR
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,23 +41,36 @@ class MyApp extends StatelessWidget {
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'BEST SALES FORCE',
+      title: 'BEST WORK FORCE',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeProvider.themeMode,
-      initialRoute: '/salesforce_login_page',
+      initialRoute: '/selector',
 
       routes: {
+        // The Landing Screen (Choice)
+        '/selector': (context) => const AppSelectorScreen(),
+        
+        // The Login Screen (Shared, behavior changes based on args)
         '/salesforce_login_page': (context) => const LoginScreen(),
       },
       onGenerateRoute: (settings) {
 
+        // 1. Existing Salesman App
         if (settings.name == '/home') {
           final employee = settings.arguments as Employee;
           return MaterialPageRoute(
             builder: (context) {
               return NavScreen(employee: employee);
             },
+          );
+        }
+
+        // 2. Technical App
+        if (settings.name == '/technical_home') {
+          final employee = settings.arguments as Employee;
+          return MaterialPageRoute(
+            builder: (context) => TechnicalNavScreen(employee: employee),
           );
         }
 

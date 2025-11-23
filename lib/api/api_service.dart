@@ -9,7 +9,7 @@ import '../models/daily_task_model.dart';
 import '../models/leave_application_model.dart';
 import '../models/attendance_model.dart';
 import '../models/daily_visit_report_model.dart';
-import '../models/technical_visit_report_model.dart';
+import '../technicalSide/models/technical_visit_report_model.dart';
 import '../models/geotracking_data_model.dart';
 import '../models/competition_report_model.dart';
 import '../models/employee_model.dart';

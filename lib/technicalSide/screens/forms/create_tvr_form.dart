@@ -2,7 +2,7 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:assetarchiverflutter/api/api_service.dart';
-import 'package:assetarchiverflutter/models/technical_visit_report_model.dart';
+import 'package:assetarchiverflutter/technicalSide/models/technical_visit_report_model.dart';
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';

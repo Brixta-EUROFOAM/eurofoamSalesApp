@@ -16,7 +16,6 @@ import 'package:assetarchiverflutter/screens/employee_management/employee_journe
 import 'package:assetarchiverflutter/screens/employee_management/employee_salesorder_screen.dart';
 
 import 'package:assetarchiverflutter/screens/forms/create_dvr.dart';
-import 'package:assetarchiverflutter/screens/forms/create_tvr.dart';
 import 'package:assetarchiverflutter/screens/forms/create_leave_form.dart';
 import 'package:assetarchiverflutter/screens/forms/create_competition_form.dart';
 import 'package:assetarchiverflutter/screens/forms/create_daily_task_form.dart';
@@ -251,17 +250,6 @@ class _NavScreenState extends State<NavScreen> {
     );
   }
 
-  void _showCreateTvrDialog(BuildContext context, Employee employee) {
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: CreateTvrScreen(employee: employee),
-      ),
-    );
-  }
-
   void _showApplyForLeaveDialog(BuildContext context, Employee employee) {
     showDialog(
       context: context,
@@ -330,11 +318,6 @@ class _NavScreenState extends State<NavScreen> {
               text: 'CREATE DVR', onTap: () {
             Navigator.pop(context);
             _showCreateDvrDialog(context, employee);
-          }),
-          _buildDrawerActionItem(context,
-              icon: Icons.description, text: 'CREATE TVR', onTap: () {
-            Navigator.pop(context);
-            _showCreateTvrDialog(context, employee);
           }),
           _buildDrawerActionItem(context,
               icon: Icons.assessment_outlined,
