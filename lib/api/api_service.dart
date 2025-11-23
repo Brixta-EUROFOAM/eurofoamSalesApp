@@ -4,16 +4,19 @@ import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import '../models/dealer_model.dart';
-import '../models/pjp_model.dart'; // This file also contains PjpData
+import '../models/pjp_model.dart';
 import '../models/daily_task_model.dart';
 import '../models/leave_application_model.dart';
 import '../models/attendance_model.dart';
 import '../models/daily_visit_report_model.dart';
-import '../technicalSide/models/technical_visit_report_model.dart';
 import '../models/geotracking_data_model.dart';
 import '../models/competition_report_model.dart';
 import '../models/employee_model.dart';
-
+import '../technicalSide/models/technical_visit_report_model.dart';
+import '../technicalSide/models/mason_bagLift_model.dart';
+import '../technicalSide/models/mason_kyc_model.dart';
+import '../technicalSide/models/mason_rewards_model.dart';
+import '../technicalSide/models/sites_model.dart';
 
 // --- ✅ 1. (NEW) TSO USER HELPER CLASS (DEFINED HERE) ---
 class TsoUser {
@@ -643,22 +646,46 @@ class ApiService {
     return Employee.fromJson(json['data']);
   }
 
-  Future<List<dynamic>> fetchPendingKycSubmissions() async {
+  Future<List<KycSubmission>> fetchPendingKycSubmissions() async {
     return _get(
       'kyc-submissions?status=pending',
-      (json) => json as List<dynamic>,
+      (json) => (json as List).map((e) => KycSubmission.fromJson(e)).toList(),
     );
   }
 
-  Future<Map<String, dynamic>> reviewKycSubmission(
-    String submissionId,
-    String status,
-  ) async {
+  Future<void> reviewKycSubmission(String submissionId, String status) async {
     final body = {'status': status};
-    return _patch(
-      'kyc-submissions/$submissionId',
-      body,
-      (json) => json as Map<String, dynamic>,
-    );
+    await _patch('kyc-submissions/$submissionId', body, (json) => null);
+  }
+
+  Future<void> createTechnicalSite(TechnicalSite site) async {
+    await _post(
+      'technical-sites',
+      site.toJson(),
+      (json) => null,
+    ); // Adjust endpoint if different
+  }
+
+  // Fetch pending lifts (TSO view)
+  Future<List> fetchPendingBagLifts() async {
+    // Assuming backend supports filtering by status via query params
+    return _get('bag-lifts?status=pending', (json) {
+      return (json as List).map((e) => MasonBagLift.fromJson(e)).toList();
+    });
+  }
+
+  // Approve/Reject Bag Lift
+  Future<void> updateBagLiftStatus(String id, String status) async {
+    await _patch('bag-lifts/$id', {'status': status}, (json) => null);
+  }
+
+  Future<List> fetchPendingRedemptions() async {
+    return _get('rewards-redemption?status=placed', (json) {
+      return (json as List).map((e) => MasonRedemption.fromJson(e)).toList();
+    });
+  }
+
+  Future<void> updateRedemptionStatus(String id, String status) async {
+    await _patch('rewards-redemption/$id', {'status': status}, (json) => null);
   }
 }
