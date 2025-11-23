@@ -1,4 +1,4 @@
-// file: lib/models/technical_visit_report_model.dart
+// lib/technicalSide/models/technical_visit_report_model.dart
 import 'dart:convert';
 
 TechnicalVisitReport technicalVisitReportFromJson(String str) => TechnicalVisitReport.fromJson(json.decode(str));

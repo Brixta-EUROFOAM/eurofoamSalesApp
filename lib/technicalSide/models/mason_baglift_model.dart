@@ -1,0 +1,1 @@
+// lib/technicalSide/models/mason_baglift_model.dart
