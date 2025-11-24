@@ -9,17 +9,19 @@ class Pjp {
   final int userId;
   final int createdById;
   final DateTime planDate;
-  
-  /// The JOURNEY status (e.g., 'pending', 'started', 'completed')
   final String status; 
-  
-  /// The ADMIN approval status (e.g., 'PENDING', 'VERIFIED')
   final String? verificationStatus;
-  
   final String areaToBeVisited;
   final String? description;
+  
+  // --- Sales Side ---
   final String? dealerId;
   final String? dealerName;
+
+  // --- Technical Side ---
+  final String? siteId;
+  final String? siteName; // Helper for UI (joined from backend)
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -30,10 +32,12 @@ class Pjp {
     required this.planDate,
     required this.status,
     required this.areaToBeVisited,
-    this.verificationStatus, // <-- ADDED
+    this.verificationStatus,
     this.description,
     this.dealerId,
     this.dealerName,
+    this.siteId,
+    this.siteName,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -41,10 +45,18 @@ class Pjp {
   factory Pjp.fromJson(Map<String, dynamic> json) {
     String? foundDealerId = json['dealerId']?.toString();
     String? foundDealerName = json['dealerName']?.toString();
-
     if (json['dealer'] is Map<String, dynamic>) {
       foundDealerId ??= json['dealer']['id']?.toString();
       foundDealerName ??= json['dealer']['name']?.toString();
+    }
+
+    // --- Handle Site Join ---
+    String? foundSiteId = json['siteId']?.toString();
+    String? foundSiteName = json['siteName']?.toString();
+    // If backend sends nested 'site' object
+    if (json['site'] is Map<String, dynamic>) {
+      foundSiteId ??= json['site']['id']?.toString();
+      foundSiteName ??= json['site']['siteName']?.toString();
     }
 
     return Pjp(
@@ -58,43 +70,13 @@ class Pjp {
       dealerId: foundDealerId,
       dealerName: foundDealerName,
       
-      // --- ✅ THIS IS THE FIX ---
-      // Read the correct field from the server
+      // Map Site fields
+      siteId: foundSiteId,
+      siteName: foundSiteName,
+
       verificationStatus: json['verificationStatus'],
-      // ---
-      
       createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
       updatedAt: DateTime.tryParse(json['updatedAt'] ?? '') ?? DateTime.now(),
-    );
-  }
-  
-  Pjp copyWith({
-    String? id,
-    int? userId,
-    int? createdById,
-    DateTime? planDate,
-    String? status,
-    String? verificationStatus, // <-- ADDED
-    String? areaToBeVisited,
-    String? description,
-    String? dealerId,
-    String? dealerName,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-  }) {
-    return Pjp(
-      id: id ?? this.id,
-      userId: userId ?? this.userId,
-      createdById: createdById ?? this.createdById,
-      planDate: planDate ?? this.planDate,
-      status: status ?? this.status,
-      verificationStatus: verificationStatus ?? this.verificationStatus, // <-- ADDED
-      areaToBeVisited: areaToBeVisited ?? this.areaToBeVisited,
-      description: description ?? this.description,
-      dealerId: dealerId ?? this.dealerId,
-      dealerName: dealerName ?? this.dealerName,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
     );
   }
 
@@ -103,21 +85,16 @@ class Pjp {
       'userId': userId,
       'createdById': createdById,
       'planDate': planDate.toIso8601String().split('T').first,
-      
-      // --- ✅ THIS IS THE FIX ---
-      // Send BOTH fields, as required by the pjpInputSchema
       'status': status,
       'verificationStatus': verificationStatus,
-      // ---
-      
       'areaToBeVisited': areaToBeVisited,
       'description': description,
       'dealerId': dealerId,
+      'siteId': siteId,
     };
   }
 }
 
-/// A helper class to hold separated PJP lists for the UI.
 class PjpData {
   final List<Pjp> pendingPjps;
   final List<Pjp> verifiedPjps; 

@@ -2,9 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/technicalSide/models/mason_baglift_model.dart';
+import 'package:assetarchiverflutter/models/employee_model.dart';
 
 class ApproveMasonBagLift extends StatefulWidget {
-  const ApproveMasonBagLift({super.key});
+  final Employee employee;
+  const ApproveMasonBagLift({super.key, required this.employee});
 
   @override
   State<ApproveMasonBagLift> createState() => _ApproveMasonBagLiftState();
@@ -25,9 +27,9 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
 
   void _loadData() {
     setState(() {
-      _futureLifts = _api.fetchPendingBagLifts().then((data) {
-        return data.cast<MasonBagLift>().toList();
-      });
+      final userId = int.tryParse(widget.employee.id);
+      
+      _futureLifts = _api.fetchPendingBagLifts(userId: userId);
     });
   }
 

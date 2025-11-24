@@ -13,7 +13,7 @@ import '../models/geotracking_data_model.dart';
 import '../models/competition_report_model.dart';
 import '../models/employee_model.dart';
 import '../technicalSide/models/technical_visit_report_model.dart';
-import '../technicalSide/models/mason_bagLift_model.dart';
+import '../technicalSide/models/mason_baglift_model.dart';
 import '../technicalSide/models/mason_kyc_model.dart';
 import '../technicalSide/models/mason_rewards_model.dart';
 import '../technicalSide/models/sites_model.dart';
@@ -646,9 +646,16 @@ class ApiService {
     return Employee.fromJson(json['data']);
   }
 
-  Future<List<KycSubmission>> fetchPendingKycSubmissions() async {
+  Future<List<KycSubmission>> fetchPendingKycSubmissions({int? userId}) async {
+    String endpoint = 'kyc-submissions?status=pending';
+    
+    // ✅ FIX: Filter by TSO ID
+    if (userId != null) {
+      endpoint += '&userId=$userId';
+    }
+
     return _get(
-      'kyc-submissions?status=pending',
+      endpoint,
       (json) => (json as List).map((e) => KycSubmission.fromJson(e)).toList(),
     );
   }
@@ -667,9 +674,15 @@ class ApiService {
   }
 
   // Fetch pending lifts (TSO view)
-  Future<List> fetchPendingBagLifts() async {
-    // Assuming backend supports filtering by status via query params
-    return _get('bag-lifts?status=pending', (json) {
+  Future<List<MasonBagLift>> fetchPendingBagLifts({int? userId}) async {
+    String endpoint = 'bag-lifts?status=pending';
+
+    // Append userId if provided
+    if (userId != null) {
+      endpoint += '&userId=$userId';
+    }
+
+    return _get(endpoint, (json) {
       return (json as List).map((e) => MasonBagLift.fromJson(e)).toList();
     });
   }
@@ -687,5 +700,30 @@ class ApiService {
 
   Future<void> updateRedemptionStatus(String id, String status) async {
     await _patch('rewards-redemption/$id', {'status': status}, (json) => null);
+  }
+
+  // Fetch Sites for Dropdown (and general use)
+  Future<List<TechnicalSite>> fetchTechnicalSites({
+    int? userId,
+    String? region,
+  }) async {
+    // Adjust query params as per your backend routes/dataFetchingRoutes/technicalSites.ts
+    // Assuming it supports userId filtering
+    final endpoint = userId != null
+        ? 'technical-sites?userId=$userId'
+        : 'technical-sites';
+
+    return _get(endpoint, (json) {
+      return (json as List).map((e) => TechnicalSite.fromJson(e)).toList();
+    });
+  }
+
+  // Helper to fetch single site by ID (needed for Journey start)
+  Future<TechnicalSite> fetchTechnicalSiteById(String siteId) async {
+    // Assuming backend has GET /technical-sites/:id
+    return _get(
+      'technical-sites/$siteId',
+      (json) => TechnicalSite.fromJson(json),
+    );
   }
 }

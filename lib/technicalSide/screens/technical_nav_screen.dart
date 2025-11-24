@@ -1,10 +1,16 @@
 // lib/technicalSide/screens/technical_nav_screen.dart
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:assetarchiverflutter/models/pjp_model.dart';
+import 'package:assetarchiverflutter/technicalSide/models/sites_model.dart';
 
+// --- Screens ---
 import 'package:assetarchiverflutter/technicalSide/screens/technical_dashboard_screen.dart';
 import 'package:assetarchiverflutter/technicalSide/screens/technical_profile_screen.dart';
+import 'package:assetarchiverflutter/technicalSide/screens/technical_pjp_screen.dart'; // ✅ NEW
+import 'package:assetarchiverflutter/technicalSide/screens/technical_journey_screen.dart'; // ✅ NEW
 
+// --- Forms & Actions ---
 import 'package:assetarchiverflutter/technicalSide/screens/forms/create_tvr_form.dart';
 import 'package:assetarchiverflutter/technicalSide/screens/forms/add_site_form.dart';
 import 'package:assetarchiverflutter/technicalSide/screens/forms/approve_mason_kyc.dart';
@@ -22,36 +28,43 @@ class TechnicalNavScreen extends StatefulWidget {
 
 class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
   int _selectedIndex = 0;
-  late final List<Widget> _pages;
+  Map<String, dynamic>? _journeyData; // State to hold journey data
 
   // --- THEME COLORS ---
   static const Color darkBackground = Color(0xFF010638); // Deepest Blue
   static const Color primaryBlue = Color(0xFF0D47A1);    // Brand Blue
   static const Color accentYellow = Color(0xFFFFA000);   // Amber/Yellow
 
-  @override
-  void initState() {
-    super.initState();
-    _pages = [
-      // 0: Home
-      TechnicalDashboardScreen(employee: widget.employee),
-      // 1: Sites (Placeholder)
-      const _TechnicalPlaceholderScreen(title: "Technical Sites", icon: Icons.apartment),
-      // 2: Journey (Placeholder)
-      const _TechnicalPlaceholderScreen(title: "Technical Journey", icon: Icons.map),
-      // 3: Profile
-      TechnicalProfileScreen(employee: widget.employee),
-    ];
-  }
-
   void _onItemTapped(int index) {
     setState(() => _selectedIndex = index);
   }
 
-  // --- DRAWER NAVIGATION ACTIONS ---
+  // --- JOURNEY LOGIC ---
+  void _startJourney(Map<String, dynamic> data) {
+    setState(() {
+      _journeyData = data;
+      _selectedIndex = 2; // Switch to Journey Tab
+    });
+  }
 
+  void _clearJourneyData() {
+    setState(() {
+      _journeyData = null;
+    });
+  }
+
+  void _onJourneyCompleted(Pjp pjp, TechnicalSite site, DateTime checkInTime) {
+    _clearJourneyData();
+    // Open the TVR form immediately after journey ends
+    // In a real app, you might pre-fill this form with the site data
+    _openDialog(CreateTvrScreen(employee: widget.employee));
+  }
+
+  // --- DRAWER NAVIGATION ACTIONS ---
   void _openDialog(Widget screen) {
-    Navigator.pop(context); // Close drawer
+    // Only pop if the drawer is open. We can check context or just try-catch
+    if (Scaffold.of(context).isDrawerOpen) Navigator.pop(context); 
+    
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -69,6 +82,31 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Define pages here to access methods like _startJourney
+    final List<Widget> pages = [
+      // 0: Home
+      TechnicalDashboardScreen(employee: widget.employee),
+      
+      // 1: Visits (PJP)
+      TechnicalPjpScreen(
+        employee: widget.employee,
+        onStartJourney: _startJourney,
+      ),
+      
+      // 2: Journey
+      TechnicalJourneyScreen(
+        employee: widget.employee,
+        initialJourneyData: _journeyData,
+        onDestinationConsumed: () {
+           // Consumed by the screen, but we keep state until completion/cancel
+        },
+        onJourneyCompleted: _onJourneyCompleted,
+      ),
+      
+      // 3: Profile
+      TechnicalProfileScreen(employee: widget.employee),
+    ];
+
     return Scaffold(
       // --- 1. THE SIDE DRAWER ---
       drawer: Drawer(
@@ -127,13 +165,17 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
               _buildDrawerItem(
                 Icons.assignment_add, 
                 "CREATE TVR", 
-                () => _openDialog(CreateTvrScreen(employee: widget.employee)),
+                () {
+                  Navigator.pop(context);
+                  showDialog(
+                    context: context, 
+                    builder: (_) => CreateTvrScreen(employee: widget.employee)
+                  );
+                },
               ),
               _buildDrawerItem(
                 Icons.add_location_alt, 
                 "REGISTER SITE", 
-                // Assuming AddSiteForm uses a full-screen scaffold, push it.
-                // If it's small, use _openDialog. It looked full-screen in code.
                 () => _openFullScreen(AddSiteForm(employee: widget.employee)),
               ),
 
@@ -144,12 +186,13 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
               _buildDrawerItem(
                 Icons.verified_user, 
                 "APPROVE KYC", 
-                () => _openFullScreen(const ApproveMasonKycScreen()),
+                () => _openFullScreen(ApproveMasonKycScreen(employee: widget.employee)),
               ),
               _buildDrawerItem(
                 Icons.shopping_bag, 
                 "APPROVE BAG LIFTS", 
-                () => _openFullScreen(const ApproveMasonBagLift()),
+                // ✅ Corrected: Now passing employee
+                () => _openFullScreen(ApproveMasonBagLift(employee: widget.employee)),
               ),
               _buildDrawerItem(
                 Icons.card_giftcard, 
@@ -164,7 +207,13 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
               _buildDrawerItem(
                 Icons.event_note, 
                 "APPLY FOR LEAVE", 
-                () => _openDialog(CreateLeaveFormScreen(employee: widget.employee)),
+                () {
+                  Navigator.pop(context);
+                  showDialog(
+                    context: context,
+                    builder: (_) => CreateLeaveFormScreen(employee: widget.employee)
+                  );
+                },
               ),
               _buildDrawerItem(
                 Icons.task_alt, 
@@ -184,7 +233,7 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
       // --- 2. MAIN BODY ---
       body: IndexedStack(
         index: _selectedIndex,
-        children: _pages,
+        children: pages,
       ),
 
       // --- 3. BOTTOM NAVIGATION BAR ---
@@ -209,9 +258,9 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
               label: 'Home',
             ),
             NavigationDestination(
-              icon: Icon(Icons.apartment, color: Colors.white70),
-              selectedIcon: Icon(Icons.apartment, color: Colors.black),
-              label: 'Sites',
+              icon: Icon(Icons.calendar_month_outlined, color: Colors.white70), // Changed Icon
+              selectedIcon: Icon(Icons.calendar_month, color: Colors.black),
+              label: 'Visits', // Renamed from Sites -> Visits/PJP
             ),
             NavigationDestination(
               icon: Icon(Icons.map_outlined, color: Colors.white70),
@@ -260,43 +309,6 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
       hoverColor: Colors.white.withOpacity(0.1),
-    );
-  }
-}
-
-// --- Simple Placeholder for Tabs ---
-class _TechnicalPlaceholderScreen extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  const _TechnicalPlaceholderScreen({required this.title, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(title),
-        backgroundColor: const Color(0xFF0D47A1),
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: () => Scaffold.of(context).openDrawer(),
-        ),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 80, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              "Technical Side: $title", 
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black54)
-            ),
-            const SizedBox(height: 8),
-            const Text("Feature under construction", style: TextStyle(color: Colors.grey)),
-          ],
-        ),
-      ),
     );
   }
 }

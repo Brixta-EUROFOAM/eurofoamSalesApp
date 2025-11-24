@@ -2,9 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/technicalSide/models/mason_kyc_model.dart';
+import 'package:assetarchiverflutter/models/employee_model.dart';
 
 class ApproveMasonKycScreen extends StatefulWidget {
-  const ApproveMasonKycScreen({super.key});
+  final Employee employee; 
+  const ApproveMasonKycScreen({super.key, required this.employee});
 
   @override
   State<ApproveMasonKycScreen> createState() => _ApproveMasonKycScreenState();
@@ -29,12 +31,12 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
 
   Future<List<KycSubmission>> _fetchPendingKyc() async {
     try {
-      // ✅ FIX: The API now returns List<KycSubmission>, so we return it directly.
-      // No need to map it again.
-      return await _api.fetchPendingKycSubmissions();
+      // Pass the user ID to the API
+      final userId = int.tryParse(widget.employee.id);
+      return await _api.fetchPendingKycSubmissions(userId: userId);
     } catch (e) {
       debugPrint("Error fetching KYC: $e");
-      return []; // Return empty on error for now
+      return [];
     }
   }
 
