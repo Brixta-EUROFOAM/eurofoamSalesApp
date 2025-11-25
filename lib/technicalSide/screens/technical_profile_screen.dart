@@ -35,6 +35,13 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
   final ApiService _apiService = ApiService();
   late Future<TechnicalProfileStats> _statsFuture;
 
+  // --- THEME CONSTANTS ---
+  static const Color scaffoldBg     = Color(0xFF020617); // Navy
+  static const Color surfaceDark    = Color(0xFF1E293B); // Slate 800
+  static const Color accentYellow   = Color(0xFFFFA000); // Amber
+  static const Color accentColor    = _ProfileHeaderCard.surfaceDark;
+
+
   @override
   void initState() {
     super.initState();
@@ -58,29 +65,20 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
     final todayString = DateFormat('yyyy-MM-dd').format(today);
 
     try {
-      // PARALLEL FETCHING
       final List<dynamic> results = await Future.wait([
-        // 1. Active Sites (Placeholder until API is ready)
-        Future.value([]), 
-        
-        // 2. TVRs (Technical Visit Reports) - Used to count reports submitted today
-        _apiService.fetchTvrsForUser(uid, startDate: todayString, endDate: todayString),
-        
-        // 3. PJPs (Visits Today) - Relevant for TSEs too
-        _apiService.fetchPjpsForUser(uid, status: 'APPROVED', startDate: todayString, endDate: todayString),
-        
-        // 4. Daily Tasks (Completed) - Relevant for TSEs too
-        _apiService.fetchDailyTasksForUser(uid, status: 'Completed'),
+        Future.value([]), // 1. Active Sites
+        _apiService.fetchTvrsForUser(uid, startDate: todayString, endDate: todayString), // 2. TVRs
+        _apiService.fetchPjpsForUser(uid, status: 'APPROVED', startDate: todayString, endDate: todayString), // 3. PJPs
+        _apiService.fetchDailyTasksForUser(uid, status: 'Completed'), // 4. Tasks
       ]);
 
-      // Safe casting
       final tvrsList = (results[1] is List) ? results[1] as List : [];
       final pjpList = (results[2] is List) ? results[2] as List : [];
       final tasksList = (results[3] is List) ? results[3] as List : [];
 
       return TechnicalProfileStats(
-        activeSites: 12, // Placeholder value
-        pendingTvrs: tvrsList.length, // Showing "TVRs Done Today"
+        activeSites: 12, 
+        pendingTvrs: tvrsList.length, 
         upcomingVisits: pjpList.length,
         completedTasks: tasksList.length,
       );
@@ -102,17 +100,45 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    final theme = Theme.of(context);
     
-    const primaryColor = Color(0xFF0D47A1); // Dark Blue
-    const accentColor = Color(0xFFFFA000);  // Orange
-
-    return SafeArea(
-      child: FutureBuilder<TechnicalProfileStats>(
+    return Scaffold(
+      backgroundColor: scaffoldBg,
+      // --- APP BAR (Consistent with others) ---
+      appBar: AppBar(
+        backgroundColor: scaffoldBg,
+        elevation: 0,
+        centerTitle: true,
+        leadingWidth: 64,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
+          child: InkWell(
+            onTap: () => Scaffold.of(context).openDrawer(),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: surfaceDark,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.1)),
+              ),
+              child: const Icon(Icons.menu_rounded, color: Colors.white, size: 22),
+            ),
+          ),
+        ),
+        title: const Text(
+          'PROFILE',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.5,
+          ),
+        ),
+      ),
+      body: FutureBuilder<TechnicalProfileStats>(
         future: _statsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting && snapshot.data == null) {
-            return Center(child: CircularProgressIndicator(color: primaryColor));
+            return const Center(child: CircularProgressIndicator(color: accentYellow));
           }
           
           final stats = snapshot.data ?? TechnicalProfileStats(
@@ -121,7 +147,8 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
 
           return RefreshIndicator(
             onRefresh: _refreshStats,
-            color: accentColor,
+            color: accentColor, // Orange spinner
+            backgroundColor: surfaceDark, // Dark bg for spinner
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 120.0),
               children: [
@@ -131,13 +158,11 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                   initials: getInitials(),
                   displayName: widget.employee.displayName,
                   email: widget.employee.email ?? 'No email',
-                  // ✅ Corrected Terminology
                   role: "Technical Sales Employee",
-                  primaryColor: primaryColor,
                 ),
 
-                // --- 2. OVERVIEW STATS (Moved from Dashboard) ---
-                const _SectionHeader('Overview Stats'),
+                // --- 2. OVERVIEW STATS ---
+                const _SectionHeader('OVERVIEW STATS'),
                 Column(
                   children: [
                     Row(
@@ -153,7 +178,7 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                           title: "Visits Today",
                           value: stats.upcomingVisits.toString(),
                           icon: Icons.map,
-                          iconColor: Colors.orange,
+                          iconColor: accentYellow,
                         ),
                       ],
                     ),
@@ -164,14 +189,14 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                           title: "TVRs Done",
                           value: stats.pendingTvrs.toString(),
                           icon: Icons.assignment_turned_in,
-                          iconColor: Colors.purple,
+                          iconColor: Colors.purpleAccent,
                         ),
                         const SizedBox(width: 16),
                         _buildStatCard(
                           title: "Tasks Done",
                           value: stats.completedTasks.toString(),
                           icon: Icons.check_circle,
-                          iconColor: Colors.green,
+                          iconColor: Colors.greenAccent,
                         ),
                       ],
                     ),
@@ -179,28 +204,54 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                 ),
 
                 // --- 3. Settings Section ---
-                const _SectionHeader('App Settings'),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Theme Preference', style: theme.textTheme.titleMedium),
-                        const SizedBox(height: 12),
-                        SegmentedButton<ThemeMode>(
+                const _SectionHeader('APP SETTINGS'),
+                Container(
+                  padding: const EdgeInsets.all(16.0),
+                  decoration: BoxDecoration(
+                    color: surfaceDark,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white.withOpacity(0.05)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Theme Preference', 
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+                      ),
+                      const SizedBox(height: 12),
+                      
+                      // Custom Styled Segmented Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<ThemeMode>(
+                          style: ButtonStyle(
+                            backgroundColor: MaterialStateProperty.resolveWith<Color>((states) {
+                              if (states.contains(MaterialState.selected)) {
+                                return accentYellow;
+                              }
+                              return Colors.white.withOpacity(0.05);
+                            }),
+                            foregroundColor: MaterialStateProperty.resolveWith<Color>((states) {
+                              if (states.contains(MaterialState.selected)) {
+                                return Colors.black;
+                              }
+                              return Colors.white70;
+                            }),
+                            side: MaterialStateProperty.all(BorderSide(color: Colors.white.withOpacity(0.1))),
+                          ),
                           segments: const [
-                            ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined)),
-                            ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined)),
-                            ButtonSegment(value: ThemeMode.system, label: Text('System'), icon: Icon(Icons.phone_android_outlined)),
+                            ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined, size: 16)),
+                            ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined, size: 16)),
+                            ButtonSegment(value: ThemeMode.system, label: Text('Auto'), icon: Icon(Icons.phone_android_outlined, size: 16)),
                           ],
                           selected: { themeProvider.themeMode },
                           onSelectionChanged: (Set<ThemeMode> newSelection) {
                             themeProvider.setThemeMode(newSelection.first);
                           },
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
                 
@@ -225,10 +276,12 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: surfaceDark,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.withOpacity(0.1)),
-          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+          border: Border.all(color: Colors.white.withOpacity(0.05)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 2))
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -239,14 +292,22 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                 Icon(icon, color: iconColor, size: 28),
                 Text(
                   value,
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.black87),
+                  style: const TextStyle(
+                    fontSize: 24, 
+                    fontWeight: FontWeight.w900, 
+                    color: Colors.white
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
             Text(
               title,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.black54),
+              style: const TextStyle(
+                fontSize: 13, 
+                fontWeight: FontWeight.w600, 
+                color: Colors.white54
+              ),
             ),
           ],
         ),
@@ -255,34 +316,44 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
   }
 }
 
-// --- REUSED WIDGETS ---
+// --- REUSED WIDGETS (THEMED) ---
 
 class _ProfileHeaderCard extends StatelessWidget {
   final String initials;
   final String displayName;
   final String email;
   final String role;
-  final Color primaryColor;
+
+  // Constants
+  static const Color surfaceDark = Color(0xFF1E293B);
+  static const Color brandBlue = Color(0xFF0B4AA8);
+  static const Color accentYellow = Color(0xFFFFA000);
 
   const _ProfileHeaderCard({
     required this.initials,
     required this.displayName,
     required this.email,
     required this.role,
-    required this.primaryColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      elevation: 2,
+    return Container(
+      decoration: BoxDecoration(
+        color: surfaceDark,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+        boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(
           children: [
             CircleAvatar(
               radius: 40,
-              backgroundColor: primaryColor,
+              backgroundColor: brandBlue,
               child: Text(
                 initials,
                 style: const TextStyle(fontSize: 32, color: Colors.white, fontWeight: FontWeight.bold),
@@ -291,16 +362,37 @@ class _ProfileHeaderCard extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               displayName,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+              style: const TextStyle(
+                fontSize: 20, 
+                fontWeight: FontWeight.bold, 
+                color: Colors.white,
+                letterSpacing: 0.5,
+              ),
             ),
             const SizedBox(height: 4),
-            Text(email, style: const TextStyle(color: Colors.black54)),
-            const SizedBox(height: 12),
-            Chip(
-              avatar: const Icon(Icons.engineering, color: Colors.black54, size: 18),
-              label: Text(role, style: const TextStyle(color: Colors.black87)),
-              backgroundColor: Colors.grey[200],
-              side: BorderSide.none,
+            Text(email, style: const TextStyle(color: Colors.white54)),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: accentYellow,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.engineering, color: Colors.black, size: 16),
+                  const SizedBox(width: 8),
+                  Text(
+                    role.toUpperCase(), 
+                    style: const TextStyle(
+                      color: Colors.black, 
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11,
+                    )
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -319,18 +411,28 @@ class _SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(8.0, 24.0, 8.0, 8.0),
       child: Text(
         title.toUpperCase(),
-        style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.bold, letterSpacing: 0.8, fontSize: 12),
+        style: const TextStyle(
+          color: Colors.white38, 
+          fontWeight: FontWeight.w900, 
+          letterSpacing: 1.2, 
+          fontSize: 12
+        ),
       ),
     );
   }
 }
 
 class _LogoutButton extends StatelessWidget {
+  static const Color dangerRed = Color(0xFFEF4444);
+
   @override
   Widget build(BuildContext context) {
     return ElevatedButton.icon(
       icon: const Icon(Icons.logout),
-      label: const Text('LOG OUT'),
+      label: const Text(
+        'LOG OUT',
+        style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.0),
+      ),
       onPressed: () async {
         await AuthService().logout();
         if (context.mounted) {
@@ -338,10 +440,13 @@ class _LogoutButton extends StatelessWidget {
         }
       },
       style: ElevatedButton.styleFrom(
-        backgroundColor: Colors.red[50],
-        foregroundColor: Colors.red,
+        backgroundColor: dangerRed.withOpacity(0.1), // Transparent Red
+        foregroundColor: dangerRed, // Red Text
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: dangerRed, width: 1.5),
+        ),
         padding: const EdgeInsets.symmetric(vertical: 18),
       ),
     );

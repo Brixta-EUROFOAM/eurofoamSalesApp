@@ -35,7 +35,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     _setGreeting();
   }
 
-  // --- Attendance & Location Logic ---
+  // --- Attendance & Location Logic (UNCHANGED) ---
   void _setGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) {_greeting = 'Good Morning';}
@@ -125,16 +125,18 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
   }
 
   Future<void> _handleRefresh() async {
-    // Just refresh greeting/attendance state if needed, or reload profile
     setState(() { _setGreeting(); });
   }
 
   @override
+@override
   Widget build(BuildContext context) {
-    //final theme = Theme.of(context);
-    const primaryColor = Color(0xFF0D47A1); // Deep Blue
-    const secondaryColor = Color(0xFFFFA000); // Amber/Orange
-    const scaffoldBg = Color.fromARGB(255, 39, 149, 238); 
+    // 1. THEME CONSTANTS
+    const scaffoldBg        = Color(0xFF020617);  // Almost-black navy
+    const cardGradientStart = Color(0xFF0B4AA8);  // Brand Blue
+    const cardGradientEnd   = Color(0xFF111827);  // Dark surface fade
+    const secondaryColor    = Color(0xFFFFA000);  // Amber/Orange accent
+    const surfaceDark       = Color(0xFF1E293B);  // Card background (Slate 800)
 
     String userArea = "N/A";
     try { userArea = (widget.employee as dynamic).area ?? "N/A"; } catch (_) {}
@@ -142,26 +144,62 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        backgroundColor: scaffoldBg,
+        elevation: 0,
         centerTitle: true,
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.menu),
-          onPressed: () => Scaffold.of(context).openDrawer(),
+        // --- 1. NEW MENU BUTTON ---
+        // We wrap it in Padding + Container to give it a "physical" button look
+        leadingWidth: 64, // Give it a bit more width to breathe
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
+          child: InkWell(
+            onTap: () => Scaffold.of(context).openDrawer(),
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: surfaceDark, // Distinct background for the button
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.1)), // Subtle border
+              ),
+              child: const Icon(Icons.menu_rounded, color: Colors.white, size: 22),
+            ),
+          ),
+        ),
+        // --- 2. NEW TITLE STYLE ---
+        title: const Text(
+          'DASHBOARD',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w900, // Extra bold
+            letterSpacing: 1.5,         // Spaced out for readability
+          ),
         ),
       ),
       body: RefreshIndicator(
         onRefresh: _handleRefresh,
         color: secondaryColor,
+        backgroundColor: surfaceDark,
         child: ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
-            // 1. GREETING CARD
-            Card(
-              elevation: 4,
-              color: primaryColor,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            // 2. GREETING CARD (HERO)
+            Container(
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [cardGradientStart, cardGradientEnd],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4),
+                  )
+                ],
+              ),
               child: Padding(
                 padding: const EdgeInsets.all(24.0),
                 child: Column(
@@ -191,7 +229,11 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                           ),
                           child: const Text(
                             'Technical',
-                            style: TextStyle(color: Colors.black, fontWeight: FontWeight.w900, fontSize: 11),
+                            style: TextStyle(
+                              color: Colors.black, 
+                              fontWeight: FontWeight.w900, 
+                              fontSize: 11
+                            ),
                           ),
                         ),
                       ],
@@ -224,7 +266,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
             
             const SizedBox(height: 24),
 
-            // 2. ATTENDANCE BUTTONS
+            // 3. ATTENDANCE BUTTONS
             Row(
               children: [
                 Expanded(
@@ -244,9 +286,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                     icon: Icons.logout,
                     isLoading: _isCheckingOut,
                     onTap: _isCheckingIn || _isCheckingOut ? null : _handleCheckOut,
-                    bgColor: Colors.white,
-                    textColor: primaryColor,
-                    borderColor: primaryColor,
+                    bgColor: surfaceDark, 
+                    textColor: Colors.white, 
                   ),
                 ),
               ],
@@ -254,11 +295,11 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
 
             const SizedBox(height: 30),
             
-            // 3. QUICK ACTIONS (Replaces Stats here)
+            // 4. QUICK ACTIONS
             const Text(
               "QUICK ACTIONS",
               style: TextStyle(
-                color: Colors.black54,
+                color: Colors.white54,
                 fontSize: 13,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 1.2,
@@ -270,7 +311,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
               title: "Create Technical Visit Report",
               subtitle: "Log site visit, complaint or conversion",
               icon: Icons.assignment_add,
-              color: primaryColor,
+              iconColor: cardGradientStart, 
+              cardColor: surfaceDark,
               onTap: () {
                 showDialog(
                   context: context,
@@ -295,7 +337,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     required VoidCallback? onTap,
     required Color bgColor,
     required Color textColor,
-    Color? borderColor,
   }) {
     return ElevatedButton(
       onPressed: onTap,
@@ -305,7 +346,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
         padding: const EdgeInsets.symmetric(vertical: 16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: borderColor != null ? BorderSide(color: borderColor, width: 2) : BorderSide.none,
+          // Border removed for cleaner look in dark mode
+          side: BorderSide.none,
         ),
         elevation: 0,
       ),
@@ -326,12 +368,13 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     required String title,
     required String subtitle,
     required IconData icon,
-    required Color color,
+    required Color iconColor,
+    required Color cardColor,
     required VoidCallback onTap,
   }) {
     return Card(
       elevation: 0,
-      color: const Color.fromARGB(255, 44, 165, 240),
+      color: cardColor,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
         onTap: onTap,
@@ -343,23 +386,36 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  color: iconColor.withOpacity(0.2), // Subtle accent bg
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: color, size: 24),
+                child: Icon(icon, color: iconColor, size: 24), // Icon uses brand color
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+                    Text(
+                      title, 
+                      style: const TextStyle(
+                        fontSize: 16, 
+                        fontWeight: FontWeight.bold, 
+                        color: Colors.white // High contrast
+                      )
+                    ),
                     const SizedBox(height: 4),
-                    Text(subtitle, style: const TextStyle(fontSize: 13, color: Colors.black54)),
+                    Text(
+                      subtitle, 
+                      style: const TextStyle(
+                        fontSize: 13, 
+                        color: Colors.white54 // Medium contrast
+                      )
+                    ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.black26),
+              const Icon(Icons.chevron_right, color: Colors.white24),
             ],
           ),
         ),

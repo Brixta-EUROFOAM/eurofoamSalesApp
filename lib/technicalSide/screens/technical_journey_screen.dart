@@ -6,7 +6,7 @@ import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:assetarchiverflutter/models/geotracking_data_model.dart';
 import 'package:assetarchiverflutter/models/pjp_model.dart';
-import 'package:assetarchiverflutter/technicalSide/models/sites_model.dart'; // ✅ Technical Site Model
+import 'package:assetarchiverflutter/technicalSide/models/sites_model.dart'; 
 
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -23,9 +23,6 @@ class TechnicalJourneyScreen extends StatefulWidget {
   final Employee employee;
   final Map<String, dynamic>? initialJourneyData;
   final VoidCallback? onDestinationConsumed;
-
-  // --- ✅ CALLBACK UPDATED FOR TECHNICAL SIDE ---
-  // Returns TechnicalSite instead of Dealer
   final Function(Pjp pjp, TechnicalSite site, DateTime checkInTime)? onJourneyCompleted;
 
   const TechnicalJourneyScreen({
@@ -44,7 +41,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   final Completer<MapLibreMapController> _controllerCompleter = Completer();
   late Future<String> _styleFuture;
 
-  String _distanceDisplay = "Set a destination";
+  String _distanceDisplay = "Select a site to start";
   final _destinationController = TextEditingController();
 
   final String? _stadiaApiKey = dotenv.env['STADIA_API_KEY'];
@@ -57,12 +54,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   Position? _lastRecordedPosition;
 
   String? _currentJourneyId;
-
-  // --- ✅ TECHNICAL STATE ---
   Pjp? _currentPjp;
-  TechnicalSite? _currentSite; // Replaces Dealer
-  // ---
-
+  TechnicalSite? _currentSite; 
   String? _currentPjpId;
   LatLng? _currentUserLocation;
   LatLng? _destinationLocation;
@@ -77,13 +70,15 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   Timer? _radarArrivalCheckTimer;
 
   static const _initialCameraPosition = CameraPosition(
-    target: LatLng(26.1445, 91.7362), // Centered on Guwahati
+    target: LatLng(26.1445, 91.7362), 
     zoom: 12,
   );
 
-  // --- THEME COLORS ---
-  static const Color darkBg = Color(0xFF010638);
-  static const Color amberAccent = Color(0xFFFFA000);
+  // --- THEME CONSTANTS ---
+  static const Color scaffoldBg     = Color(0xFF020617); // Navy
+  static const Color surfaceDark    = Color(0xFF1E293B); // Slate 800
+  static const Color accentYellow   = Color(0xFFFFA000); // Amber
+  static const Color successGreen   = Color(0xFF10B981); // Green
 
   @override
   void initState() {
@@ -101,7 +96,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     super.didUpdateWidget(oldWidget);
     if (widget.initialJourneyData != oldWidget.initialJourneyData &&
         widget.initialJourneyData != null) {
-      debugPrint("--- Tech Journey: New Data Received ---");
       _processNewJourneyData(widget.initialJourneyData!);
     }
   }
@@ -261,10 +255,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     }
   }
 
-  // --- ✅ TECHNICAL ADAPTATION: Extract Site Logic ---
   void _processNewJourneyData(Map<String, dynamic> journeyData) async {
     final Pjp? pjp = journeyData['pjp'] as Pjp?;
-    final TechnicalSite? site = journeyData['site'] as TechnicalSite?; // ✅ Site
+    final TechnicalSite? site = journeyData['site'] as TechnicalSite?;
     final LatLng? destination = journeyData['destination'] as LatLng?;
     final String? displayName = journeyData['displayName'] as String?;
 
@@ -275,7 +268,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
     _currentPjpId = pjp.id;
     _currentPjp = pjp;
-    _currentSite = site; // ✅ Store site
+    _currentSite = site; 
 
     _routeTaken.clear();
 
@@ -309,7 +302,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         orElse: () => null,
       );
       if (arrivalEvent != null) {
-        debugPrint("✅ Matched geofence arrival event!");
         _showDestinationArrivalNotification();
       }
     });
@@ -321,7 +313,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       return;
     }
     try {
-      debugPrint("--- Calling Radar.trackOnce() for arrival check ---");
       await Radar.trackOnce();
     } catch (e) {
       debugPrint("Error calling Radar.trackOnce: $e");
@@ -368,7 +359,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     }
   }
 
-  // --- ✅ TECHNICAL ADAPTATION: Pass Site to Callback ---
   void _stopJourney() async {
     _radarArrivalCheckTimer?.cancel();
     _cancelTrackingNotification();
@@ -393,7 +383,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     if (_currentPjpId != null) {
       try {
         await _apiService.updatePjp(_currentPjpId!, {'status': 'completed'});
-        debugPrint("✅ PJP status updated to completed.");
       } catch (e) {
         debugPrint("❌ Failed to update PJP status to completed: $e");
       }
@@ -411,36 +400,33 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     _showError(
         "Journey Ended. Total distance: ${finalDistanceKm.toStringAsFixed(2)} km.");
 
-    // ✅ Trigger Technical Callbacks
     if (widget.onJourneyCompleted != null &&
         _currentPjp != null &&
         _currentSite != null) {
       widget.onJourneyCompleted!(_currentPjp!, _currentSite!, checkInTime);
     }
 
-    // Clear objects after notifying
     _currentPjp = null;
     _currentSite = null;
   }
 
   void _showDestinationArrivalNotification() {
     if (!mounted || !_isJourneyActive) return;
-
-    // Stop journey immediately on arrival
     _stopJourney();
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        backgroundColor: darkBg,
-        title: const Text('Site Reached! 🎯', style: TextStyle(color: Colors.white)),
+        backgroundColor: surfaceDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('SITE REACHED', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         content: const Text('You have arrived. Please complete the technical visit report.', 
           style: TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK', style: TextStyle(color: amberAccent)),
+            child: const Text('START REPORT', style: TextStyle(color: accentYellow, fontWeight: FontWeight.bold)),
           )
         ],
       ),
@@ -509,7 +495,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         'user-location-source',
         'user-location-circle-inner',
         const CircleLayerProperties(
-            circleColor: '#3567FB', circleRadius: 8.0, circleOpacity: 1.0));
+            circleColor: '#0B4AA8', circleRadius: 8.0, circleOpacity: 1.0));
   }
 
   Future<void> _updateTravelledPolyline() async {
@@ -539,13 +525,14 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         'route-taken-source',
         'route-taken-line',
         const LineLayerProperties(
-            lineColor: '#FF0000',
+            lineColor: '#EF4444',
             lineWidth: 6.0,
             lineOpacity: 0.6,
             lineCap: 'round',
             lineJoin: 'round'));
   }
 
+  // ✅ THIS METHOD IS NOW USED IN _buildIdleJourneyPanel
   Future<void> _handleDestinationSubmit(String destinationAddress) async {
     if (_radarApiKey == null) return;
     if (_currentUserLocation == null) {
@@ -617,7 +604,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
             'route-source',
             'route-line',
             const LineLayerProperties(
-                lineColor: '#3567FB',
+                lineColor: '#0B4AA8',
                 lineWidth: 5.0,
                 lineOpacity: 0.8,
                 lineCap: 'round',
@@ -646,7 +633,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         "stadia": {
           "type": "raster",
           "tiles": [
-            "https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}@2x.png?api_key=$_stadiaApiKey"
+            "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}@2x.png?api_key=$_stadiaApiKey"
           ],
           "tileSize": 256
         }
@@ -670,21 +657,20 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
     return Stack(
       children: [
-        // Map
+        // 1. MAP LAYER
         SizedBox.expand(
           child: FutureBuilder<String>(
             future: _styleFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
+                return const Center(child: CircularProgressIndicator(color: accentYellow));
               }
               if (snapshot.hasError || !snapshot.hasData) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text('Error loading map: ${snapshot.error}',
-                        style: const TextStyle(color: Colors.white),
-                        textAlign: TextAlign.center),
+                return Container(
+                  color: scaffoldBg,
+                  child: Center(
+                    child: Text('Map Error: ${snapshot.error}',
+                        style: const TextStyle(color: Colors.white54)),
                   ),
                 );
               }
@@ -701,15 +687,28 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
           ),
         ),
 
-        // Draggable bottom panel (Styled for Technical Side)
+        // 2. RECENTER BUTTON
+        Positioned(
+          top: 50,
+          right: 16,
+          child: FloatingActionButton(
+            mini: true,
+            backgroundColor: surfaceDark,
+            foregroundColor: accentYellow,
+            child: const Icon(Icons.my_location),
+            onPressed: () => _determinePositionAndMoveCamera(),
+          ),
+        ),
+
+        // 3. DRAGGABLE SHEET (COMMAND CENTER UI)
         DraggableScrollableSheet(
-          initialChildSize: 0.30,
-          minChildSize: 0.30,
+          initialChildSize: 0.32,
+          minChildSize: 0.32,
           maxChildSize: 0.5,
           builder: (BuildContext context, ScrollController scrollController) {
             return Container(
               decoration: BoxDecoration(
-                color: darkBg, // ✅ Dark Blue Theme
+                color: surfaceDark, // Slate 800
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(24.0),
                   topRight: Radius.circular(24.0),
@@ -720,19 +719,22 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
                     color: Colors.black.withOpacity(0.5),
                   )
                 ],
+                border: Border(
+                  top: BorderSide(color: Colors.white.withOpacity(0.1), width: 1),
+                ),
               ),
               child: ListView(
                 controller: scrollController,
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.all(20.0),
                 children: [
-                  // Drag handle
+                  // Handle
                   Center(
                     child: Container(
                       width: 40,
-                      height: 5,
-                      margin: const EdgeInsets.only(bottom: 12.0),
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20.0),
                       decoration: BoxDecoration(
-                        color: Colors.white24,
+                        color: Colors.white12,
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
@@ -743,7 +745,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
                       ? _buildActiveJourneyPanel(context)
                       : _buildIdleJourneyPanel(context),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
+                  
+                  // Slider
                   _StartJourneySlider(
                     isJourneyActive: _isJourneyActive,
                     onSlideAction:
@@ -759,31 +763,53 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // ✅ UPDATED: RESTORED TEXT INPUT TO REFERENCE _handleDestinationSubmit
+  // ---------------------------------------------------------------------------
   Widget _buildIdleJourneyPanel(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          "Technical Visit Plan",
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Colors.white, // ✅ White Text
-              ),
+        Row(
+          children: [
+            const Icon(Icons.route, color: Colors.white70, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              "TECHNICAL VISIT PLAN",
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white70,
+                    letterSpacing: 1.2,
+                  ),
+            ),
+          ],
         ),
-        const SizedBox(height: 8),
-        Text(
-          _distanceDisplay,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.white70, // ✅ Lighter White Text
+        const SizedBox(height: 12),
+        // ✅ Replaced the static Row with this TextField container
+        Container(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: scaffoldBg, // Navy BG input
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.05)),
+          ),
+          child: Center(
+            child: TextField(
+              controller: _destinationController,
+              // Only allow typing if NOT preset by Visits tab (user logic)
+              readOnly: widget.initialJourneyData != null,
+              onSubmitted: _handleDestinationSubmit, // ✅ REFERENCE RESTORED
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w500),
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Icons.search, color: Colors.white38),
+                hintText: "Select a site from Visits or type...",
+                hintStyle: TextStyle(color: Colors.white38),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
-        ),
-        const SizedBox(height: 16),
-        _buildLocationInputField(
-          controller: _destinationController,
-          hintText: 'Select a site plan...',
-          icon: Icons.location_on,
-          readOnly: widget.initialJourneyData != null,
-          onSubmitted: _handleDestinationSubmit,
+            ),
+          ),
         ),
       ],
     );
@@ -792,109 +818,83 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   Widget _buildActiveJourneyPanel(BuildContext context) {
     return Column(
       children: [
-        Card(
-          elevation: 0,
-          color: Colors.white.withOpacity(0.1), // ✅ Semi-transparent card
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Distance
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "DISTANCE TRAVELLED",
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: Colors.white60,
-                              fontWeight: FontWeight.bold,
-                            ),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: scaffoldBg, // Navy card background
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withOpacity(0.05)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Distance
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "DISTANCE TRAVELLED",
+                      style: const TextStyle(
+                        color: Colors.white54,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.0,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _distanceDisplay,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              color: amberAccent, // ✅ Amber Accent
-                              fontWeight: FontWeight.bold,
-                            ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _distanceDisplay,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                // Navigate
-                ElevatedButton(
-                  onPressed: _launchGoogleMapsNavigation,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: amberAccent, // ✅ Amber Button
-                    foregroundColor: Colors.black,
-                    shape: const CircleBorder(),
-                    padding: const EdgeInsets.all(16),
+              ),
+              // Navigation Action
+              InkWell(
+                onTap: _launchGoogleMapsNavigation,
+                borderRadius: BorderRadius.circular(50),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: accentYellow,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(color: accentYellow.withOpacity(0.3), blurRadius: 10)
+                    ]
                   ),
-                  child: const Icon(Icons.navigation_rounded),
+                  child: const Icon(Icons.turn_right_rounded, color: Colors.black, size: 28),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 12),
         // Destination readout
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.flag, color: Colors.greenAccent),
-          title: const Text("DESTINATION SITE", style: TextStyle(color: Colors.white54, fontSize: 12)),
-          subtitle: Text(
-            _destinationController.text,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+        Row(
+          children: [
+            const Icon(Icons.flag, color: successGreen, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _destinationController.text.toUpperCase(),
+                style: const TextStyle(
                   fontWeight: FontWeight.bold,
-                  color: Colors.white,
+                  color: Colors.white70,
+                  fontSize: 12,
+                  letterSpacing: 0.5,
                 ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ],
-    );
-  }
-
-  Widget _buildLocationInputField({
-    required TextEditingController controller,
-    required String hintText,
-    required IconData icon,
-    bool readOnly = false,
-    void Function(String)? onSubmitted,
-  }) {
-    return Container(
-      height: 60,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.1), // ✅ Input Field Background
-        borderRadius: BorderRadius.circular(16.0),
-        border: Border.all(color: Colors.white10),
-      ),
-      child: Center(
-        child: TextField(
-          controller: controller,
-          readOnly: readOnly,
-          onSubmitted: onSubmitted,
-          style: const TextStyle(color: Colors.white), // ✅ White Input Text
-          decoration: InputDecoration(
-            hintText: hintText,
-            hintStyle: TextStyle(
-              color: Colors.white.withOpacity(0.5),
-            ),
-            prefixIcon: Icon(
-              icon,
-              size: 22,
-              color: Colors.white70,
-            ),
-            border: InputBorder.none,
-            contentPadding:
-                const EdgeInsets.symmetric(vertical: 15.0, horizontal: 10),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -903,6 +903,10 @@ class _StartJourneySlider extends StatelessWidget {
   final bool isJourneyActive;
   final VoidCallback onSlideAction;
   final bool canStart;
+
+  // Internal Theme Constants for the Slider
+  static const Color accentYellow = Color(0xFFFFA000);
+  static const Color dangerRed    = Color(0xFFEF4444);
 
   const _StartJourneySlider({
     required this.isJourneyActive,
@@ -913,16 +917,14 @@ class _StartJourneySlider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String slideText =
-        isJourneyActive ? 'SLIDE TO END VISIT' : 'SLIDE TO START JOURNEY';
+        isJourneyActive ? 'SLIDE TO END VISIT' : 'SLIDE TO START';
     
-    // ✅ Custom Colors
-    final Color outerColor = isJourneyActive
-        ? Colors.redAccent
-        : const Color(0xFFFFA000); // Amber
-        
+    final Color outerColor = isJourneyActive ? dangerRed : accentYellow;
+    
+    // FIX: Removed 'const' keyword because colors are determined at runtime logic
     final Icon sliderIcon = isJourneyActive 
-        ? const Icon(Icons.stop, color: Colors.redAccent) 
-        : const Icon(Icons.arrow_forward_ios, color: Color(0xFFFFA000));
+        ? const Icon(Icons.stop_rounded, color: dangerRed) 
+        : const Icon(Icons.play_arrow_rounded, color: accentYellow);
         
     final bool isEnabled = canStart || isJourneyActive;
 
@@ -940,19 +942,19 @@ class _StartJourneySlider extends StatelessWidget {
               return null;
             },
       innerColor: Colors.white,
-      outerColor: isEnabled ? outerColor : Colors.grey.withOpacity(0.5),
+      outerColor: isEnabled ? outerColor : Colors.white10,
       sliderButtonIcon: sliderIcon,
-      text: isEnabled ? slideText : 'NO SITE SELECTED',
+      text: isEnabled ? slideText : 'SELECT SITE TO START',
       enabled: isEnabled,
-      textStyle: const TextStyle(
-        color: Colors.white,
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 0.5,
+      textStyle: TextStyle(
+        color: isEnabled ? Colors.black : Colors.white38,
+        fontSize: 14,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.0,
       ),
       borderRadius: 16,
       elevation: 0,
-      height: 65,
+      height: 60,
     );
   }
 }
