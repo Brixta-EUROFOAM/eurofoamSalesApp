@@ -17,6 +17,16 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
   late Future<List<KycSubmission>> _submissionsFuture;
   bool _isProcessing = false;
 
+  // --- FINTECH THEME PALETTE ---
+  static const Color _bgLight       = Color(0xFFF3F4F6); // Corporate Grey
+  static const Color _surfaceWhite  = Colors.white;
+  static const Color _cardNavy      = Color(0xFF0F172A); // Deep Navy
+  static const Color _textDark      = Color(0xFF111827); // Navy/Black
+  static const Color _textGrey      = Color(0xFF6B7280); // Subtitle Grey
+  static const Color _accentGreen   = Color(0xFF10B981); 
+  static const Color _dangerRed     = Color(0xFFEF4444);
+  static const Color _pendingOrange = Color(0xFFF59E0B);
+
   @override
   void initState() {
     super.initState();
@@ -31,7 +41,6 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
 
   Future<List<KycSubmission>> _fetchPendingKyc() async {
     try {
-      // Pass the user ID to the API
       final userId = int.tryParse(widget.employee.id);
       return await _api.fetchPendingKycSubmissions(userId: userId);
     } catch (e) {
@@ -48,15 +57,16 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Submission $status successfully'),
-            backgroundColor: status == 'approved' ? Colors.green : Colors.red,
+            backgroundColor: status == 'approved' ? _accentGreen : _dangerRed,
+            behavior: SnackBarBehavior.floating,
           ),
         );
-        _loadSubmissions(); // Refresh list
+        _loadSubmissions(); 
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Error: $e'), backgroundColor: _dangerRed),
         );
       }
     } finally {
@@ -69,26 +79,34 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Reject Submission"),
+        backgroundColor: _surfaceWhite,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text("REJECT SUBMISSION", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: _textDark)),
         content: TextField(
           controller: remarkController,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: "Reason for rejection",
             hintText: "e.g., Blurred image, invalid ID",
+            filled: true,
+            fillColor: const Color(0xFFF9FAFB),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("CANCEL"),
+            child: const Text("CANCEL", style: TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _dangerRed,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
             onPressed: () {
               Navigator.pop(context);
               _processSubmission(id, 'rejected', remarkController.text);
             },
-            child: const Text("REJECT"),
+            child: const Text("REJECT", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -98,11 +116,27 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _bgLight,
       appBar: AppBar(
-        title: const Text("Review KYC"),
+        backgroundColor: _bgLight,
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          "Review KYC",
+          style: TextStyle(
+            color: _textDark,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            letterSpacing: 0.5,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: _textDark),
             onPressed: _loadSubmissions,
           )
         ],
@@ -111,28 +145,39 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
         future: _submissionsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator(color: _cardNavy));
           }
           if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
+            return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: _dangerRed)));
           }
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.check_circle_outline, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text("No pending KYC submissions", style: TextStyle(color: Colors.grey)),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))
+                      ]
+                    ),
+                    child: const Icon(Icons.verified_user_outlined, size: 40, color: _textGrey),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text("No pending KYC submissions", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold)),
                 ],
               ),
             );
           }
 
           final list = snapshot.data!;
-          return ListView.builder(
-            padding: const EdgeInsets.all(8),
+          return ListView.separated(
+            padding: const EdgeInsets.all(20),
             itemCount: list.length,
+            separatorBuilder: (ctx, i) => const SizedBox(height: 16),
             itemBuilder: (context, index) {
               final item = list[index];
               return _buildKycCard(item);
@@ -144,23 +189,33 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
   }
 
   Widget _buildKycCard(KycSubmission item) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 3,
+    return Container(
+      decoration: BoxDecoration(
+        color: _surfaceWhite,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          )
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header: Mason Info
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.blue.withOpacity(0.1),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
             ),
             child: Row(
               children: [
-                const CircleAvatar(child: Icon(Icons.person)),
+                CircleAvatar(
+                  backgroundColor: const Color(0xFFEFF6FF), // Light Blue
+                  child: const Icon(Icons.person, color: Color(0xFF3B82F6)),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -168,11 +223,12 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                     children: [
                       Text(
                         item.mason?.name ?? "Unknown Mason",
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textDark),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         item.mason?.phoneNumber ?? "No Phone",
-                        style: const TextStyle(color: Colors.black54),
+                        style: const TextStyle(color: _textGrey, fontSize: 13),
                       ),
                     ],
                   ),
@@ -180,10 +236,11 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Colors.orange[100],
-                    borderRadius: BorderRadius.circular(4),
+                    color: const Color(0xFFFFF7ED), // Light Orange
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFFFEDD5)),
                   ),
-                  child: const Text("PENDING", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange)),
+                  child: const Text("PENDING", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _pendingOrange)),
                 )
               ],
             ),
@@ -193,15 +250,17 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (item.aadhaarNumber != null) _detailRow("Aadhaar", item.aadhaarNumber!),
                 if (item.panNumber != null) _detailRow("PAN", item.panNumber!),
                 if (item.voterIdNumber != null) _detailRow("Voter ID", item.voterIdNumber!),
-                const Divider(height: 24),
+                
+                const SizedBox(height: 20),
                 
                 // Documents Section
-                const Text("Submitted Documents:", style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
+                const Text("Submitted Documents", style: TextStyle(fontWeight: FontWeight.bold, color: _textDark, fontSize: 14)),
+                const SizedBox(height: 12),
                 _buildDocumentsGrid(item.documents),
               ],
             ),
@@ -213,26 +272,29 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
             child: Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.close),
-                    label: const Text("REJECT"),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      side: const BorderSide(color: Colors.red),
-                    ),
+                  child: OutlinedButton(
                     onPressed: _isProcessing ? null : () => _showRejectDialog(item.id),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _dangerRed,
+                      side: const BorderSide(color: _dangerRed),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text("REJECT", style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.check),
-                    label: const Text("APPROVE"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
+                  child: ElevatedButton(
                     onPressed: _isProcessing ? null : () => _processSubmission(item.id, 'approved'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _accentGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text("APPROVE", style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
@@ -245,23 +307,23 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
 
   Widget _detailRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: const TextStyle(color: Colors.grey)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w500)),
+          Text(label, style: const TextStyle(color: _textGrey, fontSize: 13)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w600, color: _textDark, fontSize: 13)),
         ],
       ),
     );
   }
 
   Widget _buildDocumentsGrid(Map<String, dynamic> docs) {
-    if (docs.isEmpty) return const Text("No documents attached", style: TextStyle(fontStyle: FontStyle.italic));
+    if (docs.isEmpty) return const Text("No documents attached", style: TextStyle(fontStyle: FontStyle.italic, color: _textGrey));
 
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: 12,
+      runSpacing: 12,
       children: docs.entries.map((entry) {
         String label = entry.key.replaceAll('Url', '').replaceAllMapped(RegExp(r'([A-Z])'), (match) => ' ${match.group(0)}').trim();
         String url = entry.value.toString();
@@ -271,19 +333,28 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
           child: Column(
             children: [
               Container(
-                width: 100,
-                height: 100,
+                width: 80,
+                height: 80,
                 decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[200]!),
+                  color: Colors.grey[50],
                   image: DecorationImage(
                     image: NetworkImage(url),
                     fit: BoxFit.cover,
                   ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(label, style: const TextStyle(fontSize: 10), overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: 80,
+                child: Text(
+                  label, 
+                  style: const TextStyle(fontSize: 10, color: _textGrey, fontWeight: FontWeight.w500), 
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
+              ),
             ],
           ),
         );
@@ -295,17 +366,23 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
     showDialog(
       context: context,
       builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AppBar(
-              title: Text(label),
-              leading: const CloseButton(),
-              backgroundColor: Colors.transparent,
-              elevation: 0,
+            Align(
+              alignment: Alignment.topRight,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                child: const CloseButton(),
+              ),
             ),
-            InteractiveViewer(
-              child: Image.network(url),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: InteractiveViewer(
+                child: Image.network(url),
+              ),
             ),
           ],
         ),

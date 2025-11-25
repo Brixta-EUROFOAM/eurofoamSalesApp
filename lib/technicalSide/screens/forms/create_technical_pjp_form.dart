@@ -1,4 +1,3 @@
-// lib/screens/forms/create_techpjp_form.dart
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:assetarchiverflutter/models/pjp_model.dart';
@@ -29,10 +28,16 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   bool _isSubmitting = false;
   late Future<List<TechnicalSite>> _sitesFuture;
 
+  // --- FINTECH THEME PALETTE ---
+  static const Color _surfaceWhite  = Colors.white;
+  static const Color _cardNavy      = Color(0xFF0F172A); // Deep Navy
+  static const Color _textDark      = Color(0xFF111827); // Navy/Black
+  static const Color _textGrey      = Color(0xFF6B7280); // Subtitle Grey
+  static const Color _inputFill     = Color(0xFFF9FAFB); // Very light grey
+
   @override
   void initState() {
     super.initState();
-    // Fetch sites relevant to this TSE
     _sitesFuture = _apiService.fetchTechnicalSites(userId: int.parse(widget.employee.id));
   }
 
@@ -43,7 +48,6 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
       return;
     }
 
-    // Sites must have location for journey tracking
     if (_selectedSite!.latitude == 0.0 || _selectedSite!.longitude == 0.0) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Selected site has invalid coordinates. Cannot create PJP.'),
@@ -66,11 +70,8 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
         verificationStatus: 'PENDING',
         areaToBeVisited: visitData,
         description: _descriptionController.text.isNotEmpty ? _descriptionController.text : null,
-        
-        // ✅ KEY CHANGE: Use siteId instead of dealerId
         siteId: _selectedSite!.id,
-        siteName: _selectedSite!.siteName, // Optional, for local UI update if needed immediately
-        
+        siteName: _selectedSite!.siteName,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
@@ -81,7 +82,7 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
       if (mounted) Navigator.pop(context);
       
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Technical Visit Plan Created!'), backgroundColor: Colors.green));
+          content: Text('Technical Visit Plan Created!'), backgroundColor: Color(0xFF10B981))); // Success Green
     } catch (e) {
       dev.log('Create Tech PJP Error: $e');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -93,20 +94,34 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    // Dark theme styling
-    const labelColor = Colors.white70;
-    const textColor = Colors.white;
-    
+    // Styles for inputs
+    final inputDecoration = InputDecoration(
+      filled: true,
+      fillColor: _inputFill,
+      labelStyle: const TextStyle(color: _textGrey, fontWeight: FontWeight.w500),
+      hintStyle: TextStyle(color: Colors.grey[400]),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _cardNavy, width: 1.5),
+      ),
+    );
+
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24.0),
-        decoration: BoxDecoration(
-          color: const Color(0xFF020a67).withOpacity(0.95), // Dark Blue background
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24.0)),
-          border: Border.all(color: Colors.white24),
+        decoration: const BoxDecoration(
+          color: _surfaceWhite,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24.0)),
         ),
         child: Form(
           key: _formKey,
@@ -114,9 +129,29 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Plan Site Visit',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                      color: Colors.white, fontWeight: FontWeight.bold)),
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+
+              // --- FIX IS HERE: Clean Text widget ---
+              const Text(
+                'Plan Site Visit',
+                style: TextStyle(
+                  color: _textDark, 
+                  fontSize: 20, 
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                )
+              ),
               const SizedBox(height: 24),
               
               // Site Dropdown
@@ -124,28 +159,23 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
                 future: _sitesFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(child: LinearProgressIndicator(color: _cardNavy));
                   }
                   if (snapshot.hasError) {
-                    return Text('Error loading sites: ${snapshot.error}', style: const TextStyle(color: Colors.redAccent));
+                    return Text('Error loading sites', style: TextStyle(color: Colors.red[400]));
                   }
                   if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return const Text('No sites found registered to you.', style: TextStyle(color: Colors.white70));
+                    return const Text('No sites found registered to you.', style: TextStyle(color: _textGrey));
                   }
                   
                   return DropdownButtonFormField<TechnicalSite>(
-                    hint: const Text('Select a Site', style: TextStyle(color: Colors.white54)),
-                    dropdownColor: const Color(0xFF0D47A1),
-                    style: const TextStyle(color: textColor),
+                    hint: Text('Select a Site', style: TextStyle(color: Colors.grey[400])),
+                    dropdownColor: Colors.white,
+                    style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600),
                     isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: "Site",
-                      labelStyle: const TextStyle(color: labelColor),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: const BorderSide(color: Colors.white30),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                    decoration: inputDecoration.copyWith(
+                      labelText: "Select Site",
+                      prefixIcon: const Icon(Icons.location_city, color: _textGrey, size: 20),
                     ),
                     items: snapshot.data!.map((site) => DropdownMenuItem(
                       value: site,
@@ -162,32 +192,34 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
               // Description Input
               TextFormField(
                 controller: _descriptionController,
-                style: const TextStyle(color: textColor),
-                decoration: InputDecoration(
+                style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
+                decoration: inputDecoration.copyWith(
                   labelText: 'Purpose / Remarks (Optional)',
-                  labelStyle: const TextStyle(color: labelColor),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  enabledBorder: OutlineInputBorder(
-                    borderSide: const BorderSide(color: Colors.white30),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                  prefixIcon: const Icon(Icons.notes, color: _textGrey, size: 20),
                 ),
                 maxLines: 2,
               ),
               
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               
-              ElevatedButton(
-                onPressed: _isSubmitting ? null : _submitForm,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFFFA000), // Amber
-                  foregroundColor: Colors.black,
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : _submitForm,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _cardNavy,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text(
+                          'CREATE PLAN', 
+                          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0)
+                        ),
                 ),
-                child: _isSubmitting
-                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.black))
-                    : const Text('CREATE PLAN'),
               ),
             ],
           ),

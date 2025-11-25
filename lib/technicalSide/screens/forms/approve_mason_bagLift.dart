@@ -16,8 +16,17 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   final ApiService _api = ApiService();
   late Future<List<MasonBagLift>> _futureLifts;
   
-  // Added loading state for actions
   bool _isProcessing = false;
+
+  // --- FINTECH THEME PALETTE ---
+  static const Color _bgLight       = Color(0xFFF3F4F6); // Corporate Grey
+  static const Color _surfaceWhite  = Colors.white;
+  static const Color _textDark      = Color(0xFF111827); // Navy/Black
+  static const Color _textGrey      = Color(0xFF6B7280); // Subtitle Grey
+  static const Color _cardNavy      = Color(0xFF0F172A); // Deep Navy
+  static const Color _accentGreen   = Color(0xFF10B981); 
+  static const Color _dangerRed     = Color(0xFFEF4444);
+  static const Color _infoBlue      = Color(0xFF3B82F6);
 
   @override
   void initState() {
@@ -28,7 +37,6 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   void _loadData() {
     setState(() {
       final userId = int.tryParse(widget.employee.id);
-      
       _futureLifts = _api.fetchPendingBagLifts(userId: userId);
     });
   }
@@ -38,14 +46,14 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     setState(() => _isProcessing = true);
 
     try {
-      // ✅ FIX: Now actually using the _api instance
       await _api.updateBagLiftStatus(id, status);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Marked as $status"),
-            backgroundColor: status == 'approved' ? Colors.green : Colors.red,
+            backgroundColor: status == 'approved' ? _accentGreen : _dangerRed,
+            behavior: SnackBarBehavior.floating,
           ),
         );
         _loadData(); // Refresh the list
@@ -53,7 +61,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
+          SnackBar(content: Text("Error: $e"), backgroundColor: _dangerRed),
         );
       }
     } finally {
@@ -65,23 +73,32 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text("${status.toUpperCase()} Request?"),
-        content: const Text("Are you sure you want to proceed? This action cannot be undone."),
+        backgroundColor: _surfaceWhite,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          "${status.toUpperCase()} REQUEST?",
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: _textDark),
+        ),
+        content: Text(
+          "Are you sure you want to proceed? This action cannot be undone.",
+          style: TextStyle(color: _textGrey),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("CANCEL"),
+            child: Text("CANCEL", style: TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: status == 'approved' ? Colors.green : Colors.red,
+              backgroundColor: status == 'approved' ? _accentGreen : _dangerRed,
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
             ),
             onPressed: () {
               Navigator.pop(context);
               _updateStatus(id, status);
             },
-            child: Text(status.toUpperCase()),
+            child: Text(status.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -91,11 +108,27 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _bgLight,
       appBar: AppBar(
-        title: const Text("Pending Bag Lifts"),
+        backgroundColor: _bgLight,
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          "Pending Bag Lifts",
+          style: TextStyle(
+            color: _textDark,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            letterSpacing: 0.5,
+          ),
+        ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: _textDark),
             onPressed: _loadData,
           )
         ],
@@ -104,26 +137,43 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
         future: _futureLifts,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator(color: _cardNavy));
           }
           if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
+            return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: _dangerRed)));
           }
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.shopping_bag_outlined, size: 64, color: Colors.grey),
-                  SizedBox(height: 16),
-                  Text("No pending bag lifts", style: TextStyle(color: Colors.grey)),
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))
+                      ]
+                    ),
+                    child: const Icon(Icons.shopping_bag_outlined, size: 40, color: _textGrey),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    "No pending bag lifts", 
+                    style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16)
+                  ),
+                  const SizedBox(height: 4),
+                  const Text("You're all caught up!", style: TextStyle(color: _textGrey)),
                 ],
               ),
             );
           }
 
-          return ListView.builder(
+          return ListView.separated(
+            padding: const EdgeInsets.all(20),
             itemCount: snapshot.data!.length,
+            separatorBuilder: (ctx, i) => const SizedBox(height: 16),
             itemBuilder: (context, index) {
               final item = snapshot.data![index];
               return _buildBagLiftCard(item);
@@ -135,73 +185,121 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   }
 
   Widget _buildBagLiftCard(MasonBagLift item) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    final dateStr = item.createdAt.toLocal().toString().split('.')[0];
+    
+    return Container(
+      decoration: BoxDecoration(
+        color: _surfaceWhite,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          )
+        ],
+      ),
       child: Column(
         children: [
-          ListTile(
-            leading: CircleAvatar(
-              backgroundColor: Colors.orange.withOpacity(0.2),
-              child: const Icon(Icons.shopping_bag, color: Colors.orange),
-            ),
-            title: Text(
-              item.masonName ?? "Unknown Mason",
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            subtitle: Text("Requested: ${item.createdAt.toLocal().toString().split('.')[0]}"),
-            trailing: Text(
-              "${item.bagCount} Bags",
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue),
+          // 1. Header Section
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: const Color(0xFFFFF7ED), // Light Orange
+                  child: const Icon(Icons.shopping_bag, color: Colors.orange),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.masonName ?? "Unknown Mason",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold, 
+                          color: _textDark,
+                          fontSize: 16
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        dateStr,
+                        style: const TextStyle(color: _textGrey, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF), // Light Blue
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    "${item.bagCount} Bags",
+                    style: const TextStyle(
+                      fontSize: 12, 
+                      fontWeight: FontWeight.w700, 
+                      color: _infoBlue
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
+
+          const Divider(height: 1, color: Color(0xFFF3F4F6)),
+
+          // 2. Image Section (if available)
           if (item.imageUrl != null)
             GestureDetector(
               onTap: () => _showFullImage(item.imageUrl!),
               child: Container(
-                height: 200,
+                height: 180,
                 width: double.infinity,
-                color: Colors.grey[200],
-                child: Image.network(
-                  item.imageUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.broken_image, color: Colors.grey),
-                        Text("Image not available", style: TextStyle(fontSize: 12)),
-                      ],
-                    ),
+                margin: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.grey[100],
+                  image: DecorationImage(
+                    image: NetworkImage(item.imageUrl!),
+                    fit: BoxFit.cover,
                   ),
                 ),
               ),
             ),
+            
+          // 3. Action Buttons
           Padding(
-            padding: const EdgeInsets.all(12.0),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: Row(
               children: [
                 Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.close, size: 18),
-                    label: const Text("REJECT"),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red,
-                      side: const BorderSide(color: Colors.red),
-                    ),
+                  child: OutlinedButton(
                     onPressed: _isProcessing ? null : () => _confirmAction(item.id, "rejected"),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _dangerRed,
+                      side: const BorderSide(color: _dangerRed),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text("REJECT", style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: ElevatedButton.icon(
-                    icon: const Icon(Icons.check, size: 18),
-                    label: const Text("APPROVE"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      foregroundColor: Colors.white,
-                    ),
+                  child: ElevatedButton(
                     onPressed: _isProcessing ? null : () => _confirmAction(item.id, "approved"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _accentGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: const Text("APPROVE", style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
@@ -216,17 +314,23 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     showDialog(
       context: context,
       builder: (_) => Dialog(
+        backgroundColor: Colors.transparent,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AppBar(
-              title: const Text("Proof of Purchase"),
-              leading: const CloseButton(),
-              backgroundColor: Colors.transparent,
-              elevation: 0,
+            Align(
+              alignment: Alignment.topRight,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                child: const CloseButton(),
+              ),
             ),
-            InteractiveViewer(
-              child: Image.network(url),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: InteractiveViewer(
+                child: Image.network(url),
+              ),
             ),
           ],
         ),

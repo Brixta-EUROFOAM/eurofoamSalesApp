@@ -1,4 +1,3 @@
-// lib/technicalSide/screens/technical_pjp_screen.dart
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:assetarchiverflutter/models/pjp_model.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
@@ -27,12 +26,13 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   final ApiService _apiService = ApiService();
   late Future<List<Pjp>> _pjpFuture;
 
-  // --- THEME CONSTANTS ---
-  static const Color scaffoldBg     = Color(0xFF020617); // Navy
-  static const Color surfaceDark    = Color(0xFF1E293B); // Slate 800
-  static const Color accentYellow   = Color(0xFFFFA000); // Amber
-  static const Color brandBlue      = Color(0xFF0B4AA8); 
-  static const Color successGreen   = Color(0xFF10B981); // Emerald
+  // --- FINTECH THEME PALETTE ---
+  final Color _bgLight       = const Color(0xFFF3F4F6); // Corporate Light Grey
+  final Color _cardNavy      = const Color(0xFF0F172A); // Deep Navy (Accents)
+  final Color _textDark      = const Color(0xFF111827); // Almost Black
+  final Color _textGrey      = const Color(0xFF6B7280); // Subtitles
+  final Color _surfaceWhite  = Colors.white;
+  final Color _accentGreen   = const Color(0xFF10B981); // Success/Start
 
   @override
   void initState() {
@@ -93,91 +93,89 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final todayStr = DateFormat('EEEE, d MMMM').format(DateTime.now()).toUpperCase();
+    final todayDate = DateFormat('d MMMM, yyyy').format(DateTime.now());
+    final todayDay = DateFormat('EEEE').format(DateTime.now());
 
     return Scaffold(
-      backgroundColor: scaffoldBg,
+      backgroundColor: _bgLight,
       
-      // --- 1. APP BAR (Consistent with Dashboard) ---
+      // --- 1. CLEAN APP BAR ---
       appBar: AppBar(
-        backgroundColor: scaffoldBg,
+        backgroundColor: _bgLight,
         elevation: 0,
-        centerTitle: true,
-        leadingWidth: 64,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
-          child: InkWell(
-            onTap: () => Scaffold.of(context).openDrawer(),
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              decoration: BoxDecoration(
-                color: surfaceDark,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
+        automaticallyImplyLeading: false,
+        centerTitle: false,
+        toolbarHeight: 70,
+        title: Padding(
+          padding: const EdgeInsets.only(left: 8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "My Visits",
+                style: TextStyle(
+                  color: _textDark,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                ),
               ),
-              child: const Icon(Icons.menu_rounded, color: Colors.white, size: 22),
+              Text(
+                "$todayDay, $todayDate",
+                style: TextStyle(
+                  color: _textGrey,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 20.0),
+            child: InkWell(
+              onTap: _showCreatePjpForm,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _cardNavy,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(color: _cardNavy.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))
+                  ]
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.add, color: Colors.white, size: 18),
+                    SizedBox(width: 4),
+                    Text(
+                      "Add Visit",
+                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
-        title: const Text(
-          'MY VISITS',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
-          ),
-        ),
-      ),
-
-      // --- 2. FAB ---
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreatePjpForm,
-        backgroundColor: accentYellow,
-        foregroundColor: Colors.black,
-        elevation: 4,
-        icon: const Icon(Icons.add_location_alt_outlined),
-        label: const Text(
-          "ADD VISIT", 
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5)
-        ),
+          )
+        ],
       ),
 
       body: RefreshIndicator(
         onRefresh: () async => _refreshPjps(),
-        color: accentYellow,
-        backgroundColor: surfaceDark,
+        color: _cardNavy,
+        backgroundColor: Colors.white,
         child: Column(
           children: [
-            // --- 3. DATE BANNER ---
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-              color: surfaceDark.withOpacity(0.5),
-              child: Row(
-                children: [
-                  const Icon(Icons.calendar_today, color: Colors.white54, size: 16),
-                  const SizedBox(width: 10),
-                  Text(
-                    todayStr,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // --- 4. LIST ---
+            const SizedBox(height: 10),
+            // --- 2. LIST ---
             Expanded(
               child: FutureBuilder<List<Pjp>>(
                 future: _pjpFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator(color: accentYellow));
+                    return Center(child: CircularProgressIndicator(color: _cardNavy));
                   }
                   
                   if (!snapshot.hasData || snapshot.data!.isEmpty) {
@@ -186,7 +184,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
 
                   final pjps = snapshot.data!;
                   return ListView.separated(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                     itemCount: pjps.length,
                     separatorBuilder: (ctx, i) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
@@ -212,7 +210,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
         children: [
           SlidableAction(
             onPressed: (_) => _startJourney(pjp),
-            backgroundColor: successGreen,
+            backgroundColor: _accentGreen,
             foregroundColor: Colors.white,
             icon: Icons.navigation,
             label: 'START',
@@ -222,31 +220,34 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
       ),
       child: Container(
         decoration: BoxDecoration(
-          color: surfaceDark,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withOpacity(0.05)),
+          color: _surfaceWhite,
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
-             BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 2))
+             BoxShadow(
+              color: Colors.grey.withOpacity(0.08), 
+              blurRadius: 15, 
+              offset: const Offset(0, 5)
+            )
           ],
         ),
         child: Material(
           color: Colors.transparent,
           child: InkWell(
             onTap: () => _startJourney(pjp),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(20),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
                   // Icon Box
                   Container(
-                    height: 50,
-                    width: 50,
+                    height: 48,
+                    width: 48,
                     decoration: BoxDecoration(
-                      color: brandBlue.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
+                      color: const Color(0xFFEFF6FF), // Light Blue
+                      borderRadius: BorderRadius.circular(16),
                     ),
-                    child: const Icon(Icons.apartment_rounded, color: brandBlue, size: 26),
+                    child: const Icon(Icons.location_city_rounded, color: Color(0xFF2563EB), size: 24),
                   ),
                   const SizedBox(width: 16),
                   
@@ -257,8 +258,8 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                       children: [
                         Text(
                           pjp.siteName ?? pjp.description ?? "Site Visit", 
-                          style: const TextStyle(
-                            color: Colors.white, 
+                          style: TextStyle(
+                            color: _textDark, 
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
                           ),
@@ -268,12 +269,12 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                         const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.location_on_outlined, color: Colors.white38, size: 12),
+                            Icon(Icons.location_on_outlined, color: _textGrey, size: 14),
                             const SizedBox(width: 4),
                             Expanded(
                               child: Text(
                                 pjp.areaToBeVisited.split('|').first, 
-                                style: const TextStyle(color: Colors.white54, fontSize: 13),
+                                style: TextStyle(color: _textGrey, fontSize: 13),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -284,14 +285,21 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                     ),
                   ),
 
-                  // Start Action Chevron/Button
+                  // "Start" Button (Visual only, whole card taps)
                   Container(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
-                      shape: BoxShape.circle,
+                      color: _accentGreen.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Icon(Icons.chevron_right, color: Colors.white54, size: 20),
+                    child: Text(
+                      "START",
+                      style: TextStyle(
+                        color: _accentGreen, 
+                        fontWeight: FontWeight.bold, 
+                        fontSize: 11
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -310,25 +318,39 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: surfaceDark,
+              color: Colors.white,
               shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))
+              ]
             ),
-            child: const Icon(Icons.event_busy, size: 48, color: Colors.white24),
+            child: Icon(Icons.calendar_today_rounded, size: 40, color: _textGrey.withOpacity(0.5)),
           ),
-          const SizedBox(height: 16),
-          const Text(
-            "NO VISITS PLANNED", 
+          const SizedBox(height: 24),
+          Text(
+            "No Visits Planned", 
             style: TextStyle(
-              color: Colors.white70, 
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-              letterSpacing: 1.0,
+              color: _textDark, 
+              fontWeight: FontWeight.bold,
+              fontSize: 18,
             )
           ),
           const SizedBox(height: 8),
-          const Text(
-            "Tap + to create a new plan", 
-            style: TextStyle(color: Colors.white38, fontSize: 14)
+          Text(
+            "You're all clear for today.", 
+            style: TextStyle(color: _textGrey, fontSize: 14)
+          ),
+          const SizedBox(height: 24),
+          OutlinedButton.icon(
+            onPressed: _showCreatePjpForm,
+            icon: const Icon(Icons.add),
+            label: const Text("Create Plan"),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _cardNavy,
+              side: BorderSide(color: _cardNavy),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
           ),
         ],
       ),
