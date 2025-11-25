@@ -1,4 +1,3 @@
-// lib/technicalSide/screens/technical_dashboard_screen.dart
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -7,7 +6,17 @@ import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
+
+// --- EXISTING IMPORTS ---
 import 'package:assetarchiverflutter/technicalSide/screens/forms/create_tvr_form.dart';
+import 'package:assetarchiverflutter/technicalSide/screens/forms/add_site_form.dart';
+
+// --- NEW IMPORTS (Ensure these paths match your project structure) ---
+// If you haven't created these files yet, create them and paste the code you provided.
+import 'package:assetarchiverflutter/technicalSide/screens/forms/approve_mason_bagLift.dart';
+import 'package:assetarchiverflutter/technicalSide/screens/forms/approve_mason_kyc.dart';
+import 'package:assetarchiverflutter/technicalSide/screens/forms/approve_mason_rewards.dart';
+// import 'package:assetarchiverflutter/technicalSide/screens/forms/add_site_form.dart'; // <--- UNCOMMENT WHEN FILE EXISTS
 
 class TechnicalDashboardScreen extends StatefulWidget {
   final Employee employee;
@@ -27,6 +36,13 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
   bool _isCheckingIn = false;
   bool _isCheckingOut = false;
   String _greeting = 'Good Morning';
+
+  // Theme Constants (Moved here so they can be accessed by bottom sheets if needed)
+  final Color _scaffoldBg        = const Color(0xFF020617);
+  final Color _cardGradientStart = const Color(0xFF0B4AA8);
+  final Color _cardGradientEnd   = const Color(0xFF111827);
+  final Color _secondaryColor    = const Color(0xFFFFA000);
+  final Color _surfaceDark       = const Color(0xFF1E293B);
 
   @override
   void initState() {
@@ -128,66 +144,140 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     setState(() { _setGreeting(); });
   }
 
-  @override
-@override
-  Widget build(BuildContext context) {
-    // 1. THEME CONSTANTS
-    const scaffoldBg        = Color(0xFF020617);  // Almost-black navy
-    const cardGradientStart = Color(0xFF0B4AA8);  // Brand Blue
-    const cardGradientEnd   = Color(0xFF111827);  // Dark surface fade
-    const secondaryColor    = Color(0xFFFFA000);  // Amber/Orange accent
-    const surfaceDark       = Color(0xFF1E293B);  // Card background (Slate 800)
+  // --- NAVIGATION HELPERS ---
+  void _openFullScreen(Widget page) {
+    Navigator.push(context, MaterialPageRoute(builder: (context) => page));
+  }
 
+  // --- 1. MASON ACTION SHEET ---
+  void _showMasonActions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _surfaceDark,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Mason Management", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            _buildActionSheetItem(
+              icon: Icons.shopping_bag_outlined,
+              title: "Approve Bag Lift",
+              subtitle: "Verify pending cement bag lifts",
+              color: Colors.orange,
+              onTap: () {
+                Navigator.pop(context);
+                _openFullScreen(ApproveMasonBagLift(employee: widget.employee));
+              },
+            ),
+            _buildActionSheetItem(
+              icon: Icons.verified_user_outlined,
+              title: "Approve KYC",
+              subtitle: "Review pending Mason identities",
+              color: Colors.blue,
+              onTap: () {
+                Navigator.pop(context);
+                _openFullScreen(ApproveMasonKycScreen(employee: widget.employee));
+              },
+            ),
+            _buildActionSheetItem(
+              icon: Icons.card_giftcard,
+              title: "Approve Rewards",
+              subtitle: "Process gift redemption requests",
+              color: Colors.purple,
+              onTap: () {
+                Navigator.pop(context);
+                _openFullScreen(const ApproveMasonRewardsScreen());
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- 2. TECHNICAL ACTION SHEET ---
+  void _showTechnicalActions(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: _surfaceDark,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Technical Operations", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+             _buildActionSheetItem(
+              icon: Icons.assignment_add,
+              title: "Create TVR",
+              subtitle: "Technical Visit Report Form",
+              color: Colors.green,
+              onTap: () {
+                Navigator.pop(context);
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (context) => CreateTvrScreen(employee: widget.employee),
+                );
+              },
+            ),
+            _buildActionSheetItem(
+              icon: Icons.add_location_alt,
+              title: "Register Site",
+              subtitle: "Add a new construction site",
+              color: Colors.cyan,
+              onTap: () {
+                Navigator.pop(context);
+                // Navigates to the AddSiteForm, passing the current employee
+                _openFullScreen(AddSiteForm(employee: widget.employee));
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     String userArea = "N/A";
     try { userArea = (widget.employee as dynamic).area ?? "N/A"; } catch (_) {}
 
     return Scaffold(
-      backgroundColor: scaffoldBg,
+      backgroundColor: _scaffoldBg,
       appBar: AppBar(
-        backgroundColor: scaffoldBg,
+        backgroundColor: _scaffoldBg,
         elevation: 0,
         centerTitle: true,
-        // --- 1. NEW MENU BUTTON ---
-        // We wrap it in Padding + Container to give it a "physical" button look
-        leadingWidth: 64, // Give it a bit more width to breathe
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 8.0),
-          child: InkWell(
-            onTap: () => Scaffold.of(context).openDrawer(),
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              decoration: BoxDecoration(
-                color: surfaceDark, // Distinct background for the button
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.1)), // Subtle border
-              ),
-              child: const Icon(Icons.menu_rounded, color: Colors.white, size: 22),
-            ),
-          ),
-        ),
-        // --- 2. NEW TITLE STYLE ---
+        automaticallyImplyLeading: false,
         title: const Text(
           'DASHBOARD',
           style: TextStyle(
             color: Colors.white,
             fontSize: 16,
-            fontWeight: FontWeight.w900, // Extra bold
-            letterSpacing: 1.5,         // Spaced out for readability
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.5,
           ),
         ),
       ),
       body: RefreshIndicator(
         onRefresh: _handleRefresh,
-        color: secondaryColor,
-        backgroundColor: surfaceDark,
+        color: _secondaryColor,
+        backgroundColor: _surfaceDark,
         child: ListView(
           padding: const EdgeInsets.all(16.0),
           children: [
-            // 2. GREETING CARD (HERO)
+            // 1. GREETING CARD (HERO)
             Container(
               decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [cardGradientStart, cardGradientEnd],
+                gradient: LinearGradient(
+                  colors: [_cardGradientStart, _cardGradientEnd],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -224,7 +314,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
-                            color: secondaryColor,
+                            color: _secondaryColor,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: const Text(
@@ -266,7 +356,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
             
             const SizedBox(height: 24),
 
-            // 3. ATTENDANCE BUTTONS
+            // 2. ATTENDANCE BUTTONS
             Row(
               children: [
                 Expanded(
@@ -275,7 +365,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                     icon: Icons.login,
                     isLoading: _isCheckingIn,
                     onTap: _isCheckingIn || _isCheckingOut ? null : _handleCheckIn,
-                    bgColor: secondaryColor, 
+                    bgColor: _secondaryColor, 
                     textColor: Colors.black,
                   ),
                 ),
@@ -286,7 +376,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                     icon: Icons.logout,
                     isLoading: _isCheckingOut,
                     onTap: _isCheckingIn || _isCheckingOut ? null : _handleCheckOut,
-                    bgColor: surfaceDark, 
+                    bgColor: _surfaceDark, 
                     textColor: Colors.white, 
                   ),
                 ),
@@ -295,7 +385,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
 
             const SizedBox(height: 30),
             
-            // 4. QUICK ACTIONS
+            // 3. QUICK ACTIONS HEADER
             const Text(
               "QUICK ACTIONS",
               style: TextStyle(
@@ -307,19 +397,29 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
             ),
             const SizedBox(height: 16),
             
-            _buildActionTile(
-              title: "Create Technical Visit Report",
-              subtitle: "Log site visit, complaint or conversion",
-              icon: Icons.assignment_add,
-              iconColor: cardGradientStart, 
-              cardColor: surfaceDark,
-              onTap: () {
-                showDialog(
-                  context: context,
-                  barrierDismissible: false,
-                  builder: (context) => CreateTvrScreen(employee: widget.employee),
-                );
-              },
+            // 4. NEW SPLIT ACTION BUTTONS (MASON | TECHNICAL)
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCategoryCard(
+                    title: "MASON",
+                    icon: Icons.handyman,
+                    color1: const Color(0xFFC2410C), // Orange-Red
+                    color2: const Color(0xFF7C2D12),
+                    onTap: () => _showMasonActions(context),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildCategoryCard(
+                    title: "TECHNICAL",
+                    icon: Icons.architecture,
+                    color1: const Color(0xFF0F766E), // Teal
+                    color2: const Color(0xFF134E4A),
+                    onTap: () => _showTechnicalActions(context),
+                  ),
+                ),
+              ],
             ),
           ]
           .animate(interval: 50.ms)
@@ -329,6 +429,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
       ),
     );
   }
+
+  // --- WIDGET BUILDERS ---
 
   Widget _buildAttendanceButton({
     required String label,
@@ -346,7 +448,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
         padding: const EdgeInsets.symmetric(vertical: 16),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          // Border removed for cleaner look in dark mode
           side: BorderSide.none,
         ),
         elevation: 0,
@@ -364,62 +465,89 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     );
   }
 
-  Widget _buildActionTile({
+  // Large square card for main categories (Mason/Technical)
+  Widget _buildCategoryCard({
     required String title,
-    required String subtitle,
     required IconData icon,
-    required Color iconColor,
-    required Color cardColor,
+    required Color color1,
+    required Color color2,
     required VoidCallback onTap,
   }) {
-    return Card(
-      elevation: 0,
-      color: cardColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        onTap: onTap,
+    return Container(
+      height: 140, // Square-ish aspect ratio
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.2), // Subtle accent bg
-                  shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [color1, color2],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+           BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          )
+        ]
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    shape: BoxShape.circle
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 32),
                 ),
-                child: Icon(icon, color: iconColor, size: 24), // Icon uses brand color
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title, 
-                      style: const TextStyle(
-                        fontSize: 16, 
-                        fontWeight: FontWeight.bold, 
-                        color: Colors.white // High contrast
-                      )
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle, 
-                      style: const TextStyle(
-                        fontSize: 13, 
-                        color: Colors.white54 // Medium contrast
-                      )
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right, color: Colors.white24),
-            ],
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white, 
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.0,
+                    fontSize: 14
+                  ),
+                )
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  // List tile for Bottom Sheet items
+  Widget _buildActionSheetItem({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+      onTap: onTap,
+      leading: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Icon(icon, color: color, size: 24),
+      ),
+      title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      subtitle: Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12)),
+      trailing: Icon(Icons.chevron_right, color: Colors.white.withOpacity(0.3)),
     );
   }
 }
