@@ -1,4 +1,5 @@
-// lib/screens/forms/approve_mason_bagLift.dart
+// lib/technicalSide/screens/forms/approve_mason_bagLift.dart
+
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/technicalSide/models/mason_baglift_model.dart';
@@ -34,10 +35,33 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     _loadData();
   }
 
-  void _loadData() {
+  // --- 🟢 CORE LOGIC: FILTER BY TSO ID ---
+void _loadData() {
+    // 1. Clean the ID string (remove spaces)
+    final rawId = widget.employee.id.trim();
+    
+    // 2. Try parsing
+    final userId = int.tryParse(rawId);
+
+    // DEBUG: Print to console to verify what ID is actually being read
+    print("DEBUG: Raw ID: '$rawId' -> Parsed ID: $userId");
+
     setState(() {
-      final userId = int.tryParse(widget.employee.id);
-      _futureLifts = _api.fetchPendingBagLifts(userId: userId);
+      if (userId != null) {
+        // ✅ Valid ID: Fetch data for this TSO
+        _futureLifts = _api.fetchPendingBagLifts(userId: userId);
+      } else {
+        // ❌ Invalid ID: Do NOT fetch all data. Return empty list.
+        print("ERROR: Could not parse User ID. Preventing data leak.");
+        _futureLifts = Future.value([]); 
+        
+        // Optional: Show error to user
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Error: Invalid User ID configuration"), backgroundColor: _dangerRed)
+          );
+        }
+      }
     });
   }
 
@@ -56,7 +80,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-        _loadData(); // Refresh the list
+        _loadData(); // Refresh list after action
       }
     } catch (e) {
       if (mounted) {

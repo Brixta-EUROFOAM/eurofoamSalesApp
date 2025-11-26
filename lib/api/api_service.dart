@@ -646,16 +646,19 @@ class ApiService {
     return Employee.fromJson(json['data']);
   }
 
-  Future<List<KycSubmission>> fetchPendingKycSubmissions({int? userId}) async {
-    String endpoint = 'kyc-submissions?status=pending';
-    
-    // ✅ FIX: Filter by TSO ID
+Future<List<KycSubmission>> fetchPendingKycSubmissions({int? userId}) async {
+    final queryParams = <String, String>{
+      'status': 'pending',
+    };
+
     if (userId != null) {
-      endpoint += '&userId=$userId';
+      queryParams['userId'] = userId.toString();
     }
 
+    final queryString = Uri(queryParameters: queryParams).query;
+
     return _get(
-      endpoint,
+      'kyc-submissions?$queryString',
       (json) => (json as List).map((e) => KycSubmission.fromJson(e)).toList(),
     );
   }
@@ -674,26 +677,49 @@ class ApiService {
   }
 
   // Fetch pending lifts (TSO view)
-  Future<List<MasonBagLift>> fetchPendingBagLifts({int? userId}) async {
-    String endpoint = 'bag-lifts?status=pending';
+// inside ApiService class
 
-    // Append userId if provided
-    if (userId != null) {
-      endpoint += '&userId=$userId';
-    }
+Future<List<MasonBagLift>> fetchPendingBagLifts({int? userId}) async {
+  // 1. Build Query Parameters safely
+  final queryParams = <String, String>{
+    'status': 'pending', // Always fetch pending
+  };
 
-    return _get(endpoint, (json) {
-      return (json as List).map((e) => MasonBagLift.fromJson(e)).toList();
-    });
+  // 2. Add User ID if it exists (This triggers the TSO filter on backend)
+  if (userId != null) {
+    queryParams['userId'] = userId.toString();
   }
+
+  // 3. Construct URI manually to pass to your _get helper
+  // or simply reconstruct the query string.
+  // Since your _get takes a string endpoint, let's format it correctly:
+  
+  final queryString = Uri(queryParameters: queryParams).query; 
+  // Result: "status=pending&userId=123"
+
+  return _get('bag-lifts?$queryString', (json) {
+    return (json as List).map((e) => MasonBagLift.fromJson(e)).toList();
+  });
+}
 
   // Approve/Reject Bag Lift
   Future<void> updateBagLiftStatus(String id, String status) async {
     await _patch('bag-lifts/$id', {'status': status}, (json) => null);
   }
 
-  Future<List> fetchPendingRedemptions() async {
-    return _get('rewards-redemption?status=placed', (json) {
+Future<List<MasonRedemption>> fetchPendingRedemptions({int? userId}) async {
+    final queryParams = <String, String>{
+      'status': 'placed', // 'placed' is usually the pending status for rewards
+    };
+
+    // Filter by TSO if provided
+    if (userId != null) {
+      queryParams['userId'] = userId.toString();
+    }
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get('rewards-redemption?$queryString', (json) {
       return (json as List).map((e) => MasonRedemption.fromJson(e)).toList();
     });
   }

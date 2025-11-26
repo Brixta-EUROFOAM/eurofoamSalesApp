@@ -31,13 +31,17 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
   
   bool _isCheckingIn = false;
   bool _isCheckingOut = false;
+  
+  // --- NEW STATE VARIABLE ADDED HERE ---
+  bool _isCheckedIn = false; // Tracks if user has checked in to toggle UI buttons
+
   String _greeting = 'Good Morning';
 
   // --- FINTECH THEME PALETTE ---
-  final Color _bgLight       = const Color(0xFFF3F4F6); // Corporate Light Grey
-  final Color _cardNavy      = const Color(0xFF0F172A); // Deep Navy (Hero Card)
-  final Color _textDark      = const Color(0xFF111827); // Almost Black
-  final Color _textGrey      = const Color(0xFF6B7280); // Subtitles
+  final Color _bgLight       = const Color(0xFFF3F4F6); 
+  final Color _cardNavy      = const Color(0xFF0F172A); 
+  final Color _textDark      = const Color(0xFF111827); 
+  final Color _textGrey      = const Color(0xFF6B7280); 
   final Color _surfaceWhite  = Colors.white;
 
   @override
@@ -47,7 +51,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     _setGreeting();
   }
 
-  // --- Attendance & Location Logic (UNCHANGED) ---
   void _setGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) {_greeting = 'Good Morning';}
@@ -95,6 +98,14 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
         'inTimeImageCaptured': true,
       };
       await _apiService.checkIn(checkInData);
+      
+      // --- UPDATE UI STATE ON SUCCESS ---
+      if (mounted) {
+        setState(() {
+          _isCheckedIn = true; // Makes Check In inactive, Check Out active
+        });
+      }
+
       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Checked in successfully!'), backgroundColor: Colors.green));
     } catch (e) {
       scaffoldMessenger.showSnackBar(SnackBar(content: Text('Check-in failed: $e'), backgroundColor: Colors.red));
@@ -122,6 +133,14 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
         'outTimeLongitude': position.longitude,
       };
       await _apiService.checkOut(checkOutData);
+
+      // --- UPDATE UI STATE ON SUCCESS ---
+      if (mounted) {
+        setState(() {
+          _isCheckedIn = false; // Resets the buttons for the next day/cycle
+        });
+      }
+
       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Checked out successfully!'), backgroundColor: Colors.blue));
     } catch (e) {
       scaffoldMessenger.showSnackBar(SnackBar(content: Text('Check-out failed: $e'), backgroundColor: Colors.red));
@@ -140,13 +159,13 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     setState(() { _setGreeting(); });
   }
 
-  // --- NAVIGATION HELPERS ---
   void _openFullScreen(Widget page) {
     Navigator.push(context, MaterialPageRoute(builder: (context) => page));
   }
 
-  // --- 1. MASON ACTION SHEET ---
+  // ... [Action Sheet Methods remain exactly the same as your code] ...
   void _showMasonActions(BuildContext context) {
+    // (Existing Code Hidden for Brevity)
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -198,8 +217,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     );
   }
 
-  // --- 2. TECHNICAL ACTION SHEET (FIXED SYNTAX ERROR HERE) ---
   void _showTechnicalActions(BuildContext context) {
+     // (Existing Code Hidden for Brevity)
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -210,7 +229,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Syntax error fixed here: Removed the multiline image text
             Text(
               "Technical Operations", 
               style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)
@@ -256,6 +274,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     return Scaffold(
       backgroundColor: _bgLight,
       appBar: AppBar(
+         // (AppBar code remains exactly the same)
         backgroundColor: _bgLight,
         elevation: 0,
         automaticallyImplyLeading: false,
@@ -265,7 +284,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
             CircleAvatar(
               radius: 20,
               backgroundColor: Colors.grey[300],
-              backgroundImage: const NetworkImage("https://ui-avatars.com/api/?name=User&background=0D8ABC&color=fff"),
+              backgroundImage: const NetworkImage("https://picsum.photos/200/300?grayscale"),
             ),
             const SizedBox(width: 12),
             Column(
@@ -362,30 +381,43 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                   ),
                   const SizedBox(height: 32),
                   
-                  // GLASSMORPHISM BUTTONS
+                  // --- UPDATED GLASSMORPHISM BUTTONS ROW ---
                   Row(
                     children: [
+                      // CHECK IN BUTTON
                       Expanded(
                         child: _buildGlassButton(
                           label: "CHECK IN",
                           icon: Icons.arrow_downward,
                           isLoading: _isCheckingIn,
-                          isActive: true, 
-                          onTap: _isCheckingIn || _isCheckingOut ? null : _handleCheckIn,
+                          // If NOT checked in, this is Active (White). If checked in, it becomes Inactive (Glass).
+                          isActive: !_isCheckedIn, 
+                          // If already checked in (or currently loading), disable click
+                          onTap: (_isCheckedIn || _isCheckingIn || _isCheckingOut) 
+                              ? null 
+                              : _handleCheckIn,
                         ),
                       ),
                       const SizedBox(width: 12),
+                      
+                      // CHECK OUT BUTTON
                       Expanded(
                         child: _buildGlassButton(
                           label: "CHECK OUT",
                           icon: Icons.arrow_upward,
                           isLoading: _isCheckingOut,
-                          isActive: false, 
-                          onTap: _isCheckingIn || _isCheckingOut ? null : _handleCheckOut,
+                          // If Checked In, this becomes Active (White).
+                          isActive: _isCheckedIn, 
+                          // If NOT checked in (or currently loading), disable click
+                          onTap: (!_isCheckedIn || _isCheckingIn || _isCheckingOut) 
+                              ? null 
+                              : _handleCheckOut,
                         ),
                       ),
                     ],
                   ),
+                  // --- END UPDATED ROW ---
+
                 ],
               ),
             ),
@@ -397,12 +429,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "Operations",
+                  "Categories Of Work",
                   style: TextStyle(color: _textDark, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  "View All",
-                  style: TextStyle(color: Colors.blue[700], fontSize: 14, fontWeight: FontWeight.w600),
                 ),
               ],
             ),
@@ -458,6 +486,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
+            // Logic: If active, White background. If inactive, Glass/Transparent background.
             color: isActive ? Colors.white : Colors.white.withOpacity(0.15),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.white.withOpacity(0.2)),
@@ -484,6 +513,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     );
   }
 
+  // ... [Other Widgets remain unchanged] ...
   Widget _buildFintechCard({
     required String title,
     required String subtitle,
