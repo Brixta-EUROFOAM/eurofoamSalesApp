@@ -287,10 +287,30 @@ class ApiService {
     String? area,
     String? type,
     int? userId,
+    String? search,
     int page = 1,
-    int limit = 500,
+    int limit = 300,
   }) async {
-    throw Exception('Failed to fetch dealers.');
+    // 1. Build the query string
+    final queryParams = <String, String>{
+      'limit': limit.toString(),
+      'page': page.toString(),
+    };
+    if (region != null) queryParams['region'] = region;
+    if (area != null) queryParams['area'] = area;
+    if (type != null) queryParams['type'] = type;
+    if (userId != null) queryParams['userId'] = userId.toString();
+    if (search != null && search.isNotEmpty) {
+      queryParams['search'] = search;
+    }
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    // 2. Call the endpoint
+    return _get(
+      'dealers?$queryString',
+      (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
+    );
   }
 
   Future<Dealer> fetchDealerById(String dealerId) {
@@ -330,7 +350,7 @@ class ApiService {
     String dealerId,
     Map<String, dynamic> data,
   ) async {
-    return _patch('dealERS/$dealerId', data, (json) => Dealer.fromJson(json));
+    return _patch('dealers/$dealerId', data, (json) => Dealer.fromJson(json));
   }
 
   Future<Dealer> updateDealerGeofence({
@@ -646,10 +666,8 @@ class ApiService {
     return Employee.fromJson(json['data']);
   }
 
-Future<List<KycSubmission>> fetchPendingKycSubmissions({int? userId}) async {
-    final queryParams = <String, String>{
-      'status': 'pending',
-    };
+  Future<List<KycSubmission>> fetchPendingKycSubmissions({int? userId}) async {
+    final queryParams = <String, String>{'status': 'pending'};
 
     if (userId != null) {
       queryParams['userId'] = userId.toString();
@@ -663,8 +681,17 @@ Future<List<KycSubmission>> fetchPendingKycSubmissions({int? userId}) async {
     );
   }
 
-  Future<void> reviewKycSubmission(String submissionId, String status) async {
-    final body = {'status': status};
+  Future<void> reviewKycSubmission(
+    String submissionId,
+    String status, {
+    String? remark,
+    Map<String, dynamic>? masonUpdates,
+  }) async {
+    final body = {
+      'status': status,
+      if (remark != null) 'remark': remark,
+      if (masonUpdates != null) 'masonUpdates': masonUpdates,
+    };
     await _patch('kyc-submissions/$submissionId', body, (json) => null);
   }
 
@@ -677,37 +704,63 @@ Future<List<KycSubmission>> fetchPendingKycSubmissions({int? userId}) async {
   }
 
   // Fetch pending lifts (TSO view)
-// inside ApiService class
+  // inside ApiService class
 
-Future<List<MasonBagLift>> fetchPendingBagLifts({int? userId}) async {
-  // 1. Build Query Parameters safely
-  final queryParams = <String, String>{
-    'status': 'pending', // Always fetch pending
-  };
+  Future<List<MasonBagLift>> fetchPendingBagLifts({int? userId}) async {
+    // 1. Build Query Parameters safely
+    final queryParams = <String, String>{
+      'status': 'pending', // Always fetch pending
+    };
 
-  // 2. Add User ID if it exists (This triggers the TSO filter on backend)
-  if (userId != null) {
-    queryParams['userId'] = userId.toString();
+    // 2. Add User ID if it exists (This triggers the TSO filter on backend)
+    if (userId != null) {
+      queryParams['userId'] = userId.toString();
+    }
+
+    // 3. Construct URI manually to pass to your _get helper
+    // or simply reconstruct the query string.
+    // Since your _get takes a string endpoint, let's format it correctly:
+
+    final queryString = Uri(queryParameters: queryParams).query;
+    // Result: "status=pending&userId=123"
+
+    return _get('bag-lifts?$queryString', (json) {
+      return (json as List).map((e) => MasonBagLift.fromJson(e)).toList();
+    });
   }
-
-  // 3. Construct URI manually to pass to your _get helper
-  // or simply reconstruct the query string.
-  // Since your _get takes a string endpoint, let's format it correctly:
-  
-  final queryString = Uri(queryParameters: queryParams).query; 
-  // Result: "status=pending&userId=123"
-
-  return _get('bag-lifts?$queryString', (json) {
-    return (json as List).map((e) => MasonBagLift.fromJson(e)).toList();
-  });
-}
 
   // Approve/Reject Bag Lift
-  Future<void> updateBagLiftStatus(String id, String status) async {
-    await _patch('bag-lifts/$id', {'status': status}, (json) => null);
+  Future<void> updateBagLiftStatus(
+    String id,
+    String status, {
+    int? bagCount,
+    String? purchaseDate,
+    String? siteId,
+    String? dealerId,
+    String? siteKeyPersonName,
+    String? siteKeyPersonPhone,
+    String? memo,
+    String? verificationSiteImageUrl,
+    String? verificationProofImageUrl,
+  }) async {
+    final body = {
+      'status': status,
+      if (bagCount != null) 'bagCount': bagCount,
+      if (purchaseDate != null) 'purchaseDate': purchaseDate,
+      if (siteId != null) 'siteId': siteId,
+      if (dealerId != null) 'dealerId': dealerId,
+      if (siteKeyPersonName != null) 'siteKeyPersonName': siteKeyPersonName,
+      if (siteKeyPersonPhone != null) 'siteKeyPersonPhone': siteKeyPersonPhone,
+      if (memo != null) 'memo': memo,
+      if (verificationSiteImageUrl != null)
+        'verificationSiteImageUrl': verificationSiteImageUrl,
+      if (verificationProofImageUrl != null)
+        'verificationProofImageUrl': verificationProofImageUrl,
+    };
+    await _patch('bag-lifts/$id', body, (json) => null);
   }
 
-Future<List<MasonRedemption>> fetchPendingRedemptions({int? userId}) async {
+  Future<List<MasonRedemption>> fetchPendingRedemptions({int? userId}) async {
     final queryParams = <String, String>{
       'status': 'placed', // 'placed' is usually the pending status for rewards
     };
@@ -732,16 +785,25 @@ Future<List<MasonRedemption>> fetchPendingRedemptions({int? userId}) async {
   Future<List<TechnicalSite>> fetchTechnicalSites({
     int? userId,
     String? region,
+    String? search,
+    int limit = 50,
   }) async {
-    // Adjust query params as per your backend routes/dataFetchingRoutes/technicalSites.ts
-    // Assuming it supports userId filtering
-    final endpoint = userId != null
-        ? 'technical-sites?userId=$userId'
-        : 'technical-sites';
+    final queryParams = <String, String>{'limit': limit.toString()};
 
-    return _get(endpoint, (json) {
-      return (json as List).map((e) => TechnicalSite.fromJson(e)).toList();
-    });
+    if (userId != null) queryParams['userId'] = userId.toString();
+    if (region != null) queryParams['region'] = region;
+
+    // Pass search query to backend
+    if (search != null && search.isNotEmpty) {
+      queryParams['search'] = search;
+    }
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get(
+      'technical-sites?$queryString',
+      (json) => (json as List).map((e) => TechnicalSite.fromJson(e)).toList(),
+    );
   }
 
   // Helper to fetch single site by ID (needed for Journey start)

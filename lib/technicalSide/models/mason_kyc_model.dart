@@ -38,6 +38,21 @@ class KycSubmission {
       }
     }
 
+    MasonKycProfile? masonProfile;
+    
+    if (json['mason'] != null) {
+      // Case A: Backend sends nested object
+      masonProfile = MasonKycProfile.fromJson(json['mason']);
+    } else if (json['masonName'] != null) {
+      // Case B: Backend sends flat structure (Current Setup)
+      masonProfile = MasonKycProfile(
+        id: json['masonId']?.toString() ?? '',
+        name: json['masonName'] ?? 'Unknown Mason',
+        phoneNumber: json['masonPhone'] ?? 'No Phone', // Matches the new backend alias
+        kycStatus: 'pending', // Default for flat structure context
+      );
+    }
+
     return KycSubmission(
       id: json['id']?.toString() ?? '',
       masonId: json['masonId']?.toString() ?? '',
@@ -48,7 +63,7 @@ class KycSubmission {
       status: json['status'] ?? 'pending',
       remark: json['remark'],
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
-      mason: json['mason'] != null ? MasonKycProfile.fromJson(json['mason']) : null,
+      mason: masonProfile,
     );
   }
 

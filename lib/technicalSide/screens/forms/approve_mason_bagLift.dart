@@ -1,9 +1,14 @@
 // lib/technicalSide/screens/forms/approve_mason_bagLift.dart
 
+import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/technicalSide/models/mason_baglift_model.dart';
 import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:assetarchiverflutter/technicalSide/models/sites_model.dart';
+import 'package:assetarchiverflutter/models/dealer_model.dart'; // Required for Dealer
 
 class ApproveMasonBagLift extends StatefulWidget {
   final Employee employee;
@@ -15,19 +20,21 @@ class ApproveMasonBagLift extends StatefulWidget {
 
 class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   final ApiService _api = ApiService();
-  late Future<List<MasonBagLift>> _futureLifts;
+  final ImagePicker _picker = ImagePicker();
   
+  late Future<List<MasonBagLift>> _futureLifts;
   bool _isProcessing = false;
 
   // --- FINTECH THEME PALETTE ---
-  static const Color _bgLight       = Color(0xFFF3F4F6); // Corporate Grey
+  static const Color _bgLight       = Color(0xFFF3F4F6); 
   static const Color _surfaceWhite  = Colors.white;
-  static const Color _textDark      = Color(0xFF111827); // Navy/Black
-  static const Color _textGrey      = Color(0xFF6B7280); // Subtitle Grey
-  static const Color _cardNavy      = Color(0xFF0F172A); // Deep Navy
+  static const Color _textDark      = Color(0xFF111827); 
+  static const Color _textGrey      = Color(0xFF6B7280); 
+  static const Color _cardNavy      = Color(0xFF0F172A); 
   static const Color _accentGreen   = Color(0xFF10B981); 
   static const Color _dangerRed     = Color(0xFFEF4444);
   static const Color _infoBlue      = Color(0xFF3B82F6);
+  static const Color _inputFill     = Color(0xFFF9FAFB); 
 
   @override
   void initState() {
@@ -35,27 +42,15 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     _loadData();
   }
 
-  // --- 🟢 CORE LOGIC: FILTER BY TSO ID ---
-void _loadData() {
-    // 1. Clean the ID string (remove spaces)
+  void _loadData() {
     final rawId = widget.employee.id.trim();
-    
-    // 2. Try parsing
     final userId = int.tryParse(rawId);
-
-    // DEBUG: Print to console to verify what ID is actually being read
-    print("DEBUG: Raw ID: '$rawId' -> Parsed ID: $userId");
 
     setState(() {
       if (userId != null) {
-        // ✅ Valid ID: Fetch data for this TSO
         _futureLifts = _api.fetchPendingBagLifts(userId: userId);
       } else {
-        // ❌ Invalid ID: Do NOT fetch all data. Return empty list.
-        print("ERROR: Could not parse User ID. Preventing data leak.");
         _futureLifts = Future.value([]); 
-        
-        // Optional: Show error to user
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Error: Invalid User ID configuration"), backgroundColor: _dangerRed)
@@ -65,22 +60,345 @@ void _loadData() {
     });
   }
 
-  Future<void> _updateStatus(String id, String status) async {
-    if (_isProcessing) return;
-    setState(() => _isProcessing = true);
+  // --- Helper for Input Styling ---
+  InputDecoration _inputDecoration(String hint) {
+    return InputDecoration(
+      filled: true,
+      fillColor: _inputFill,
+      hintText: hint,
+      hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: _cardNavy, width: 1),
+      ),
+    );
+  }
 
+  // --- Helper for Labels ---
+  Widget _buildLabel(String text, {bool isMandatory = false}) {
+    return RichText(
+      text: TextSpan(
+        text: text,
+        style: const TextStyle(fontSize: 12, color: _textDark, fontWeight: FontWeight.w600),
+        children: [
+          if (isMandatory) const TextSpan(text: " *", style: TextStyle(color: _dangerRed))
+        ]
+      ),
+    );
+  }
+
+  // --- Search Dialogs ---
+  Future<TechnicalSite?> _showServerSearchSiteDialog() async {
+    return await showDialog<TechnicalSite>(
+      context: context,
+      builder: (context) => _ServerSiteSearchDialog(api: _api),
+    );
+  }
+
+  Future<Dealer?> _showServerSearchDealerDialog() async {
+    return await showDialog<Dealer>(
+      context: context,
+      builder: (context) => _ServerDealerSearchDialog(api: _api),
+    );
+  }
+
+  // --- 📸 Verification Dialog ---
+  void _showVerificationDialog(MasonBagLift item) {
+    final bagCountController = TextEditingController(text: item.bagCount.toString());
+    final personNameController = TextEditingController();
+    final personPhoneController = TextEditingController();
+    final memoController = TextEditingController();
+    
+    TechnicalSite? selectedSite;
+    Dealer? selectedDealer;
+    
+    File? _siteImageFile;
+    String? _uploadedSiteImageUrl;
+    bool _isUploadingImage = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          
+          Future<void> _pickAndUploadImage() async {
+            try {
+              final XFile? picked = await _picker.pickImage(source: ImageSource.camera, imageQuality: 60);
+              if (picked == null) return;
+
+              setStateDialog(() {
+                _siteImageFile = File(picked.path);
+                _isUploadingImage = true;
+              });
+
+              final url = await _api.uploadImageToR2(_siteImageFile!);
+              
+              setStateDialog(() {
+                _uploadedSiteImageUrl = url;
+                _isUploadingImage = false;
+              });
+            } catch (e) {
+              setStateDialog(() => _isUploadingImage = false);
+              debugPrint("Image upload error: $e");
+            }
+          }
+
+          return AlertDialog(
+            backgroundColor: _surfaceWhite,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text("Review & Verify", style: TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 1. Correct Bag Count
+                  _buildLabel("Verified Bag Count", isMandatory: true),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: bagCountController,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(color: _textDark),
+                    decoration: _inputDecoration("Enter actual count"),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 2. Dealer Selection (Searchable)
+                  _buildLabel("Select Dealer", isMandatory: true),
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () async {
+                      final result = await _showServerSearchDealerDialog();
+                      if (result != null) {
+                        setStateDialog(() => selectedDealer = result);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      decoration: BoxDecoration(
+                        color: _inputFill,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: selectedDealer == null ? Colors.transparent : _cardNavy.withOpacity(0.5)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              selectedDealer?.name ?? "Tap to Search Dealer...",
+                              style: TextStyle(
+                                color: selectedDealer != null ? _textDark : Colors.grey,
+                                fontWeight: selectedDealer != null ? FontWeight.w600 : FontWeight.normal,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const Icon(Icons.search, color: _textDark, size: 20),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3. Link to Site (Searchable)
+                  _buildLabel("Link to Site", isMandatory: true),
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: () async {
+                      final result = await _showServerSearchSiteDialog();
+                      if (result != null) {
+                        setStateDialog(() {
+                          selectedSite = result;
+                          personNameController.text = result.concernedPerson;
+                          personPhoneController.text = result.phoneNo;
+                        });
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      decoration: BoxDecoration(
+                        color: _inputFill,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: selectedSite == null ? Colors.transparent : _cardNavy.withOpacity(0.5)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              selectedSite?.siteName ?? "Tap to Search Site...",
+                              style: TextStyle(
+                                color: selectedSite != null ? _textDark : Colors.grey,
+                                fontWeight: selectedSite != null ? FontWeight.w600 : FontWeight.normal,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const Icon(Icons.search, color: _textDark, size: 20),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 4. Key Person Details
+                  _buildLabel("Site Key Person Details"),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(child: TextField(controller: personNameController, style: const TextStyle(color: _textDark), decoration: _inputDecoration("Name"))),
+                      const SizedBox(width: 8),
+                      Expanded(child: TextField(controller: personPhoneController, style: const TextStyle(color: _textDark), decoration: _inputDecoration("Phone"), keyboardType: TextInputType.phone)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 5. Verification Photo
+                  _buildLabel("Verification Photo (Site)"),
+                  const SizedBox(height: 8),
+                  InkWell(
+                    onTap: _isUploadingImage ? null : _pickAndUploadImage,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      height: 140,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: _inputFill,
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(12),
+                        image: _siteImageFile != null 
+                          ? DecorationImage(image: FileImage(_siteImageFile!), fit: BoxFit.cover)
+                          : null
+                      ),
+                      child: _isUploadingImage 
+                        ? const Center(child: CircularProgressIndicator(color: _cardNavy))
+                        : _siteImageFile == null 
+                            ? Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: const [
+                                  Icon(Icons.camera_alt_rounded, color: _textGrey, size: 32),
+                                  SizedBox(height: 8),
+                                  Text("Tap to Take Photo", style: TextStyle(color: _textGrey, fontSize: 12))
+                                ],
+                              )
+                            : null,
+                    ),
+                  ),
+                  if (_uploadedSiteImageUrl != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6.0),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.check_circle, size: 14, color: _accentGreen),
+                          SizedBox(width: 4),
+                          Text("Photo Uploaded", style: TextStyle(fontSize: 11, color: _accentGreen, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 16),
+
+                  // 6. Remarks
+                  _buildLabel("Remarks / Rejection Reason"),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: memoController,
+                    style: const TextStyle(color: _textDark),
+                    decoration: _inputDecoration("Enter notes..."),
+                    maxLines: 2,
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text("CANCEL", style: TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _updateStatus(
+                    item.id, 
+                    'rejected', 
+                    memo: memoController.text,
+                  );
+                },
+                child: const Text("REJECT", style: TextStyle(color: _dangerRed, fontWeight: FontWeight.bold)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accentGreen, 
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
+                ),
+                onPressed: _isUploadingImage ? null : () {
+                  // VALIDATION: MANDATORY FIELDS
+                  if (selectedSite == null || selectedDealer == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text("Error: Site and Dealer are mandatory."),
+                      backgroundColor: Colors.red,
+                    ));
+                    return;
+                  }
+
+                  Navigator.pop(context);
+                  _updateStatus(
+                    item.id, 
+                    'approved', 
+                    bagCount: int.tryParse(bagCountController.text),
+                    siteId: selectedSite?.id,
+                    dealerId: selectedDealer?.id, // 🟢 Passed here
+                    keyPersonName: personNameController.text,
+                    keyPersonPhone: personPhoneController.text,
+                    memo: memoController.text,
+                    verificationSiteImageUrl: _uploadedSiteImageUrl, 
+                  );
+                },
+                child: const Text("VERIFY & APPROVE", style: TextStyle(fontWeight: FontWeight.bold)),
+              )
+            ],
+          );
+        }
+      ),
+    );
+  }
+
+  Future<void> _updateStatus(
+    String id, 
+    String status, {
+    int? bagCount, 
+    String? siteId,
+    String? dealerId, // 🟢
+    String? keyPersonName, 
+    String? keyPersonPhone,
+    String? memo,
+    String? verificationSiteImageUrl,
+  }) async {
+    setState(() => _isProcessing = true);
     try {
-      await _api.updateBagLiftStatus(id, status);
+      await _api.updateBagLiftStatus(
+        id, 
+        status,
+        bagCount: bagCount,
+        siteId: siteId,
+        dealerId: dealerId,
+        siteKeyPersonName: keyPersonName,
+        siteKeyPersonPhone: keyPersonPhone,
+        memo: memo,
+        verificationSiteImageUrl: verificationSiteImageUrl,
+      );
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text("Marked as $status"),
+            content: Text("Lift $status successfully"),
             backgroundColor: status == 'approved' ? _accentGreen : _dangerRed,
             behavior: SnackBarBehavior.floating,
           ),
         );
-        _loadData(); // Refresh list after action
+        _loadData(); 
       }
     } catch (e) {
       if (mounted) {
@@ -91,42 +409,6 @@ void _loadData() {
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
-  }
-
-  void _confirmAction(String id, String status) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: _surfaceWhite,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          "${status.toUpperCase()} REQUEST?",
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: _textDark),
-        ),
-        content: Text(
-          "Are you sure you want to proceed? This action cannot be undone.",
-          style: TextStyle(color: _textGrey),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text("CANCEL", style: TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: status == 'approved' ? _accentGreen : _dangerRed,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            onPressed: () {
-              Navigator.pop(context);
-              _updateStatus(id, status);
-            },
-            child: Text(status.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -143,18 +425,10 @@ void _loadData() {
         ),
         title: const Text(
           "Pending Bag Lifts",
-          style: TextStyle(
-            color: _textDark,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-            letterSpacing: 0.5,
-          ),
+          style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh, color: _textDark),
-            onPressed: _loadData,
-          )
+          IconButton(icon: const Icon(Icons.refresh, color: _textDark), onPressed: _loadData)
         ],
       ),
       body: FutureBuilder<List<MasonBagLift>>(
@@ -174,19 +448,14 @@ void _loadData() {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: Colors.white, 
                       shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))
-                      ]
+                      boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))]
                     ),
                     child: const Icon(Icons.shopping_bag_outlined, size: 40, color: _textGrey),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
-                    "No pending bag lifts", 
-                    style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16)
-                  ),
+                  const Text("No pending bag lifts", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16)),
                   const SizedBox(height: 4),
                   const Text("You're all caught up!", style: TextStyle(color: _textGrey)),
                 ],
@@ -199,8 +468,7 @@ void _loadData() {
             itemCount: snapshot.data!.length,
             separatorBuilder: (ctx, i) => const SizedBox(height: 16),
             itemBuilder: (context, index) {
-              final item = snapshot.data![index];
-              return _buildBagLiftCard(item);
+              return _buildBagLiftCard(snapshot.data![index]);
             },
           );
         },
@@ -217,21 +485,20 @@ void _loadData() {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
+            color: Colors.black.withOpacity(0.05), 
+            blurRadius: 15, 
+            offset: const Offset(0, 5)
           )
         ],
       ),
       child: Column(
         children: [
-          // 1. Header Section
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: const Color(0xFFFFF7ED), // Light Orange
+                  backgroundColor: const Color(0xFFFFF7ED),
                   child: const Icon(Icons.shopping_bag, color: Colors.orange),
                 ),
                 const SizedBox(width: 16),
@@ -239,44 +506,22 @@ void _loadData() {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        item.masonName ?? "Unknown Mason",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold, 
-                          color: _textDark,
-                          fontSize: 16
-                        ),
-                      ),
+                      Text(item.masonName ?? "Unknown Mason", style: const TextStyle(fontWeight: FontWeight.bold, color: _textDark, fontSize: 16)),
                       const SizedBox(height: 4),
-                      Text(
-                        dateStr,
-                        style: const TextStyle(color: _textGrey, fontSize: 12),
-                      ),
+                      Text(dateStr, style: const TextStyle(color: _textGrey, fontSize: 12)),
                     ],
                   ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF), // Light Blue
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    "${item.bagCount} Bags",
-                    style: const TextStyle(
-                      fontSize: 12, 
-                      fontWeight: FontWeight.w700, 
-                      color: _infoBlue
-                    ),
-                  ),
+                  decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(20)),
+                  child: Text("${item.bagCount} Bags", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _infoBlue)),
                 ),
               ],
             ),
           ),
-
           const Divider(height: 1, color: Color(0xFFF3F4F6)),
 
-          // 2. Image Section (if available)
           if (item.imageUrl != null)
             GestureDetector(
               onTap: () => _showFullImage(item.imageUrl!),
@@ -287,48 +532,27 @@ void _loadData() {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: Colors.grey[100],
-                  image: DecorationImage(
-                    image: NetworkImage(item.imageUrl!),
-                    fit: BoxFit.cover,
-                  ),
+                  image: DecorationImage(image: NetworkImage(item.imageUrl!), fit: BoxFit.cover),
                 ),
               ),
             ),
             
-          // 3. Action Buttons
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _isProcessing ? null : () => _confirmAction(item.id, "rejected"),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _dangerRed,
-                      side: const BorderSide(color: _dangerRed),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text("REJECT", style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
+            padding: const EdgeInsets.all(16),
+            child: SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.edit_note, color: Colors.white),
+                label: const Text("REVIEW & VERIFY", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _cardNavy,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isProcessing ? null : () => _confirmAction(item.id, "approved"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _accentGreen,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: const Text("APPROVE", style: TextStyle(fontWeight: FontWeight.bold)),
-                  ),
-                ),
-              ],
+                onPressed: _isProcessing ? null : () => _showVerificationDialog(item),
+              ),
             ),
-          )
+          ),
         ],
       ),
     );
@@ -352,13 +576,225 @@ void _loadData() {
             ),
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
-              child: InteractiveViewer(
-                child: Image.network(url),
-              ),
+              child: InteractiveViewer(child: Image.network(url)),
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+// --- SERVER SIDE SEARCH DIALOGS ---
+
+class _ServerSiteSearchDialog extends StatefulWidget {
+  final ApiService api;
+  const _ServerSiteSearchDialog({required this.api});
+
+  @override
+  State<_ServerSiteSearchDialog> createState() => _ServerSiteSearchDialogState();
+}
+
+class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
+  List<TechnicalSite> _sites = [];
+  bool _isLoading = false;
+  Timer? _debounce;
+  String _lastQuery = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _performSearch("");
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (query != _lastQuery) {
+        _performSearch(query);
+      }
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    setState(() => _isLoading = true);
+    _lastQuery = query;
+    try {
+      final results = await widget.api.fetchTechnicalSites(search: query, limit: 20);
+      if (mounted) {
+        setState(() {
+          _sites = results;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text("Select Site", style: TextStyle(color: _ApproveMasonBagLiftState._textDark, fontWeight: FontWeight.bold)),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 400,
+        child: Column(
+          children: [
+            TextField(
+              autofocus: true,
+              style: const TextStyle(color: _ApproveMasonBagLiftState._textDark),
+              decoration: InputDecoration(
+                hintText: "Search site...",
+                hintStyle: const TextStyle(color: _ApproveMasonBagLiftState._textGrey),
+                prefixIcon: const Icon(Icons.search, color: _ApproveMasonBagLiftState._textGrey),
+                filled: true,
+                fillColor: _ApproveMasonBagLiftState._inputFill,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+              onChanged: _onSearchChanged,
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _isLoading 
+                ? const Center(child: CircularProgressIndicator())
+                : _sites.isEmpty
+                    ? const Center(child: Text("No sites found", style: TextStyle(color: _ApproveMasonBagLiftState._textGrey)))
+                    : ListView.separated(
+                        itemCount: _sites.length,
+                        separatorBuilder: (ctx, i) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                        itemBuilder: (context, index) {
+                          final site = _sites[index];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(site.siteName, style: const TextStyle(color: _ApproveMasonBagLiftState._textDark, fontWeight: FontWeight.w600)),
+                            subtitle: Text(site.address, style: const TextStyle(color: _ApproveMasonBagLiftState._textGrey, fontSize: 12)),
+                            onTap: () => Navigator.pop(context, site),
+                          );
+                        },
+                      ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, null), child: const Text("CANCEL"))
+      ],
+    );
+  }
+}
+
+class _ServerDealerSearchDialog extends StatefulWidget {
+  final ApiService api;
+  const _ServerDealerSearchDialog({required this.api});
+
+  @override
+  State<_ServerDealerSearchDialog> createState() => _ServerDealerSearchDialogState();
+}
+
+class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
+  List<Dealer> _dealers = [];
+  bool _isLoading = false;
+  Timer? _debounce;
+  String _lastQuery = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _performSearch("");
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (query != _lastQuery) {
+        _performSearch(query);
+      }
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    setState(() => _isLoading = true);
+    _lastQuery = query;
+    try {
+      final results = await widget.api.fetchDealers(search: query, limit: 20);
+      if (mounted) {
+        setState(() {
+          _dealers = results;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text("Select Dealer", style: TextStyle(color: _ApproveMasonBagLiftState._textDark, fontWeight: FontWeight.bold)),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 400,
+        child: Column(
+          children: [
+            TextField(
+              autofocus: true,
+              style: const TextStyle(color: _ApproveMasonBagLiftState._textDark),
+              decoration: InputDecoration(
+                hintText: "Search dealer...",
+                hintStyle: const TextStyle(color: _ApproveMasonBagLiftState._textGrey),
+                prefixIcon: const Icon(Icons.search, color: _ApproveMasonBagLiftState._textGrey),
+                filled: true,
+                fillColor: _ApproveMasonBagLiftState._inputFill,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+              onChanged: _onSearchChanged,
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _isLoading 
+                ? const Center(child: CircularProgressIndicator())
+                : _dealers.isEmpty
+                    ? const Center(child: Text("No dealers found", style: TextStyle(color: _ApproveMasonBagLiftState._textGrey)))
+                    : ListView.separated(
+                        itemCount: _dealers.length,
+                        separatorBuilder: (ctx, i) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                        itemBuilder: (context, index) {
+                          final dealer = _dealers[index];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(dealer.name, style: const TextStyle(color: _ApproveMasonBagLiftState._textDark, fontWeight: FontWeight.w600)),
+                            subtitle: Text(dealer.area, style: const TextStyle(color: _ApproveMasonBagLiftState._textGrey, fontSize: 12)),
+                            onTap: () => Navigator.pop(context, dealer),
+                          );
+                        },
+                      ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, null), child: const Text("CANCEL"))
+      ],
     );
   }
 }

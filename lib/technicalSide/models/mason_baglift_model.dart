@@ -8,6 +8,11 @@ class MasonBagLift {
   final String status; // pending, approved, rejected
   final String? imageUrl;
   final DateTime createdAt;
+  final String? siteId;
+  final String? siteKeyPersonName;
+  final String? siteKeyPersonPhone;
+  final String? verificationSiteImageUrl;
+  final String? verificationProofImageUrl;
 
   MasonBagLift({
     required this.id,
@@ -17,6 +22,11 @@ class MasonBagLift {
     required this.bagCount,
     required this.status,
     this.imageUrl,
+    this.siteId,
+    this.siteKeyPersonName,
+    this.siteKeyPersonPhone,
+    this.verificationSiteImageUrl,
+    this.verificationProofImageUrl,
     required this.createdAt,
   });
 
@@ -24,11 +34,17 @@ class MasonBagLift {
     return MasonBagLift(
       id: json['id'],
       masonId: json['masonId'],
-      masonName: json['mason']?['name'] ?? json['masonName'], // Handle join variations
+      masonName:
+          json['mason']?['name'] ?? json['masonName'], // Handle join variations
       dealerId: json['dealerId'],
       bagCount: int.tryParse(json['bagCount']?.toString() ?? '0') ?? 0,
       status: json['status'] ?? 'pending',
       imageUrl: json['imageUrl'],
+      siteId: json['siteId']?.toString(),
+      siteKeyPersonName: json['siteKeyPersonName'],
+      siteKeyPersonPhone: json['siteKeyPersonPhone'],
+      verificationSiteImageUrl: json['verificationSiteImageUrl'],
+      verificationProofImageUrl: json['verificationProofImageUrl'],
       createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
     );
   }
