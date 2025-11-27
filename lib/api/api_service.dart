@@ -457,7 +457,8 @@ class ApiService {
   Future<Map<String, dynamic>> createBulkPjp({
     required int userId,
     required int createdById,
-    required List<String> dealerIds,
+    List<String>? dealerIds,
+    List<String>? siteIds,  
     required DateTime baseDate,
     required int batchSizePerDay,
     required String areaToBeVisited,
@@ -467,7 +468,8 @@ class ApiService {
     final body = {
       'userId': userId,
       'createdById': createdById,
-      'dealerIds': dealerIds,
+      if (dealerIds != null) 'dealerIds': dealerIds,
+      if (siteIds != null) 'siteIds': siteIds,
       'baseDate': baseDate.toIso8601String().split('T').first,
       'batchSizePerDay': batchSizePerDay,
       'areaToBeVisited': areaToBeVisited,

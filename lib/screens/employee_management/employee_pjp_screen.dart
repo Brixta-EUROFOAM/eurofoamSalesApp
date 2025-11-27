@@ -1,5 +1,4 @@
 // lib/screens/employee_management/employee_pjp_screen.dart
-
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:flutter/material.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
@@ -7,8 +6,8 @@ import 'package:assetarchiverflutter/models/pjp_model.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'dart:developer' as dev;
-import 'dart:async'; // ✅ Timer for auto-collapse
-import 'package:intl/intl.dart'; // ✅ NEW: for YYYY-MM-DD formatting
+import 'dart:async'; 
+import 'package:intl/intl.dart'; 
 
 import 'package:assetarchiverflutter/widgets/pjp_cards.dart';
 import 'package:assetarchiverflutter/screens/forms/add_pjp_form.dart';
@@ -37,25 +36,23 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   late Future<PjpData> _pjpDataFuture;
 
   PjpData? _currentPjpData;
-
-  // --- ✅ NEW: State for animated deck ---
   bool _isDeckExpanded = false;
-  Timer? _collapseTimer; // auto-collapse timer
-  // ---
+  Timer? _collapseTimer; 
 
-  // --- ✅ NEW: Helper to get YYYY-MM-DD string ---
+  // --- ✅ NEW: Track selected date (defaults to Today) ---
+  DateTime _selectedDate = DateTime.now();
+
   String _isoDate(DateTime dt) => DateFormat('yyyy-MM-dd').format(dt);
 
   @override
   void initState() {
     super.initState();
-    dev.log('initState: employeeId=${widget.employee.id}', name: _log);
     refreshPjpList();
   }
 
   @override
   void dispose() {
-    _collapseTimer?.cancel(); // ✅ prevent timer leaks
+    _collapseTimer?.cancel(); 
     super.dispose();
   }
 
@@ -63,51 +60,40 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
     final uid = int.tryParse(widget.employee.id);
     if (uid == null) return;
 
-    final todayString = _isoDate(DateTime.now());
-    dev.log('refreshPjpList() → fetch PJPs for $todayString (userId=$uid)', name: _log);
+    // --- ✅ UPDATED: Use selected date ---
+    final dateString = _isoDate(_selectedDate);
+    dev.log('refreshPjpList() → fetch PJPs for $dateString', name: _log);
 
     if (mounted) {
       setState(() {
         _currentPjpData = null;
         _pjpDataFuture = _apiService.fetchPendingAndVerifiedPjps(
           userId: uid,
-          startDate: todayString,  // ✅ only today
-          endDate: todayString,    // ✅ only today
+          startDate: dateString,
+          endDate: dateString,
         );
       });
     }
   }
 
   Future<void> _handleRefresh() async {
-    final uid = int.tryParse(widget.employee.id);
-    if (uid == null) return;
+    refreshPjpList();
+    await _pjpDataFuture;
+  }
 
-    final todayString = _isoDate(DateTime.now());
-    dev.log('onRefresh → fetch PJPs for $todayString (userId=$uid)', name: _log);
-
-    final fut = _apiService.fetchPendingAndVerifiedPjps(
-      userId: uid,
-      startDate: todayString,  // ✅ only today
-      endDate: todayString,    // ✅ only today
-    );
-
-    if (mounted) {
-      setState(() {
-        _currentPjpData = null;
-        _pjpDataFuture = fut;
-      });
-    }
-
-    await fut;
+  // --- ✅ NEW: Handle date selection ---
+  void _onDateSelected(DateTime date) {
+    setState(() {
+      _selectedDate = date;
+    });
+    refreshPjpList();
   }
 
   void _handlePjpCreation() {
-    dev.log('onPjpCreated hook → refresh list', name: _log);
     refreshPjpList();
     widget.onPjpCreated();
   }
 
-  // --- (No changes to _showPjpOptions, _showAddPjpForm, _showBulkPjpWizard) ---
   void _showPjpOptions() {
     final theme = Theme.of(context);
     showModalBottomSheet(
@@ -119,18 +105,15 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
             children: <Widget>[
               ListTile(
                 leading: Icon(Icons.today, color: theme.colorScheme.primary),
-                title: Text('Add Single Visit for Today',
-                    style: TextStyle(color: theme.colorScheme.onSurface)),
+                title: Text('Add Single Visit', style: TextStyle(color: theme.colorScheme.onSurface)),
                 onTap: () {
                   Navigator.of(context).pop();
                   _showAddPjpForm();
                 },
               ),
               ListTile(
-                leading: Icon(Icons.calendar_month,
-                    color: theme.colorScheme.secondary),
-                title: Text('Create Bulk Monthly Plan',
-                    style: TextStyle(color: theme.colorScheme.onSurface)),
+                leading: Icon(Icons.calendar_month, color: theme.colorScheme.secondary),
+                title: Text('Create Bulk Monthly Plan', style: TextStyle(color: theme.colorScheme.onSurface)),
                 onTap: () {
                   Navigator.of(context).pop();
                   _showBulkPjpWizard();
@@ -144,7 +127,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   }
 
   void _showAddPjpForm() {
-    dev.log('Open AddPjpForm', name: _log);
     final theme = Theme.of(context);
     showModalBottomSheet(
       context: context,
@@ -159,7 +141,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   }
 
   void _showBulkPjpWizard() {
-    dev.log('Open BulkPjpWizardScreen', name: _log);
     Navigator.of(context).push(
       MaterialPageRoute(
         fullscreenDialog: true,
@@ -170,24 +151,16 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       ),
     );
   }
-  // --- (End no changes) ---
 
-  // --- ✅ UPDATED: pass entire PJP and Dealer to NavProvider via onStartJourney ---
   Future<void> _startJourneyForPjp(Pjp pjp) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    
-    // This logic is unchanged
     if (pjp.dealerId == null || pjp.dealerId!.isEmpty) {
-      scaffoldMessenger.showSnackBar(SnackBar(
-          content: Text('Error: This PJP is not linked to a dealer.'),
-          backgroundColor: Colors.red));
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Error: This PJP is not linked to a dealer.'), backgroundColor: Colors.red));
       return;
     }
 
     try {
-      dev.log('Start Journey: Fetching dealer details for id=${pjp.dealerId}', name: _log);
       final dealer = await _apiService.fetchDealerById(pjp.dealerId!);
-
       if (dealer.latitude == null || dealer.longitude == null) {
         throw const FormatException('Dealer has no location saved.');
       }
@@ -196,9 +169,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       final lon = dealer.longitude;
       final String displayName = dealer.name.isNotEmpty ? dealer.name : (pjp.dealerName ?? 'Dealer Visit');
 
-      dev.log('Start Journey for PJP id=${pjp.id}, Dealer: ${dealer.name}', name: _log);
-      
-      await _apiService.updatePjp(pjp.id, {'status': 'started'});
+      await _apiService.updatePjp(pjp.id, {'status': 'STARTED'});
 
       if (mounted && _currentPjpData != null) {
         setState(() {
@@ -206,182 +177,211 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
         });
       }
 
-      scaffoldMessenger.showSnackBar(const SnackBar(
-          content: Text('Journey Started!'),
-          backgroundColor: Colors.green));
-
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Journey Started!'), backgroundColor: Colors.green));
       widget.onPjpCreated();
 
-      // --- ✅ THE FIX ---
-      // We now pass the entire PJP object and the fetched Dealer object.
-      // This is critical for the DVR form auto-fill.
       widget.onStartJourney({
         'pjp': pjp,
         'dealer': dealer,
         'displayName': displayName,
         'destination': LatLng(lat!, lon!),
       });
-      // --- END FIX ---
 
-    } catch (e, st) {
-      dev.log('Failed to start journey', name: _log, error: e, stackTrace: st);
-      scaffoldMessenger.showSnackBar(SnackBar(
-          content: Text('Failed to start journey: ${e.toString()}'),
-          backgroundColor: Colors.red));
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed to start journey: $e'), backgroundColor: Colors.red));
     }
   }
 
-  // --- ✅ REPLACED BUILD WITH NEW WOW-FACTOR UI ---
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Stack(
-      children: [
-        FutureBuilder<PjpData>(
-          future: _pjpDataFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                _currentPjpData == null) {
-              return Center(
-                  child:
-                      CircularProgressIndicator(color: theme.colorScheme.primary));
-            }
+    return Scaffold(
+      body: Column(
+        children: [
+          // --- ✅ NEW: Date Selector Widget ---
+          _buildDateSelector(theme),
+          
+          Expanded(
+            child: Stack(
+              children: [
+                FutureBuilder<PjpData>(
+                  future: _pjpDataFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting && _currentPjpData == null) {
+                      return Center(child: CircularProgressIndicator(color: theme.colorScheme.primary));
+                    }
 
-            if (snapshot.hasError) {
-              dev.log('PJP Future error: ${snapshot.error}', name: _log);
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text('Error: ${snapshot.error}',
-                      style: TextStyle(color: theme.colorScheme.error)),
-                ),
-              );
-            }
+                    if (snapshot.hasError) {
+                      return Center(child: Text('Error: ${snapshot.error}', style: TextStyle(color: theme.colorScheme.error)));
+                    }
 
-            if (snapshot.hasData) {
-              _currentPjpData = snapshot.data;
-            }
+                    if (snapshot.hasData) {
+                      _currentPjpData = snapshot.data;
+                    }
 
-            if (_currentPjpData == null) {
-              dev.log('Future completed but data==null', name: _log);
-              return Center(
-                child: Text('No data received',
-                    style: TextStyle(color: theme.colorScheme.error)),
-              );
-            }
+                    final pjpData = _currentPjpData ?? PjpData(pendingPjps: [], verifiedPjps: []);
+                    final pendingPjps = pjpData.pendingPjps;
+                    final verifiedPjps = pjpData.verifiedPjps;
 
-            final pjpData = _currentPjpData!;
-            final pendingPjps = pjpData.pendingPjps;
-            final verifiedPjps = pjpData.verifiedPjps;
+                    if (pendingPjps.isEmpty && verifiedPjps.isEmpty) {
+                      return RefreshIndicator(
+                        onRefresh: _handleRefresh,
+                        child: ListView(
+                          children: [
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+                            Center(child: Text('No visits planned for this date.', style: TextStyle(color: theme.colorScheme.onBackground.withOpacity(0.5)))),
+                          ],
+                        ),
+                      );
+                    }
 
-            if (pendingPjps.isEmpty && verifiedPjps.isEmpty) {
-              return RefreshIndicator(
-                onRefresh: _handleRefresh,
-                child: Stack(
-                  children: [
-                    ListView(),
-                    Center(
-                        child: Text('No PJPs found.',
-                            style: TextStyle(
-                                color: theme.colorScheme.onBackground
-                                    .withOpacity(0.7)))),
-                  ],
-                ),
-              );
-            }
+                    return RefreshIndicator(
+                      onRefresh: _handleRefresh,
+                      color: theme.colorScheme.onPrimary,
+                      backgroundColor: theme.colorScheme.primary,
+                      child: ListView(
+                        padding: const EdgeInsets.only(top: 8.0, bottom: 120),
+                        children: [
+                          if (pendingPjps.isNotEmpty) ...[
+                            PjpSectionHeader(title: 'PENDING APPROVAL (${pendingPjps.length})'),
+                            SizedBox(
+                              height: 110,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                itemCount: pendingPjps.length,
+                                itemBuilder: (context, index) {
+                                  return Container(
+                                    width: MediaQuery.of(context).size.width * 0.8,
+                                    margin: const EdgeInsets.only(right: 12.0),
+                                    child: PendingPjpCard(pjp: pendingPjps[index]),
+                                  );
+                                },
+                              ),
+                            ),
+                          ],
 
-            // --- ✅ NEW: Build UI with Column ---
-            return RefreshIndicator(
-              onRefresh: _handleRefresh,
-              color: theme.colorScheme.onPrimary,
-              backgroundColor: theme.colorScheme.primary,
-              child: ListView(
-                padding: const EdgeInsets.only(top: 8.0, bottom: 120),
-                children: [
-                  // 1) Pending section as horizontal list
-                  if (pendingPjps.isNotEmpty) ...[
-                    PjpSectionHeader(
-                        title: 'PENDING APPROVAL (${pendingPjps.length})'),
-                    SizedBox(
-                      height: 110,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        itemCount: pendingPjps.length,
-                        itemBuilder: (context, index) {
-                          return Container(
-                            width: MediaQuery.of(context).size.width * 0.8,
-                            margin: const EdgeInsets.only(right: 12.0),
-                            child: PendingPjpCard(pjp: pendingPjps[index]),
-                          );
-                        },
+                          if (verifiedPjps.isNotEmpty) ...[
+                            PjpSectionHeader(
+                              title: 'VERIFIED VISITS (${verifiedPjps.length})',
+                              isExpanded: _isDeckExpanded,
+                              onToggle: () {
+                                _collapseTimer?.cancel();
+                                setState(() => _isDeckExpanded = false);
+                              },
+                            ),
+                            _buildAnimatedDeck(verifiedPjps, theme),
+                          ],
+                        ],
                       ),
-                    ),
-                  ],
-
-                  // 2) Verified section as animated deck with header controls
-                  if (verifiedPjps.isNotEmpty) ...[
-                    PjpSectionHeader(
-                      title: 'VERIFIED VISITS (${verifiedPjps.length})',
-                      // ✅ pass state and collapse callback
-                      isExpanded: _isDeckExpanded,
-                      onToggle: () {
-                        _collapseTimer?.cancel();
-                        setState(() => _isDeckExpanded = false);
-                      },
-                    ),
-                    _buildAnimatedDeck(verifiedPjps, theme),
-                  ],
-                ],
-              ),
-            );
-            // --- END NEW UI ---
-          },
-        ),
-        Positioned(
-          bottom: 100.0,
-          right: 16.0,
-          child: FloatingActionButton(
-            onPressed: _showPjpOptions,
-            backgroundColor: theme.colorScheme.secondary,
-            foregroundColor: theme.colorScheme.onSecondary,
-            child: const Icon(Icons.add),
+                    );
+                  },
+                ),
+                Positioned(
+                  bottom: 100.0,
+                  right: 16.0,
+                  child: FloatingActionButton(
+                    onPressed: _showPjpOptions,
+                    backgroundColor: theme.colorScheme.secondary,
+                    foregroundColor: theme.colorScheme.onSecondary,
+                    child: const Icon(Icons.add),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  // --- ✅ The "Deck of Cards" Widget with auto-collapse ---
+  // --- ✅ NEW: Calendar Strip Widget ---
+  Widget _buildDateSelector(ThemeData theme) {
+    return Container(
+      height: 90,
+      color: theme.colorScheme.surface,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: 30, // 30 days range
+        itemBuilder: (context, index) {
+          // Start from 2 days ago
+          final date = DateTime.now().subtract(const Duration(days: 2)).add(Duration(days: index));
+          final isSelected = DateUtils.isSameDay(date, _selectedDate);
+          final isToday = DateUtils.isSameDay(date, DateTime.now());
+          
+          return GestureDetector(
+            onTap: () => _onDateSelected(date),
+            child: Container(
+              width: 60,
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected ? theme.colorScheme.primary : theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: isToday && !isSelected 
+                    ? Border.all(color: theme.colorScheme.primary.withOpacity(0.3), width: 1)
+                    : Border.all(color: theme.colorScheme.onSurface.withOpacity(0.1)),
+                boxShadow: isSelected 
+                    ? [BoxShadow(color: theme.colorScheme.primary.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 4))]
+                    : null,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    DateFormat('E').format(date).toUpperCase(), // MON, TUE
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? theme.colorScheme.onPrimary.withOpacity(0.8) : theme.colorScheme.onSurface.withOpacity(0.6),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat('d').format(date), // 27, 28
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  if (isToday)
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isSelected ? theme.colorScheme.secondary : theme.colorScheme.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    )
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildAnimatedDeck(List<Pjp> verifiedPjps, ThemeData theme) {
-    // Card layout props
     const double cardHeight = 110.0;
     const double collapsedOverlap = 15.0;
     const double expandedSpacing = 115.0;
 
-    // Container height animate between collapsed and expanded
-    final double collapsedHeight =
-        (verifiedPjps.length - 1) * collapsedOverlap + cardHeight;
-    final double expandedHeight =
-        (verifiedPjps.length - 1) * expandedSpacing + cardHeight;
+    final double collapsedHeight = (verifiedPjps.length - 1) * collapsedOverlap + cardHeight;
+    final double expandedHeight = (verifiedPjps.length - 1) * expandedSpacing + cardHeight;
 
     return GestureDetector(
       onTap: () {
-        // cancel any existing timer
         _collapseTimer?.cancel();
-
         setState(() {
-          _isDeckExpanded = !_isDeckExpanded; // toggle
+          _isDeckExpanded = !_isDeckExpanded;
         });
-
-        // auto-collapse after 5 seconds
         if (_isDeckExpanded) {
           _collapseTimer = Timer(const Duration(seconds: 5), () {
-            if (mounted) {
-              dev.log('Auto-collapsing deck...', name: _log);
-              setState(() => _isDeckExpanded = false);
-            }
+            if (mounted) setState(() => _isDeckExpanded = false);
           });
         }
       },
@@ -393,13 +393,10 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
         child: Stack(
           children: List.generate(verifiedPjps.length, (index) {
             final pjp = verifiedPjps[index];
-
             return AnimatedPositioned(
               duration: const Duration(milliseconds: 400),
               curve: Curves.easeInOutCubic,
-              top: _isDeckExpanded
-                  ? (index * expandedSpacing)
-                  : (index * collapsedOverlap),
+              top: _isDeckExpanded ? (index * expandedSpacing) : (index * collapsedOverlap),
               left: 0,
               right: 0,
               key: ValueKey(pjp.id),
@@ -412,7 +409,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                       backgroundColor: theme.colorScheme.primary,
                       foregroundColor: theme.colorScheme.onPrimary,
                       icon: Icons.route,
-                      label: 'Start Journey',
+                      label: 'Start',
                       borderRadius: BorderRadius.circular(16),
                     ),
                   ],

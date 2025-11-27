@@ -392,7 +392,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
     if (_currentPjpId != null) {
       try {
-        await _apiService.updatePjp(_currentPjpId!, {'status': 'completed'});
+        await _apiService.updatePjp(_currentPjpId!, {'status': 'COMPLETED'});
         debugPrint("✅ PJP status updated to completed.");
       } catch (e) {
         debugPrint("❌ Failed to update PJP status to completed: $e");

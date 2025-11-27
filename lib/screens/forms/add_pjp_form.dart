@@ -78,7 +78,7 @@ class AddPjpFormState extends State<AddPjpForm> {
         createdById: int.parse(widget.employee.id),
         
         // This is the JOURNEY status (pending, started, completed)
-        status: 'pending', 
+        status: 'PENDING', 
         
         // This is the ADMIN APPROVAL status (PENDING, VERIFIED)
         verificationStatus: 'PENDING', 

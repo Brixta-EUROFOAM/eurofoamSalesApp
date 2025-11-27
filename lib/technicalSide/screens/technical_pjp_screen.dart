@@ -1,8 +1,10 @@
+// lib/technicalSide/screens/technical_pjp_screen.dart
 import 'package:assetarchiverflutter/models/employee_model.dart';
 import 'package:assetarchiverflutter/models/pjp_model.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
 import 'package:assetarchiverflutter/technicalSide/models/sites_model.dart';
-import 'package:assetarchiverflutter/technicalSide/screens/forms/create_technical_pjp_form.dart';
+import 'package:assetarchiverflutter/technicalSide/screens/forms/add_technical_pjp_form.dart'; 
+import 'package:assetarchiverflutter/technicalSide/screens/bulk_technical_pjp_wizard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -25,6 +27,9 @@ class TechnicalPjpScreen extends StatefulWidget {
 class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   final ApiService _apiService = ApiService();
   late Future<List<Pjp>> _pjpFuture;
+  
+  // --- ✅ NEW: Track selected date ---
+  DateTime _selectedDate = DateTime.now();
 
   // --- FINTECH THEME PALETTE ---
   final Color _bgLight       = const Color(0xFFF3F4F6); // Corporate Light Grey
@@ -41,26 +46,94 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   }
 
   void _refreshPjps() {
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    // --- ✅ UPDATED: Use _selectedDate instead of DateTime.now() ---
+    final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
     setState(() {
       _pjpFuture = _apiService.fetchPjpsForUser(
         int.parse(widget.employee.id),
-        startDate: today,
-        endDate: today,
-        status: 'APPROVED', 
+        startDate: dateStr,
+        endDate: dateStr,
       );
     });
   }
 
-  void _showCreatePjpForm() {
+  void _onDateSelected(DateTime date) {
+    setState(() {
+      _selectedDate = date;
+    });
+    _refreshPjps();
+  }
+
+  void _showCreateOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16.0),
+            child: Wrap(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(left: 16, bottom: 8),
+                  child: Text("Plan Visit", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 18)),
+                ),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: _bgLight, borderRadius: BorderRadius.circular(8)),
+                    child: Icon(Icons.add_location_alt, color: _cardNavy),
+                  ),
+                  title: Text('Add Single Visit', style: TextStyle(fontWeight: FontWeight.w600, color: _textDark)),
+                  subtitle: Text("For specific date", style: TextStyle(color: _textGrey)),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _showSingleCreateForm();
+                  },
+                ),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: _bgLight, borderRadius: BorderRadius.circular(8)),
+                    child: Icon(Icons.calendar_month, color: _accentGreen),
+                  ),
+                  title: Text('Bulk Monthly Plan', style: TextStyle(fontWeight: FontWeight.w600, color: _textDark)),
+                  subtitle: Text("Auto-schedule multiple sites", style: TextStyle(color: _textGrey)),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    _showBulkWizard();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showSingleCreateForm() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => CreateTechnicalPjpForm(
+      builder: (context) => AddTechnicalPjpForm(
         employee: widget.employee,
         onPjpCreated: _refreshPjps,
       ),
+    );
+  }
+
+  void _showBulkWizard() {
+    Navigator.push(
+      context, 
+      MaterialPageRoute(
+        builder: (context) => BulkTechnicalPjpWizardScreen(
+          employee: widget.employee, 
+          onPjpCreated: _refreshPjps
+        )
+      )
     );
   }
 
@@ -93,13 +166,14 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final todayDate = DateFormat('d MMMM, yyyy').format(DateTime.now());
-    final todayDay = DateFormat('EEEE').format(DateTime.now());
+    // Use selected date for the title
+    final displayDate = DateFormat('d MMMM, yyyy').format(_selectedDate);
+    final displayDay = DateFormat('EEEE').format(_selectedDate);
+    final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
 
     return Scaffold(
       backgroundColor: _bgLight,
       
-      // --- 1. CLEAN APP BAR ---
       appBar: AppBar(
         backgroundColor: _bgLight,
         elevation: 0,
@@ -112,7 +186,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                "My Visits",
+                isToday ? "My Visits (Today)" : "Visits",
                 style: TextStyle(
                   color: _textDark,
                   fontSize: 24,
@@ -121,7 +195,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                 ),
               ),
               Text(
-                "$todayDay, $todayDate",
+                "$displayDay, $displayDate",
                 style: TextStyle(
                   color: _textGrey,
                   fontSize: 13,
@@ -135,7 +209,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 20.0),
             child: InkWell(
-              onTap: _showCreatePjpForm,
+              onTap: _showCreateOptions, 
               borderRadius: BorderRadius.circular(12),
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -151,7 +225,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                     Icon(Icons.add, color: Colors.white, size: 18),
                     SizedBox(width: 4),
                     Text(
-                      "Add Visit",
+                      "Plan Visit",
                       style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
                     ),
                   ],
@@ -162,15 +236,17 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
         ],
       ),
 
-      body: RefreshIndicator(
-        onRefresh: () async => _refreshPjps(),
-        color: _cardNavy,
-        backgroundColor: Colors.white,
-        child: Column(
-          children: [
-            const SizedBox(height: 10),
-            // --- 2. LIST ---
-            Expanded(
+      body: Column(
+        children: [
+          // --- ✅ NEW: Horizontal Date Selector ---
+          _buildDateSelector(),
+          const SizedBox(height: 10),
+          
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async => _refreshPjps(),
+              color: _cardNavy,
+              backgroundColor: Colors.white,
               child: FutureBuilder<List<Pjp>>(
                 future: _pjpFuture,
                 builder: (context, snapshot) {
@@ -184,7 +260,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
 
                   final pjps = snapshot.data!;
                   return ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 80), // Bottom padding for nav
                     itemCount: pjps.length,
                     separatorBuilder: (ctx, i) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
@@ -195,15 +271,86 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                 },
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  // --- WIDGET BUILDERS ---
+  // --- ✅ NEW: Calendar Strip Widget ---
+  Widget _buildDateSelector() {
+    return Container(
+      height: 90,
+      color: _bgLight,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: 30, // Show previous 2 days + next 27 days
+        itemBuilder: (context, index) {
+          // Start from 2 days ago
+          final date = DateTime.now().subtract(const Duration(days: 2)).add(Duration(days: index));
+          final isSelected = DateUtils.isSameDay(date, _selectedDate);
+          final isToday = DateUtils.isSameDay(date, DateTime.now());
+          
+          return GestureDetector(
+            onTap: () => _onDateSelected(date),
+            child: Container(
+              width: 60,
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected ? _cardNavy : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: isToday && !isSelected 
+                    ? Border.all(color: _cardNavy.withOpacity(0.3), width: 1)
+                    : null,
+                boxShadow: isSelected 
+                    ? [BoxShadow(color: _cardNavy.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 4))]
+                    : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 4, offset: const Offset(0, 2))],
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    DateFormat('E').format(date).toUpperCase(), // Mon, Tue...
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.white.withOpacity(0.7) : _textGrey,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    DateFormat('d').format(date), // 27, 28...
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? Colors.white : _textDark,
+                    ),
+                  ),
+                  if (isToday)
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isSelected ? _accentGreen : _cardNavy,
+                        shape: BoxShape.circle,
+                      ),
+                    )
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
 
   Widget _buildVisitCard(Pjp pjp) {
+    final isPending = pjp.status.toUpperCase() == 'PENDING';
+    final statusColor = isPending ? Colors.orange : _accentGreen;
+    final statusText = isPending ? "PENDING" : "APPROVED";
+
     return Slidable(
       startActionPane: ActionPane(
         motion: const StretchMotion(),
@@ -239,23 +386,34 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  // Icon Box
                   Container(
                     height: 48,
                     width: 48,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF), // Light Blue
+                      color: const Color(0xFFEFF6FF), 
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: const Icon(Icons.location_city_rounded, color: Color(0xFF2563EB), size: 24),
                   ),
                   const SizedBox(width: 16),
                   
-                  // Text Info
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          margin: const EdgeInsets.only(bottom: 4),
+                          decoration: BoxDecoration(
+                            color: statusColor.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            statusText, 
+                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
+                          ),
+                        ),
+
                         Text(
                           pjp.siteName ?? pjp.description ?? "Site Visit", 
                           style: TextStyle(
@@ -285,7 +443,6 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                     ),
                   ),
 
-                  // "Start" Button (Visual only, whole card taps)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
@@ -337,12 +494,12 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            "You're all clear for today.", 
+            "Select another date above.", 
             style: TextStyle(color: _textGrey, fontSize: 14)
           ),
           const SizedBox(height: 24),
           OutlinedButton.icon(
-            onPressed: _showCreatePjpForm,
+            onPressed: _showCreateOptions, 
             icon: const Icon(Icons.add),
             label: const Text("Create Plan"),
             style: OutlinedButton.styleFrom(
