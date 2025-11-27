@@ -1,6 +1,6 @@
-import 'dart:convert';// You might need this
+// lib/models/daily_visit_report_model.dart
+import 'dart:convert';
 
-// Helper functions (unchanged)
 DailyVisitReport dailyVisitReportFromJson(String str) =>
     DailyVisitReport.fromJson(json.decode(str));
 String dailyVisitReportToJson(DailyVisitReport data) =>
@@ -9,6 +9,9 @@ String dailyVisitReportToJson(DailyVisitReport data) =>
 class DailyVisitReport {
   final String? id;
   final int userId;
+  final String? dealerId;
+  final String? subDealerId;
+  
   final DateTime reportDate;
   final String dealerType;
   final String? dealerName;
@@ -34,13 +37,13 @@ class DailyVisitReport {
   final String? outTimeImageUrl;
   final DateTime? createdAt;
   final DateTime? updatedAt;
-  
-  // --- ✅ ADD THIS FIELD ---
   final String? pjpId; 
 
   DailyVisitReport({
     this.id,
     required this.userId,
+    this.dealerId,    
+    this.subDealerId, 
     required this.reportDate,
     required this.dealerType,
     this.dealerName,
@@ -66,26 +69,20 @@ class DailyVisitReport {
     this.outTimeImageUrl,
     this.createdAt,
     this.updatedAt,
-    
-    // --- ✅ ADD THIS TO THE CONSTRUCTOR ---
     this.pjpId, 
   });
 
-  // --- (Your fromJson factory is probably fine, but double-check) ---
   factory DailyVisitReport.fromJson(Map<String, dynamic> json) {
-    // Helper to safely parse brandSelling
     List<String> _parseBrandSelling(dynamic jsonField) {
       if (jsonField is List) {
         return jsonField.map((e) => e.toString()).toList();
       }
       if (jsonField is String) {
-        // Handle comma-separated string just in case
         return jsonField.split(',').map((e) => e.trim()).toList();
       }
       return [];
     }
     
-    // Find dealer name
     String? foundDealerName = json['dealerName']?.toString();
     if (json['dealer'] is Map<String, dynamic>) {
       foundDealerName ??= json['dealer']['name']?.toString();
@@ -94,6 +91,8 @@ class DailyVisitReport {
     return DailyVisitReport(
       id: json['id']?.toString(),
       userId: json['userId'] ?? 0,
+      dealerId: json['dealerId']?.toString(), 
+      subDealerId: json['subDealerId']?.toString(), 
       reportDate: DateTime.tryParse(json['reportDate'] ?? '') ?? DateTime.now(),
       dealerType: json['dealerType'] ?? 'Unknown',
       dealerName: foundDealerName,
@@ -119,17 +118,16 @@ class DailyVisitReport {
       outTimeImageUrl: json['outTimeImageUrl'],
       createdAt: DateTime.tryParse(json['createdAt'] ?? ''),
       updatedAt: DateTime.tryParse(json['updatedAt'] ?? ''),
-      
-      // --- ✅ ADD THIS TO fromJson ---
       pjpId: json['pjpId']?.toString(), 
     );
   }
 
-  // --- (Your toJson method needs to be updated) ---
   Map<String, dynamic> toJson() {
     return {
       'userId': userId,
-      'reportDate': reportDate.toIso8601String().split('T').first, // YYYY-MM-DD
+      'dealerId': dealerId, 
+      'subDealerId': subDealerId,
+      'reportDate': reportDate.toIso8601String().split('T').first,
       'dealerType': dealerType,
       'dealerName': dealerName,
       'subDealerName': subDealerName,
@@ -148,12 +146,10 @@ class DailyVisitReport {
       'feedbacks': feedbacks,
       'solutionBySalesperson': solutionBySalesperson,
       'anyRemarks': anyRemarks,
-      'checkInTime': checkInTime.toIso8601String(), // Full ISO string
-      'checkOutTime': checkOutTime?.toIso8601String(), // Full ISO string
+      'checkInTime': checkInTime.toIso8601String(),
+      'checkOutTime': checkOutTime?.toIso8601String(),
       'inTimeImageUrl': inTimeImageUrl,
       'outTimeImageUrl': outTimeImageUrl,
-      
-      // --- ✅ ADD THIS TO toJson ---
       'pjpId': pjpId,
     };
   }

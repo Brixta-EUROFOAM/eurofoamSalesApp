@@ -1,30 +1,23 @@
 // lib/screens/forms/create_dvr.dart
+
 import 'dart:io';
-import 'dart:ui';
-import 'dart:developer' as dev;
-import 'dart:async'; // ✅ timers
-import 'package:assetarchiverflutter/api/api_service.dart';
-import 'package:assetarchiverflutter/models/daily_visit_report_model.dart';
-import 'package:assetarchiverflutter/models/dealer_model.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/models/pjp_model.dart'; // ✅ PJP
+import 'dart:async';
+import 'dart:convert'; // Added for debug printing JSON
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
-const _log = 'CreateDvrScreen';
-const _calibratedDealersKey = 'calibrated_dealers';
+import 'package:assetarchiverflutter/api/api_service.dart';
+import 'package:assetarchiverflutter/models/daily_visit_report_model.dart';
+import 'package:assetarchiverflutter/models/dealer_model.dart';
+import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:assetarchiverflutter/models/pjp_model.dart';
 
 class CreateDvrScreen extends StatefulWidget {
   final Employee employee;
-
-  // --- ✅ NEW PARAMETERS ---
-  final Pjp? pjp;
-  final Dealer? dealer;
-  final DateTime? initialCheckInTime;
-  // ---
+  final Pjp? pjp; 
+  final Dealer? dealer; 
+  final DateTime? initialCheckInTime; 
 
   const CreateDvrScreen({
     super.key,
@@ -39,801 +32,694 @@ class CreateDvrScreen extends StatefulWidget {
 }
 
 class _CreateDvrScreenState extends State<CreateDvrScreen> {
-  // Keys & Services
   final _formKey = GlobalKey<FormState>();
-  final _apiService = ApiService();
-  final _imagePicker = ImagePicker();
+  final ApiService _apiService = ApiService();
+  final ImagePicker _picker = ImagePicker();
 
-  // Form Controllers
-  final _dealerTotalPotentialController = TextEditingController();
-  final _dealerBestPotentialController = TextEditingController();
-  final _brandSellingController = TextEditingController();
+  // --- Controllers ---
   final _contactPersonController = TextEditingController();
-  final _contactPersonPhoneNoController = TextEditingController();
+  final _contactPhoneController = TextEditingController();
+  final _brandSellingController = TextEditingController();
+  
+  // Editable Controllers for Potentials
+  final _potentialController = TextEditingController(); 
+  final _bestPotentialController = TextEditingController(); 
+  
   final _todayOrderMtController = TextEditingController();
-  final _todayCollectionRupeesController = TextEditingController();
-  final _overdueAmountController = TextEditingController();
-  final _feedbacksController = TextEditingController();
-  final _solutionBySalespersonController = TextEditingController();
-  final _anyRemarksController = TextEditingController();
-
-  // State Management Variables
+  final _todayCollectionController = TextEditingController();
+  
+  final _feedbackController = TextEditingController();
+  final _remarksController = TextEditingController();
+  final _solutionController = TextEditingController();
+  
+  // --- State ---
   bool _isSubmitting = false;
-  bool _isLoadingDealers = true;
   bool _isUploadingImage = false;
-
-  // Data Holders for the Workflow
-  List<Dealer> _allDealers = [];
+  bool _isSubDealerVisit = false; // Track sub-dealer visit
+  
   Dealer? _selectedDealer;
-  String? _selectedVisitType;
-  DateTime? _checkInTime;
-  File? _inTimeImageFile;
-  String? _inTimeImageUrl;
+  Dealer? _selectedParentDealer; // Parent dealer for sub-dealer visit
+  List<Dealer> _parentDealers = []; // List for parent dropdown
 
-  // --- ✅ NEW TIMER STATE ---
-  Timer? _autoSubmitTimer;
-  static const int _minVisitMinutes = 1;
-  static const int _maxVisitMinutes = 60;
-  // ---
+  String? _visitType = 'PLANNED'; 
+  
+  // Check-In Data
+  DateTime? _checkInTime;
+  String? _inTimeImageUrl;
+  File? _inTimeImageFile;
+  Position? _checkInLocation;
+
+  // --- THEME COLORS ---
+  static const Color _surfaceWhite = Colors.white;
+  static const Color _textDark = Color(0xFF111827);
+  static const Color _textGrey = Color(0xFF6B7280);
+  static const Color _cardNavy = Color(0xFF0F172A);
+  static const Color _inputFill = Color(0xFFF9FAFB);
+  static const Color _accentGreen = Color(0xFF10B981);
 
   @override
   void initState() {
     super.initState();
+    _initializeData();
+    _fetchParentDealers();
+  }
 
-    // --- ✅ NEW LOGIC: prefill when opened from Journey, else load dealers ---
-    if (widget.pjp != null &&
-        widget.dealer != null &&
-        widget.initialCheckInTime != null) {
-      dev.log('DVR screen opened from Journey. Pre-filling data.', name: _log);
-
-      // Use the visited dealer only; we bypass the dealer dropdown step
-      _allDealers = [widget.dealer!];
-      _selectedDealer = widget.dealer!;
-      _isLoadingDealers = false;
-
-      _checkInTime = widget.initialCheckInTime;
-
-      // Auto-fill read-only dealer fields and seed feedback from PJP
-      _dealerTotalPotentialController.text =
-          widget.dealer!.totalPotential.toString();
-      _dealerBestPotentialController.text =
-          widget.dealer!.bestPotential.toString();
-      _brandSellingController.text = widget.dealer!.brandSelling.join(', ');
-      _contactPersonController.text = widget.dealer!.name;
-      _contactPersonPhoneNoController.text = widget.dealer!.phoneNo;
-      _feedbacksController.text = widget.pjp!.description ?? '';
-
-      // Kick off auto-submit safety timer
-      _startAutoSubmitTimer();
-    } else {
-      _fetchDealersForDropdown();
+  void _initializeData() {
+    // Case 1: PJP Journey (Pre-filled)
+    if (widget.dealer != null) {
+      _onDealerSelected(widget.dealer!);
+      setState(() {
+        _checkInTime = widget.initialCheckInTime ?? DateTime.now();
+        _visitType = 'PLANNED'; 
+        if (widget.dealer!.parentDealerId != null) {
+           _isSubDealerVisit = true;
+           // Logic to handle pre-filling parent would go here if needed
+        }
+      });
+    } 
+    // Case 2: Manual DVR (Ad-hoc)
+    else {
+      setState(() {
+        _visitType = 'UNPLANNED';
+      });
     }
-    // --- END NEW LOGIC ---
   }
 
-  @override
-  void dispose() {
-    _dealerTotalPotentialController.dispose();
-    _dealerBestPotentialController.dispose();
-    _brandSellingController.dispose();
-    _contactPersonController.dispose();
-    _contactPersonPhoneNoController.dispose();
-    _todayOrderMtController.dispose();
-    _todayCollectionRupeesController.dispose();
-    _overdueAmountController.dispose();
-    _feedbacksController.dispose();
-    _solutionBySalespersonController.dispose();
-    _anyRemarksController.dispose();
-    _autoSubmitTimer?.cancel(); // ✅ cancel timer
-    super.dispose();
-  }
-
-  // --- Data Fetching ---
-  Future<void> _fetchDealersForDropdown() async {
+  Future<void> _fetchParentDealers() async {
     try {
-      final dealers = await _apiService.fetchDealers(
+       final dealers = await _apiService.fetchDealers(
         userId: int.tryParse(widget.employee.id),
+        limit: 1000,
       );
       if (mounted) {
         setState(() {
-          _allDealers = dealers;
-          _isLoadingDealers = false;
+           _parentDealers = dealers;
         });
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load dealers: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        setState(() => _isLoadingDealers = false);
-      }
+      debugPrint("Error loading parent dealers: $e");
     }
   }
 
-  // --- SharedPreferences helpers (one-time calibration memory) ---
-  Future<bool> _isDealerCalibrated(String dealerId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList(_calibratedDealersKey) ?? [];
-    return list.contains(dealerId);
-  }
-
-  Future<void> _markDealerAsCalibrated(String dealerId) async {
-    final prefs = await SharedPreferences.getInstance();
-    final list = prefs.getStringList(_calibratedDealersKey) ?? [];
-    if (!list.contains(dealerId)) {
-      list.add(dealerId);
-      await prefs.setStringList(_calibratedDealersKey, list);
-      dev.log('Dealer $dealerId marked as calibrated.', name: _log);
-    }
-  }
-
-  // --- Location helper with permissions & timeouts ---
-  Future<Position?> _getCurrentPosition() async {
-    try {
-      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        if (!mounted) return null;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location services are disabled.')),
-        );
-        return null;
-      }
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          if (!mounted) return null;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Location permission denied.')),
-          );
-          return null;
-        }
-      }
-      if (permission == LocationPermission.deniedForever) {
-        if (!mounted) return null;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Location permission permanently denied.'),
-          ),
-        );
-        return null;
-      }
-
-      return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 15),
-      );
-    } catch (e) {
-      if (!mounted) return null;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to get location: $e')));
-      return null;
-    }
-  }
-
-  // --- Simple camera helper for check-in / check-out photos ---
-  Future<File?> _captureImage() async {
-    final x = await _imagePicker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 70,
-      maxWidth: 1024,
-    );
-    return x == null ? null : File(x.path);
-  }
-
-  // --- Workflow Logic ---
-  void _onDealerSelected(Dealer? dealer) {
-    if (dealer == null) return;
+  void _onDealerSelected(Dealer dealer) {
     setState(() {
       _selectedDealer = dealer;
-      _dealerTotalPotentialController.text = dealer.totalPotential.toString();
-      _dealerBestPotentialController.text = dealer.bestPotential.toString();
-      _brandSellingController.text = dealer.brandSelling.join(', ');
-      _contactPersonController.text = dealer.name;
-      _contactPersonPhoneNoController.text = dealer.phoneNo;
+      
+      // Auto-detect sub-dealer
+      if (dealer.parentDealerId != null) {
+        _isSubDealerVisit = true;
+      } else {
+        _isSubDealerVisit = false;
+        _selectedParentDealer = null;
+      }
+      
+      // Pre-fill fields
+      _contactPersonController.text = dealer.name; 
+      _contactPhoneController.text = dealer.phoneNo;
+      _brandSellingController.text = dealer.brandSelling.join(", ");
+      
+      // Pre-fill Potentials
+      _potentialController.text = dealer.totalPotential.toString();
+      _bestPotentialController.text = dealer.bestPotential.toString();
     });
+  }
+
+  // --- Search Dialog ---
+  Future<void> _openDealerSearch() async {
+    final result = await showDialog<Dealer>(
+      context: context,
+      builder: (context) => _ServerDealerSearchDialog(
+        api: _apiService, 
+        userId: int.tryParse(widget.employee.id)
+      ),
+    );
+
+    if (result != null) {
+      _onDealerSelected(result);
+    }
   }
 
   Future<void> _handleCheckIn() async {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    if (_selectedDealer == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a dealer first.")));
+      return;
+    }
+
     setState(() => _isUploadingImage = true);
+    
     try {
-      // Take photo
-      final pickedFile = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 70,
-        maxWidth: 1024,
-      );
-      if (pickedFile == null) {
-        if (mounted) setState(() => _isUploadingImage = false);
+      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      
+      final XFile? image = await _picker.pickImage(source: ImageSource.camera, imageQuality: 50);
+      if (image == null) {
+        setState(() => _isUploadingImage = false);
         return;
       }
-      final imageFile = File(pickedFile.path);
-      if (mounted) setState(() => _inTimeImageFile = imageFile);
+      
+      final file = File(image.path);
+      final url = await _apiService.uploadImageToR2(file);
 
-      // Upload to R2
-      final imageUrl = await _apiService.uploadImageToR2(imageFile);
-
-      // Set state
       if (mounted) {
         setState(() {
           _checkInTime = DateTime.now();
-          _inTimeImageUrl = imageUrl;
+          _checkInLocation = position;
+          _inTimeImageFile = file;
+          _inTimeImageUrl = url;
+          _isUploadingImage = false;
         });
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text('Checked-In successfully.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        // Start the safety timer only when check-in happens from manual flow
-        _startAutoSubmitTimer();
       }
     } catch (e) {
       if (mounted) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text('Check-In Failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        setState(() => _isUploadingImage = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Check-in failed: $e"), backgroundColor: Colors.red));
       }
-    } finally {
-      if (mounted) setState(() => _isUploadingImage = false);
     }
   }
 
-  // --- ✅ NEW TIMER FUNCTIONS ---
-  void _startAutoSubmitTimer() {
-    _autoSubmitTimer?.cancel();
-    _autoSubmitTimer = Timer(const Duration(minutes: _maxVisitMinutes), () {
-      dev.log('60-minute timer fired. Auto-submitting DVR.', name: _log);
-      _autoSubmitDvr();
-    });
-  }
-
-  /// Auto-submits a partial DVR if the user forgets.
-  Future<void> _autoSubmitDvr() async {
-    if (!mounted) return;
-    if (_isSubmitting) return;
-
-    setState(() => _isSubmitting = true);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
-
-    try {
-      final Position? pos = await _getCurrentPosition();
-      if (pos == null) throw Exception('Auto-submit failed: Could not get location.');
-      if (_selectedDealer == null || _checkInTime == null) {
-        throw Exception('Auto-submit failed: Missing dealer or check-in time.');
-      }
-
-      final dvr = DailyVisitReport(
-        userId: int.parse(widget.employee.id),
-        reportDate: DateTime.now(),
-        dealerType: _selectedDealer!.type,
-        dealerName: _selectedDealer!.name,
-        location: _selectedDealer!.address,
-        latitude: pos.latitude,
-        longitude: pos.longitude,
-        visitType: 'PLANNED',
-        dealerTotalPotential: _selectedDealer!.totalPotential,
-        dealerBestPotential: _selectedDealer!.bestPotential,
-        brandSelling: _selectedDealer!.brandSelling,
-        todayOrderMt: 0.0,
-        todayCollectionRupees: 0.0,
-        feedbacks: _feedbacksController.text.isNotEmpty
-            ? _feedbacksController.text
-            : "Auto-submitted after 60-minute timeout.",
-        anyRemarks: "Auto-submitted after 60-minute timeout.",
-        checkInTime: _checkInTime!,
-        checkOutTime: DateTime.now(),
-        inTimeImageUrl: _inTimeImageUrl,
-        outTimeImageUrl: null,
-        pjpId: widget.pjp?.id,
-      );
-
-      await _apiService.createDvr(dvr);
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('Visit auto-submitted due to 60-minute timeout.'),
-          backgroundColor: Colors.blue,
-        ),
-      );
-      navigator.pop();
-    } catch (e) {
-      dev.log('Auto-submit DVR failed: $e', name: _log, error: e);
-      // Silent fail in background; no snackbar needed beyond debug log
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
-  // --- END NEW TIMER FUNCTIONS ---
-
-  // --- ✅ THIS IS THE FULLY UPGRADED SUBMIT FUNCTION ---
   Future<void> _submitDvr() async {
-    // 1. Cancel the auto-submit timer. The user is submitting manually.
-    _autoSubmitTimer?.cancel();
-
-    if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please fill in all required fields.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    // --- ✅ RULE 1: 10-MINUTE MINIMUM ---
+    if (!_formKey.currentState!.validate()) return;
     if (_checkInTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please check-in with a photo before submitting.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Check-in is required!")));
+       return;
     }
-    final visitDuration = DateTime.now().difference(_checkInTime!);
-    if (visitDuration.inMinutes < _minVisitMinutes) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Visit is too short. Please spend at least $_minVisitMinutes minutes.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+    
+    if (_selectedDealer?.id == null) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Selected Dealer has invalid ID.")));
+       return;
     }
-    // --- END RULE 1 ---
+
+    // Sub-Dealer Validation
+    if (_isSubDealerVisit && _selectedParentDealer == null && _selectedDealer!.parentDealerId == null) {
+       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select the Parent Dealer.")));
+       return;
+    }
 
     setState(() => _isSubmitting = true);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
-
-    // We get dealerId from _selectedDealer, set during prefill or selection
-    final String dealerId = _selectedDealer!.id!;
 
     try {
-      // 1) Accurate location
-      final Position? currentPosition = await _getCurrentPosition();
-      if (currentPosition == null) {
-        throw Exception('Could not get your current location.');
+      // 1. Capture Check-Out Photo
+      final XFile? outImage = await _picker.pickImage(source: ImageSource.camera, imageQuality: 50);
+      String? outTimeUrl;
+      
+      if (outImage != null) {
+        outTimeUrl = await _apiService.uploadImageToR2(File(outImage.path));
       }
 
-      // 2) Geofence Calibration
-      bool isAlreadyCalibrated = await _isDealerCalibrated(dealerId);
-      double dealerLat;
-      double dealerLon;
+      // 2. Parse Brands
+      final List<String> brandsList = _brandSellingController.text
+          .split(',')
+          .map((e) => e.trim())
+          .where((element) => element.isNotEmpty)
+          .toList();
 
-      if (!isAlreadyCalibrated) {
-        dev.log('First time DVR for $dealerId. Calibrating geofence...', name: _log);
-        try {
-          final newLat = currentPosition.latitude;
-          final newLon = currentPosition.longitude;
-          const newRadius = 25.0;
+      // 3. Determine IDs
+      String? finalDealerId;
+      String? finalSubDealerId;
+      String finalDealerType;
 
-          await _apiService.updateDealerGeofence(
-            dealerId: dealerId,
-            latitude: newLat,
-            longitude: newLon,
-            radius: newRadius,
-          );
-          await _markDealerAsCalibrated(dealerId);
-          dealerLat = newLat;
-          dealerLon = newLon;
-          scaffoldMessenger.showSnackBar(
-            const SnackBar(
-                content: Text('Dealer location calibrated!'),
-                backgroundColor: Colors.blue),
-          );
-        } catch (e) {
-          dev.log('WARNING: Geofence calibration failed. Using old coordinates.',
-              name: _log, error: e);
-          if (_selectedDealer!.latitude == null ||
-              _selectedDealer!.longitude == null) {
-            throw Exception('Dealer location is missing.');
-          }
-          dealerLat = _selectedDealer!.latitude!;
-          dealerLon = _selectedDealer!.longitude!;
-        }
+      if (_isSubDealerVisit) {
+         finalSubDealerId = _selectedDealer!.id;
+         finalDealerId = _selectedParentDealer?.id ?? _selectedDealer!.parentDealerId;
+         finalDealerType = 'Sub Dealer';
+         if (finalDealerId == null) throw Exception("Parent Dealer ID missing for Sub-Dealer visit");
       } else {
-        dev.log('Dealer $dealerId is already calibrated.', name: _log);
-        if (_selectedDealer!.latitude == null ||
-            _selectedDealer!.longitude == null) {
-          throw Exception('Dealer location is missing.');
-        }
-        dealerLat = _selectedDealer!.latitude!;
-        dealerLon = _selectedDealer!.longitude!;
+         finalDealerId = _selectedDealer!.id;
+         finalSubDealerId = null;
+         finalDealerType = 'Dealer';
       }
 
-      // --- ✅ RULE 2: GEOFENCE LOCK (200 m) ---
-      final double distance = Geolocator.distanceBetween(
-        currentPosition.latitude,
-        currentPosition.longitude,
-        dealerLat,
-        dealerLon,
-      );
-      if (distance > 200) {
-        throw Exception(
-            'You are too far from the dealer (${distance.toStringAsFixed(0)}m) to submit this report.');
-      }
-      // --- END RULE 2 ---
+      // 4. Location Logic
+      String locationStr = _checkInLocation != null 
+            ? "${_checkInLocation!.latitude},${_checkInLocation!.longitude}" 
+            : (_selectedDealer!.address.length > 490 ? _selectedDealer!.address.substring(0, 490) : _selectedDealer!.address);
 
-      // 4) Capture and upload check-out photo
-      scaffoldMessenger.showSnackBar(
-          const SnackBar(content: Text('Please take a check-out photo.')));
-      final imageFile = await _captureImage();
-      if (imageFile == null) {
-        throw Exception('Check-out photo cancelled.');
-      }
-
-      scaffoldMessenger.showSnackBar(
-          const SnackBar(content: Text('Uploading check-out photo...')));
-      final outTimeImageUrl = await _apiService.uploadImageToR2(imageFile);
-
-      // 5) Build and submit the DVR (matches your schema)
+      // 5. Construct DVR Object
       final dvr = DailyVisitReport(
         userId: int.parse(widget.employee.id),
         reportDate: DateTime.now(),
-        dealerType: _selectedDealer!.type,
-        dealerName: _selectedDealer!.name,
-        location: _selectedDealer!.address,
-        latitude: currentPosition.latitude,
-        longitude: currentPosition.longitude,
-        visitType: 'PLANNED',
-        dealerTotalPotential: _selectedDealer!.totalPotential,
-        dealerBestPotential: _selectedDealer!.bestPotential,
-        brandSelling: _selectedDealer!.brandSelling,
-        todayOrderMt: double.tryParse(_todayOrderMtController.text) ?? 0.0,
-        todayCollectionRupees:
-            double.tryParse(_todayCollectionRupeesController.text) ?? 0.0,
-        feedbacks: _feedbacksController.text,
-        anyRemarks:
-            _anyRemarksController.text.isEmpty ? null : _anyRemarksController.text,
+        
+        dealerId: finalDealerId, 
+        subDealerId: finalSubDealerId,
+        
+        dealerType: finalDealerType,
+        dealerName: _isSubDealerVisit ? _selectedParentDealer?.name : _selectedDealer!.name, 
+        subDealerName: _isSubDealerVisit ? _selectedDealer!.name : null,
+        
+        location: locationStr,
+        latitude: _checkInLocation?.latitude ?? _selectedDealer!.latitude ?? 0.0,
+        longitude: _checkInLocation?.longitude ?? _selectedDealer!.longitude ?? 0.0,
+        visitType: _visitType!,
+        
+        // Edited Stats
+        dealerTotalPotential: double.tryParse(_potentialController.text.trim()) ?? 0.0,
+        dealerBestPotential: double.tryParse(_bestPotentialController.text.trim()) ?? 0.0,
+        
+        brandSelling: brandsList.isEmpty ? ["N/A"] : brandsList,
+        
+        contactPerson: _contactPersonController.text.trim(),
+        contactPersonPhoneNo: _contactPhoneController.text.trim(),
+
+        todayOrderMt: double.tryParse(_todayOrderMtController.text.trim()) ?? 0.0,
+        todayCollectionRupees: double.tryParse(_todayCollectionController.text.trim()) ?? 0.0,
+        
+        feedbacks: _feedbackController.text.trim(),
+        solutionBySalesperson: _solutionController.text.isNotEmpty ? _solutionController.text.trim() : null,
+        anyRemarks: _remarksController.text.isNotEmpty ? _remarksController.text.trim() : null,
+        
         checkInTime: _checkInTime!,
         checkOutTime: DateTime.now(),
         inTimeImageUrl: _inTimeImageUrl,
-        outTimeImageUrl: outTimeImageUrl,
+        outTimeImageUrl: outTimeUrl,
         pjpId: widget.pjp?.id,
       );
+      
+      debugPrint("Submitting DVR Payload: ${jsonEncode(dvr.toJson())}");
 
       await _apiService.createDvr(dvr);
 
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-            content: Text('DVR Submitted Successfully!'),
-            backgroundColor: Colors.green),
-      );
-      navigator.pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("DVR Submitted Successfully!"), backgroundColor: Colors.green));
+        Navigator.pop(context);
+      }
     } catch (e) {
-      dev.log('DVR Submission failed: $e', name: _log, error: e);
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-            content: Text('DVR Submission failed: $e'),
-            backgroundColor: Colors.red),
-      );
+      debugPrint("DVR Submission Error: $e");
+      if (mounted) {
+        String errorMsg = "Submission Failed";
+        if (e.toString().contains("<html>")) {
+           errorMsg = "Server Error (500). Check logs.";
+        } else {
+           errorMsg = "Error: $e";
+        }
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMsg), backgroundColor: Colors.red));
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
-  // --- UI Helper Widgets ---
-  InputDecoration _inputDecoration(
-    String label, {
-    bool isRequired = true,
-    bool readOnly = false,
-  }) {
+  InputDecoration _inputDecoration(String label, {String? hint}) {
     return InputDecoration(
-      labelText: '$label${isRequired ? '*' : ''}',
-      labelStyle: const TextStyle(color: Colors.white70),
+      labelText: label,
+      hintText: hint,
+      labelStyle: const TextStyle(color: _textGrey, fontSize: 13),
+      hintStyle: TextStyle(color: _textGrey.withOpacity(0.5)),
       filled: true,
-      fillColor: readOnly ? Colors.white10 : Colors.transparent,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      enabledBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.white30),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderSide: const BorderSide(color: Colors.white),
-        borderRadius: BorderRadius.circular(12),
-      ),
+      fillColor: _inputFill,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cardNavy, width: 1.5)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent, // floating effect in dialog
+      backgroundColor: Colors.transparent, 
       body: Center(
         child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24.0),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: Container(
-                  padding: const EdgeInsets.all(24.0),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF020a67).withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(24.0),
-                    border: Border.all(color: Colors.white.withOpacity(0.2)),
+          padding: const EdgeInsets.all(20),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: _surfaceWhite, 
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 20, offset: const Offset(0, 10))
+              ],
+            ),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // --- Header ---
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Daily Visit Report", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _textDark)),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: _textGrey),
+                        onPressed: () => Navigator.pop(context),
+                      )
+                    ],
                   ),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  const Divider(height: 30, color: _inputFill),
+
+                  // --- STEP 1: Dealer & Check-In ---
+                  if (_checkInTime == null) ...[
+                    
+                    // Dealer Selector
+                    InkWell(
+                      onTap: widget.dealer == null ? _openDealerSearch : null,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                        decoration: BoxDecoration(
+                          color: _inputFill,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
                           children: [
-                            const Text(
-                              'Daily Visit Report',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
+                            Expanded(
+                              child: Text(
+                                _selectedDealer != null 
+                                  ? "${_selectedDealer!.name} (${_selectedDealer!.region})" 
+                                  : "Select Dealer / Sub-Dealer *",
+                                style: TextStyle(
+                                  color: _selectedDealer != null ? _textDark : _textGrey,
+                                  fontWeight: _selectedDealer != null ? FontWeight.w600 : FontWeight.normal,
+                                  fontSize: 15,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white),
-                              onPressed: () => Navigator.of(context).pop(),
-                            ),
+                            const Icon(Icons.arrow_drop_down, color: _textGrey),
                           ],
                         ),
-                        const Divider(color: Colors.white24, height: 30),
-
-                        // Step 1: Dealer Selection and Check-in
-                        if (_checkInTime == null) ...[
-                          _isLoadingDealers
-                              ? const Center(
-                                  child: Padding(
-                                    padding: EdgeInsets.all(8.0),
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                )
-                              : DropdownButtonFormField<Dealer>(
-                                  value: _selectedDealer,
-                                  isExpanded: true,
-                                  hint: const Text(
-                                    'Select Dealer/Sub-dealer*',
-                                    style: TextStyle(color: Colors.white70),
-                                  ),
-                                  dropdownColor: const Color(0xFF0D47A1),
-                                  style: const TextStyle(color: Colors.white),
-                                  decoration: _inputDecoration('Dealer/Sub-dealer'),
-                                  items: _allDealers
-                                      .map(
-                                        (dealer) => DropdownMenuItem(
-                                          value: dealer,
-                                          child: Text(
-                                            dealer.name,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      )
-                                      .toList(),
-                                  onChanged: _onDealerSelected,
-                                  validator: (v) =>
-                                      v == null ? 'Please select a dealer' : null,
-                                ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: _selectedDealer == null || _isUploadingImage
-                                ? null
-                                : _handleCheckIn,
-                            icon: _isUploadingImage
-                                ? const SizedBox(
-                                    width: 20, height: 20,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.camera_alt),
-                            label: const Text('CHECK-IN WITH PHOTO'),
-                            style: ElevatedButton.styleFrom(
-                              minimumSize: const Size(double.infinity, 50),
-                              backgroundColor: Colors.amber,
-                              foregroundColor: Colors.black,
-                            ),
-                          ),
-                        ],
-
-                        // Step 2: Fill form and submit
-                        if (_checkInTime != null) ...[
-                          ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            leading: CircleAvatar(
-                              backgroundImage: _inTimeImageFile != null
-                                  ? FileImage(_inTimeImageFile!)
-                                  : null,
-                              child: _inTimeImageFile == null
-                                  ? const Icon(Icons.check_circle, color: Colors.green)
-                                  : null,
-                            ),
-                            title: Text(
-                              _selectedDealer?.name ?? 'Dealer',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            subtitle: Text(
-                              'Checked-In at ${DateFormat('hh:mm a').format(_checkInTime!)}',
-                              style: const TextStyle(color: Colors.white70),
-                            ),
-                            trailing: const Icon(Icons.check_circle,
-                                color: Colors.green, size: 32),
-                          ),
-                          const Divider(color: Colors.white24, height: 30),
-
-                          DropdownButtonFormField<String>(
-                            value: _selectedVisitType,
-                            dropdownColor: const Color(0xFF0D47A1),
-                            style: const TextStyle(color: Colors.white),
-                            decoration: _inputDecoration('Visit Type'),
-                            items: const [
-                              'Routine',
-                              'Follow-up',
-                              'Complaint',
-                              'New Lead',
-                            ].map((type) => DropdownMenuItem(
-                                  value: type,
-                                  child: Text(type),
-                                ))
-                                .toList(),
-                            onChanged: (value) =>
-                                setState(() => _selectedVisitType = value),
-                            validator: (v) =>
-                                v == null ? 'Please select a visit type' : null,
-                          ),
-                          const SizedBox(height: 16),
-
-                          TextFormField(
-                            controller: _dealerTotalPotentialController,
-                            readOnly: true,
-                            style: const TextStyle(color: Colors.white70),
-                            decoration: _inputDecoration(
-                              'Dealer Total Potential',
-                              readOnly: true,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _dealerBestPotentialController,
-                            readOnly: true,
-                            style: const TextStyle(color: Colors.white70),
-                            decoration: _inputDecoration(
-                              'Dealer Best Potential',
-                              readOnly: true,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _brandSellingController,
-                            readOnly: true,
-                            style: const TextStyle(color: Colors.white70),
-                            decoration: _inputDecoration(
-                              'Brands Selling',
-                              readOnly: true,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          TextFormField(
-                            controller: _contactPersonController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: _inputDecoration(
-                              'Contact Person',
-                              isRequired: false,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _contactPersonPhoneNoController,
-                            keyboardType: TextInputType.phone,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: _inputDecoration(
-                              'Contact Phone',
-                              isRequired: false,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          TextFormField(
-                            controller: _todayOrderMtController,
-                            keyboardType: TextInputType.number,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: _inputDecoration("Today's Order (MT)"),
-                            validator: (v) =>
-                                v!.isEmpty ? 'Field is required' : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _todayCollectionRupeesController,
-                            keyboardType: TextInputType.number,
-                            style: const TextStyle(color: Colors.white),
-                            decoration:
-                                _inputDecoration("Today's Collection (₹)"),
-                            validator: (v) =>
-                                v!.isEmpty ? 'Field is required' : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _overdueAmountController,
-                            keyboardType: TextInputType.number,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: _inputDecoration(
-                              'Overdue Amount (₹)',
-                              isRequired: false,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _feedbacksController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: _inputDecoration('Feedbacks'),
-                            maxLines: 3,
-                            validator: (v) =>
-                                v!.isEmpty ? 'Feedback is required' : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _solutionBySalespersonController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: _inputDecoration(
-                              'Solution by Salesperson',
-                              isRequired: false,
-                            ),
-                            maxLines: 3,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _anyRemarksController,
-                            style: const TextStyle(color: Colors.white),
-                            decoration: _inputDecoration(
-                              'Any Other Remarks',
-                              isRequired: false,
-                            ),
-                            maxLines: 3,
-                          ),
-                          const SizedBox(height: 24),
-
-                          ElevatedButton(
-                            onPressed: _isSubmitting ? null : _submitDvr,
-                            style: ElevatedButton.styleFrom(
-                              minimumSize: const Size(double.infinity, 50),
-                              backgroundColor: Colors.green,
-                              foregroundColor: Colors.white,
-                            ),
-                            child: _isSubmitting
-                                ? const CircularProgressIndicator(
-                                    color: Colors.white,
-                                  )
-                                : const Text(
-                                    'SUBMIT & CHECK-OUT WITH PHOTO',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                          ),
-                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Sub-Dealer Toggle
+                    Row(
+                      children: [
+                        Checkbox(
+                          value: _isSubDealerVisit, 
+                          activeColor: _cardNavy,
+                          onChanged: (val) {
+                            setState(() {
+                              _isSubDealerVisit = val ?? false;
+                              if (!_isSubDealerVisit) _selectedParentDealer = null;
+                            });
+                          }
+                        ),
+                        const Text("This is a Sub-Dealer visit", style: TextStyle(color: _textDark, fontSize: 14)),
                       ],
                     ),
-                  ),
-                ),
+                    
+                    // Parent Dropdown
+                    if (_isSubDealerVisit) 
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0),
+                        child: DropdownButtonFormField<Dealer>(
+                          value: _selectedParentDealer,
+                          isExpanded: true,
+                          dropdownColor: _surfaceWhite,
+                          hint: const Text("Select Parent Dealer *"),
+                          decoration: _inputDecoration("Parent Dealer"),
+                          items: _parentDealers.map((d) => DropdownMenuItem(
+                             value: d,
+                             child: Text(d.name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _textDark)),
+                          )).toList(),
+                          onChanged: (val) => setState(() => _selectedParentDealer = val),
+                        ),
+                      ),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // Visit Type
+                    DropdownButtonFormField<String>(
+                      value: _visitType,
+                      dropdownColor: _surfaceWhite,
+                      style: const TextStyle(color: _textDark, fontSize: 15),
+                      items: ['PLANNED', 'UNPLANNED', 'EMERGENCY', 'COLLECTION'].map((t) => DropdownMenuItem(
+                        value: t, child: Text(t)
+                      )).toList(),
+                      onChanged: (val) => setState(() => _visitType = val),
+                      decoration: _inputDecoration("Visit Type"),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    ElevatedButton.icon(
+                      onPressed: _isUploadingImage ? null : _handleCheckIn,
+                      icon: _isUploadingImage 
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) 
+                        : const Icon(Icons.camera_alt_rounded, color: Colors.white),
+                      label: const Text("CHECK-IN WITH PHOTO", style: TextStyle(fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _cardNavy,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ] 
+                  
+                  // --- STEP 2: Full Report Form ---
+                  else ...[
+                    // Info Banner
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFDBEAFE)),
+                      ),
+                      child: Row(
+                        children: [
+                          _inTimeImageFile != null 
+                            ? ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.file(_inTimeImageFile!, width: 50, height: 50, fit: BoxFit.cover))
+                            : const Icon(Icons.store, color: Colors.blue, size: 40),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(_selectedDealer?.name ?? "Dealer", style: const TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
+                                Text("Checked in: ${DateFormat('hh:mm a').format(_checkInTime!)}", style: const TextStyle(fontSize: 12, color: _textGrey)),
+                              ],
+                            ),
+                          ),
+                          const Icon(Icons.check_circle, color: Colors.green),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    
+                    const Text("CONTACT INFO", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _textGrey)),
+                    const SizedBox(height: 8),
+                    
+                    Row(
+                      children: [
+                        Expanded(child: TextFormField(
+                          controller: _contactPersonController,
+                          style: const TextStyle(color: _textDark),
+                          decoration: _inputDecoration("Contact Person"),
+                        )),
+                        const SizedBox(width: 12),
+                        Expanded(child: TextFormField(
+                          controller: _contactPhoneController,
+                          keyboardType: TextInputType.phone,
+                          style: const TextStyle(color: _textDark),
+                          decoration: _inputDecoration("Phone"),
+                        )),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    const Text("BUSINESS DATA", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _textGrey)),
+                    const SizedBox(height: 8),
+
+                    // 🟢 FIXED: Editable Inputs for Potentials
+                    Row(
+                      children: [
+                        Expanded(child: TextFormField(
+                          controller: _potentialController,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(color: _textDark),
+                          decoration: _inputDecoration("Total Potential"),
+                          validator: (v) => v!.isEmpty ? 'Required' : null,
+                        )),
+                        const SizedBox(width: 12),
+                        Expanded(child: TextFormField(
+                          controller: _bestPotentialController,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(color: _textDark),
+                          decoration: _inputDecoration("Best Potential"),
+                          validator: (v) => v!.isEmpty ? 'Required' : null,
+                        )),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: _brandSellingController,
+                      style: const TextStyle(color: _textDark),
+                      decoration: _inputDecoration("Brands Selling (Comma separated)"),
+                      validator: (v) => v!.isEmpty ? 'At least one brand required' : null,
+                    ),
+                    const SizedBox(height: 12),
+
+                    Row(
+                      children: [
+                        Expanded(child: TextFormField(
+                          controller: _todayOrderMtController,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(color: _textDark),
+                          decoration: _inputDecoration("Today Order (MT)"),
+                          validator: (v) => v!.isEmpty ? 'Required' : null,
+                        )),
+                        const SizedBox(width: 12),
+                        Expanded(child: TextFormField(
+                          controller: _todayCollectionController,
+                          keyboardType: TextInputType.number,
+                          style: const TextStyle(color: _textDark),
+                          decoration: _inputDecoration("Collection (₹)"),
+                          validator: (v) => v!.isEmpty ? 'Required' : null,
+                        )),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    const Text("QUALITATIVE DATA", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _textGrey)),
+                    const SizedBox(height: 8),
+                    
+                    TextFormField(
+                      controller: _feedbackController,
+                      style: const TextStyle(color: _textDark),
+                      decoration: _inputDecoration("Market Feedback / Issues"),
+                      maxLines: 2,
+                      validator: (v) => v!.isEmpty ? 'Required' : null,
+                    ),
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: _solutionController,
+                      style: const TextStyle(color: _textDark),
+                      decoration: _inputDecoration("Solution by Salesperson (Optional)"),
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 12),
+                    
+                    TextFormField(
+                      controller: _remarksController,
+                      style: const TextStyle(color: _textDark),
+                      decoration: _inputDecoration("Competitor Info / Remarks (Optional)"),
+                      maxLines: 2,
+                    ),
+                    
+                    const SizedBox(height: 24),
+                    
+                    ElevatedButton(
+                      onPressed: _isSubmitting ? null : _submitDvr,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accentGreen,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: _isSubmitting
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text("SUBMIT & CHECK-OUT", style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+// --- Internal Search Dialog ---
+class _ServerDealerSearchDialog extends StatefulWidget {
+  final ApiService api;
+  final int? userId;
+  const _ServerDealerSearchDialog({required this.api, this.userId});
+  @override
+  State<_ServerDealerSearchDialog> createState() => _ServerDealerSearchDialogState();
+}
+
+class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
+  List<Dealer> _dealers = [];
+  bool _isLoading = false;
+  Timer? _debounce;
+  String _lastQuery = "";
+  static const Color _textDark = Color(0xFF111827);
+  static const Color _textGrey = Color(0xFF6B7280);
+  static const Color _inputFill = Color(0xFFF9FAFB);
+
+  @override
+  void initState() {
+    super.initState();
+    _performSearch("");
+  }
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+  void _onSearchChanged(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (query != _lastQuery) _performSearch(query);
+    });
+  }
+  Future<void> _performSearch(String query) async {
+    setState(() => _isLoading = true);
+    _lastQuery = query;
+    try {
+      final results = await widget.api.fetchDealers(
+        search: query, 
+        limit: 20, 
+        // userId: widget.userId // Uncomment to restrict to user's dealers
+      );
+      if (mounted) {
+        setState(() { _dealers = results; _isLoading = false; });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text("Select Dealer", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold)),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 400,
+        child: Column(
+          children: [
+            TextField(
+              autofocus: true,
+              style: const TextStyle(color: _textDark),
+              decoration: InputDecoration(
+                hintText: "Search dealer...",
+                hintStyle: const TextStyle(color: _textGrey),
+                prefixIcon: const Icon(Icons.search, color: _textGrey),
+                filled: true,
+                fillColor: _inputFill,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+              onChanged: _onSearchChanged,
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _isLoading ? const Center(child: CircularProgressIndicator()) : _dealers.isEmpty ? const Center(child: Text("No dealers found")) : ListView.separated(
+                itemCount: _dealers.length,
+                separatorBuilder: (ctx, i) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                itemBuilder: (context, index) {
+                  final dealer = _dealers[index];
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(dealer.name, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600)),
+                    // 🟢 UPDATED FORMAT: Dealer Name (Region, Area)
+                    subtitle: Text("${dealer.region}, ${dealer.area}", style: const TextStyle(color: _textGrey, fontSize: 12)),
+                    onTap: () => Navigator.pop(context, dealer),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [TextButton(onPressed: () => Navigator.pop(context, null), child: const Text("CANCEL"))],
     );
   }
 }

@@ -1,4 +1,4 @@
-// lib/screens/forms/add_site_form.dart
+// lib/technicalSide/screens/forms/add_site_form.dart
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:assetarchiverflutter/api/api_service.dart';
@@ -33,12 +33,12 @@ class _AddSiteFormState extends State<AddSiteForm> {
   final List<String> _types = ['Residential', 'Commercial', 'Government', 'Industrial'];
 
   // --- FINTECH THEME PALETTE ---
-  static const Color _bgLight       = Color(0xFFF3F4F6); // Corporate Grey
+  static const Color _bgLight       = Color(0xFFF3F4F6); 
   static const Color _surfaceWhite  = Colors.white;
-  static const Color _cardNavy      = Color(0xFF0F172A); // Deep Navy
-  static const Color _textDark      = Color(0xFF111827); // Navy/Black
-  static const Color _textGrey      = Color(0xFF6B7280); // Subtitle Grey
-  static const Color _inputFill     = Color(0xFFF9FAFB); // Very light grey for inputs
+  static const Color _cardNavy      = Color(0xFF0F172A); 
+  static const Color _textDark      = Color(0xFF111827); 
+  static const Color _textGrey      = Color(0xFF6B7280); 
+  static const Color _inputFill     = Color(0xFFF9FAFB); 
   static const Color _accentGreen   = Color(0xFF10B981); 
 
   Future<void> _getLocation() async {
@@ -386,6 +386,7 @@ class _AddSiteFormState extends State<AddSiteForm> {
     );
   }
 
+  // 🟢 UPDATED: Added dropdownColor and style to enforce visibility
   Widget _buildFintechDropdown({
     required String? value,
     required String label,
@@ -399,10 +400,16 @@ class _AddSiteFormState extends State<AddSiteForm> {
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: value,
-          items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
+          // Ensure dropdown menu background is white
+          dropdownColor: _surfaceWhite, 
+          // Ensure item text is dark
+          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500, fontSize: 14),
+          items: items.map((e) => DropdownMenuItem(
+            value: e, 
+            child: Text(e, style: const TextStyle(color: _textDark))
+          )).toList(),
           onChanged: onChanged,
           icon: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.grey[400]),
-          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500, fontSize: 14),
           decoration: InputDecoration(
             filled: true,
             fillColor: _inputFill,

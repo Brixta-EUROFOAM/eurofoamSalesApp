@@ -78,7 +78,7 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
     _socket.on('ready', (_) {
        if (_messages.isEmpty) {
          _addMessage(
-           text: "Hello ${widget.employee.firstName}! I'm CemTemBot, ready to assist. What can I get for you?",
+           text: "Hello! I'm CemTemBot, ready to assist. What can I get for you?",
            role: 'assistant'
          );
        }
