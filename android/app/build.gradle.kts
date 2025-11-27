@@ -31,7 +31,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.assetarchiverflutter"
+        applicationId = "com.salesmanapp.best"
         minSdk = maxOf(21, flutter.minSdkVersion) 
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -63,6 +63,6 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
-    implementation(platform("com.google.firebase:firebase-bom:34.5.0"))
+    implementation(platform("com.google.firebase:firebase-bom:34.6.0"))
     implementation("com.google.firebase:firebase-analytics")
 }

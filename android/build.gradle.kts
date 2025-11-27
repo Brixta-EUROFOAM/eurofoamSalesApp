@@ -1,6 +1,6 @@
 plugins {
     // Flutter’s Android + Kotlin plugins are managed by Flutter’s plugin, so we don’t apply them here.
-    id("com.google.gms.google-services") version "4.4.2" apply false
+    id("com.google.gms.google-services") version "4.4.4" apply false
 }
 
 allprojects {

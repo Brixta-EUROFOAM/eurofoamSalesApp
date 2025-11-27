@@ -234,21 +234,21 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
               style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)
             ),
             const SizedBox(height: 16),
-            // _buildActionSheetItem(
-            //  icon: Icons.assignment_add,
-            //  title: "Create TVR",
-            //  subtitle: "Technical Visit Report Form",
-            //  iconBg: const Color(0xFFF0FDF4),
-            //  iconColor: Colors.green,
-            //  onTap: () {
-              //  Navigator.pop(context);
-              //  showDialog(
-              //    context: context,
-              //    barrierDismissible: false,
-              //    builder: (context) => CreateTvrScreen(employee: widget.employee),
-              //  );
-             // },
-            //),
+            _buildActionSheetItem(
+             icon: Icons.assignment_add,
+             title: "Create TVR",
+             subtitle: "Technical Visit Report Form",
+             iconBg: const Color(0xFFF0FDF4),
+             iconColor: Colors.green,
+             onTap: () {
+               Navigator.pop(context);
+               showDialog(
+                 context: context,
+                 barrierDismissible: false,
+                 builder: (context) => CreateTvrScreen(employee: widget.employee),
+               );
+             },
+            ),
             _buildActionSheetItem(
               icon: Icons.add_location_alt,
               title: "Register Site",
@@ -457,7 +457,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
               icon: Icons.architecture,
               iconColor: const Color(0xFF0F766E),
               iconBg: const Color(0xFFECFEFF),
-              actionText: "1 Actions",
+              actionText: "2 Actions",
               onTap: () => _showTechnicalActions(context),
             ),
           ]

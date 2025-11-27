@@ -23,6 +23,44 @@
           "other_platform_oauth_client": []
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1004141461365:android:1dcbce631b57a4cff2dd3c",
+        "android_client_info": {
+          "package_name": "com.masonparivar.best"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDjQ177qpFfzm1wVnZAKlJLYXgQdx4CfGo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1004141461365:android:31e46e94ec92d549f2dd3c",
+        "android_client_info": {
+          "package_name": "com.salesmanapp.best"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDjQ177qpFfzm1wVnZAKlJLYXgQdx4CfGo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
     }
   ],
   "configuration_version": "1"
