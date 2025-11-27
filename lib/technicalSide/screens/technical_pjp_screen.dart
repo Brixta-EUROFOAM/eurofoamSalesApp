@@ -1,10 +1,10 @@
 // lib/technicalSide/screens/technical_pjp_screen.dart
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/models/pjp_model.dart';
-import 'package:assetarchiverflutter/api/api_service.dart';
-import 'package:assetarchiverflutter/technicalSide/models/sites_model.dart';
-import 'package:assetarchiverflutter/technicalSide/screens/forms/add_technical_pjp_form.dart'; 
-import 'package:assetarchiverflutter/technicalSide/screens/bulk_technical_pjp_wizard_screen.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/technicalSide/models/sites_model.dart';
+import 'package:salesmanapp/technicalSide/screens/forms/add_technical_pjp_form.dart'; 
+import 'package:salesmanapp/technicalSide/screens/bulk_technical_pjp_wizard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';

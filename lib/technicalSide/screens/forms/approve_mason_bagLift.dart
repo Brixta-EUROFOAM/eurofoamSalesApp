@@ -4,11 +4,11 @@ import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:assetarchiverflutter/api/api_service.dart';
-import 'package:assetarchiverflutter/technicalSide/models/mason_baglift_model.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/technicalSide/models/sites_model.dart';
-import 'package:assetarchiverflutter/models/dealer_model.dart'; // Required for Dealer
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/technicalSide/models/mason_baglift_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/technicalSide/models/sites_model.dart';
+import 'package:salesmanapp/models/dealer_model.dart'; // Required for Dealer
 
 class ApproveMasonBagLift extends StatefulWidget {
   final Employee employee;

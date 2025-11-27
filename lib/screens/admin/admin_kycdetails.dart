@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:assetarchiverflutter/api/api_service.dart';
+import 'package:salesmanapp/api/api_service.dart';
 import 'package:flutter/material.dart';
 
 class AdminKycDetailScreen extends StatefulWidget {

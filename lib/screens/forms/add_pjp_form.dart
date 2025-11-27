@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/models/pjp_model.dart';
-import 'package:assetarchiverflutter/models/dealer_model.dart';
-import 'package:assetarchiverflutter/api/api_service.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
 import 'dart:developer' as dev;
 
 const _log = 'AddPjpForm';

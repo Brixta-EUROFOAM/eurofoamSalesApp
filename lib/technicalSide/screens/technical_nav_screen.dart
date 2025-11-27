@@ -1,17 +1,17 @@
 // lib/technicalSide/screens/technical_nav_screen.dart
 import 'package:flutter/material.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/models/pjp_model.dart';
-import 'package:assetarchiverflutter/technicalSide/models/sites_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/technicalSide/models/sites_model.dart';
 
 // --- Screens ---
-import 'package:assetarchiverflutter/technicalSide/screens/technical_dashboard_screen.dart';
-import 'package:assetarchiverflutter/technicalSide/screens/technical_profile_screen.dart';
-import 'package:assetarchiverflutter/technicalSide/screens/technical_pjp_screen.dart'; 
-import 'package:assetarchiverflutter/technicalSide/screens/technical_journey_screen.dart'; 
+import 'package:salesmanapp/technicalSide/screens/technical_dashboard_screen.dart';
+import 'package:salesmanapp/technicalSide/screens/technical_profile_screen.dart';
+import 'package:salesmanapp/technicalSide/screens/technical_pjp_screen.dart'; 
+import 'package:salesmanapp/technicalSide/screens/technical_journey_screen.dart'; 
 
 // --- Forms & Actions ---
-import 'package:assetarchiverflutter/technicalSide/screens/forms/create_tvr_form.dart';
+import 'package:salesmanapp/technicalSide/screens/forms/create_tvr_form.dart';
 
 class TechnicalNavScreen extends StatefulWidget {
   final Employee employee;

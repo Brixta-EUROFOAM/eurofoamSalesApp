@@ -7,11 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:assetarchiverflutter/api/api_service.dart';
-import 'package:assetarchiverflutter/models/daily_visit_report_model.dart';
-import 'package:assetarchiverflutter/models/dealer_model.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/models/pjp_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/models/daily_visit_report_model.dart';
+import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/models/pjp_model.dart';
 
 class CreateDvrScreen extends StatefulWidget {
   final Employee employee;

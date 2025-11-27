@@ -1,8 +1,8 @@
 // lib/screens/forms/create_competition_form.dart
 import 'dart:ui';
-import 'package:assetarchiverflutter/api/api_service.dart';
-import 'package:assetarchiverflutter/models/competition_report_model.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/models/competition_report_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
 import 'package:flutter/material.dart';
 
 class CreateCompetitionFormScreen extends StatefulWidget {

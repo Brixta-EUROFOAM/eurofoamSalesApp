@@ -1,9 +1,9 @@
 // lib/screens/forms/create_tvr.dart
 import 'dart:io';
 import 'dart:ui';
-import 'package:assetarchiverflutter/api/api_service.dart';
-import 'package:assetarchiverflutter/technicalSide/models/technical_visit_report_model.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';

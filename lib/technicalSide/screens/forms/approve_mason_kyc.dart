@@ -2,10 +2,10 @@
 
 import 'dart:async'; // Required for Timer (Debounce)
 import 'package:flutter/material.dart';
-import 'package:assetarchiverflutter/api/api_service.dart';
-import 'package:assetarchiverflutter/technicalSide/models/mason_kyc_model.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/models/dealer_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/technicalSide/models/mason_kyc_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/models/dealer_model.dart';
 
 class ApproveMasonKycScreen extends StatefulWidget {
   final Employee employee;

@@ -2,8 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:assetarchiverflutter/api/auth_service.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:salesmanapp/api/auth_service.dart';
+import 'package:salesmanapp/models/employee_model.dart';
 
 class AppSelectorScreen extends StatefulWidget {
   const AppSelectorScreen({super.key});

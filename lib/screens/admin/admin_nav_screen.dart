@@ -1,4 +1,4 @@
-import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
 import 'package:flutter/material.dart';
 
 // Import the dashboard screen to be used as the first tab

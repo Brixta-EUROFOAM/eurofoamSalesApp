@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/models/dealer_model.dart';
-import 'package:assetarchiverflutter/api/api_service.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'dart:developer' as dev;
 

@@ -1,7 +1,7 @@
 // lib/screens/forms/approve_mason_rewards.dart
 import 'package:flutter/material.dart';
-import 'package:assetarchiverflutter/api/api_service.dart';
-import 'package:assetarchiverflutter/technicalSide/models/mason_rewards_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/technicalSide/models/mason_rewards_model.dart';
 
 class ApproveMasonRewardsScreen extends StatefulWidget {
   const ApproveMasonRewardsScreen({super.key});

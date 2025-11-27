@@ -1,4 +1,4 @@
-import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;

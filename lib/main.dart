@@ -3,13 +3,13 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:assetarchiverflutter/widgets/app_theme.dart';
-import 'package:assetarchiverflutter/widgets/theme_provider.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/screens/auth/login_screen.dart';
-import 'package:assetarchiverflutter/screens/nav_screen.dart';
-import 'package:assetarchiverflutter/technicalSide/screens/technical_nav_screen.dart';
-import 'package:assetarchiverflutter/screens/app_selector_screen.dart'; // NEW SELECTOR
+import 'package:salesmanapp/widgets/app_theme.dart';
+import 'package:salesmanapp/widgets/theme_provider.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/screens/auth/login_screen.dart';
+import 'package:salesmanapp/screens/nav_screen.dart';
+import 'package:salesmanapp/technicalSide/screens/technical_nav_screen.dart';
+import 'package:salesmanapp/screens/app_selector_screen.dart'; // NEW SELECTOR
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

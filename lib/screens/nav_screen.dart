@@ -5,21 +5,21 @@ import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/models/pjp_model.dart';
-import 'package:assetarchiverflutter/models/dealer_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/models/dealer_model.dart';
 
-import 'package:assetarchiverflutter/screens/employee_management/employee_dashboard_screen.dart';
-import 'package:assetarchiverflutter/screens/employee_management/employee_profile_screen.dart';
-import 'package:assetarchiverflutter/screens/employee_management/employee_pjp_screen.dart';
-import 'package:assetarchiverflutter/screens/employee_management/employee_journey_screen.dart';
-import 'package:assetarchiverflutter/screens/employee_management/employee_salesorder_screen.dart';
+import 'package:salesmanapp/screens/employee_management/employee_dashboard_screen.dart';
+import 'package:salesmanapp/screens/employee_management/employee_profile_screen.dart';
+import 'package:salesmanapp/screens/employee_management/employee_pjp_screen.dart';
+import 'package:salesmanapp/screens/employee_management/employee_journey_screen.dart';
+import 'package:salesmanapp/screens/employee_management/employee_salesorder_screen.dart';
 
-import 'package:assetarchiverflutter/screens/forms/create_dvr.dart';
-import 'package:assetarchiverflutter/screens/forms/create_leave_form.dart';
-import 'package:assetarchiverflutter/screens/forms/create_competition_form.dart';
-import 'package:assetarchiverflutter/screens/forms/create_daily_task_form.dart';
-import 'package:assetarchiverflutter/screens/forms/add_dealer_form.dart';
+import 'package:salesmanapp/screens/forms/create_dvr.dart';
+import 'package:salesmanapp/screens/forms/create_leave_form.dart';
+import 'package:salesmanapp/screens/forms/create_competition_form.dart';
+import 'package:salesmanapp/screens/forms/create_daily_task_form.dart';
+import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
 
 // --- NavProvider ---
 class NavProvider with ChangeNotifier {

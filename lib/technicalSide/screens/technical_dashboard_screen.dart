@@ -2,17 +2,17 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:assetarchiverflutter/models/employee_model.dart';
-import 'package:assetarchiverflutter/api/api_service.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 
 // --- FORMS IMPORTS ---
-import 'package:assetarchiverflutter/technicalSide/screens/forms/create_tvr_form.dart';
-import 'package:assetarchiverflutter/technicalSide/screens/forms/approve_mason_bagLift.dart';
-import 'package:assetarchiverflutter/technicalSide/screens/forms/approve_mason_kyc.dart';
-import 'package:assetarchiverflutter/technicalSide/screens/forms/approve_mason_rewards.dart';
-import 'package:assetarchiverflutter/technicalSide/screens/forms/add_site_form.dart'; 
+import 'package:salesmanapp/technicalSide/screens/forms/create_tvr_form.dart';
+import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_bagLift.dart';
+import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_kyc.dart';
+import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_rewards.dart';
+import 'package:salesmanapp/technicalSide/screens/forms/add_site_form.dart'; 
 
 class TechnicalDashboardScreen extends StatefulWidget {
   final Employee employee;

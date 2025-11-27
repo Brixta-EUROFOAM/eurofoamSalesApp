@@ -1,13 +1,13 @@
 // lib/screens/employee_management/employee_profile_screen.dart
 import 'dart:async';
-import 'package:assetarchiverflutter/models/employee_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
 import 'package:flutter/material.dart';
-import 'package:assetarchiverflutter/api/api_service.dart';
-import 'package:assetarchiverflutter/models/dealer_model.dart';
-import 'package:assetarchiverflutter/api/auth_service.dart';
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/api/auth_service.dart';
 import 'package:intl/intl.dart'; 
 import 'package:provider/provider.dart';
-import 'package:assetarchiverflutter/widgets/theme_provider.dart';
+import 'package:salesmanapp/widgets/theme_provider.dart';
 
 // --- (_ProfileStats class remains the same) ---
 class _ProfileStats {
