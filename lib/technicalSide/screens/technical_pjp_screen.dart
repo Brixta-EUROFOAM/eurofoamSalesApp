@@ -1,4 +1,3 @@
-// lib/technicalSide/screens/technical_pjp_screen.dart
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
@@ -21,32 +20,33 @@ class TechnicalPjpScreen extends StatefulWidget {
   });
 
   @override
-  State<TechnicalPjpScreen> createState() => _TechnicalPjpScreenState();
+  State<TechnicalPjpScreen> createState() => TechnicalPjpScreenState();
 }
 
-class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
+// ✅ Made State Public so NavScreen can access refreshPjpList via GlobalKey
+class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   final ApiService _apiService = ApiService();
   late Future<List<Pjp>> _pjpFuture;
   
-  // --- ✅ NEW: Track selected date ---
+  // Track selected date
   DateTime _selectedDate = DateTime.now();
 
   // --- FINTECH THEME PALETTE ---
-  final Color _bgLight       = const Color(0xFFF3F4F6); // Corporate Light Grey
-  final Color _cardNavy      = const Color(0xFF0F172A); // Deep Navy (Accents)
-  final Color _textDark      = const Color(0xFF111827); // Almost Black
-  final Color _textGrey      = const Color(0xFF6B7280); // Subtitles
+  final Color _bgLight       = const Color(0xFFF3F4F6); 
+  final Color _cardNavy      = const Color(0xFF0F172A); 
+  final Color _textDark      = const Color(0xFF111827); 
+  final Color _textGrey      = const Color(0xFF6B7280); 
   final Color _surfaceWhite  = Colors.white;
-  final Color _accentGreen   = const Color(0xFF10B981); // Success/Start
+  final Color _accentGreen   = const Color(0xFF10B981); 
 
   @override
   void initState() {
     super.initState();
-    _refreshPjps();
+    refreshPjpList();
   }
 
-  void _refreshPjps() {
-    // --- ✅ UPDATED: Use _selectedDate instead of DateTime.now() ---
+  // ✅ Renamed to public method so parent can call it
+  void refreshPjpList() {
     final dateStr = DateFormat('yyyy-MM-dd').format(_selectedDate);
     setState(() {
       _pjpFuture = _apiService.fetchPjpsForUser(
@@ -61,7 +61,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
     setState(() {
       _selectedDate = date;
     });
-    _refreshPjps();
+    refreshPjpList();
   }
 
   void _showCreateOptions() {
@@ -120,7 +120,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
       backgroundColor: Colors.transparent,
       builder: (context) => AddTechnicalPjpForm(
         employee: widget.employee,
-        onPjpCreated: _refreshPjps,
+        onPjpCreated: refreshPjpList,
       ),
     );
   }
@@ -131,7 +131,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
       MaterialPageRoute(
         builder: (context) => BulkTechnicalPjpWizardScreen(
           employee: widget.employee, 
-          onPjpCreated: _refreshPjps
+          onPjpCreated: refreshPjpList
         )
       )
     );
@@ -166,7 +166,6 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Use selected date for the title
     final displayDate = DateFormat('d MMMM, yyyy').format(_selectedDate);
     final displayDay = DateFormat('EEEE').format(_selectedDate);
     final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
@@ -238,13 +237,12 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
 
       body: Column(
         children: [
-          // --- ✅ NEW: Horizontal Date Selector ---
           _buildDateSelector(),
           const SizedBox(height: 10),
           
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () async => _refreshPjps(),
+              onRefresh: () async => refreshPjpList(),
               color: _cardNavy,
               backgroundColor: Colors.white,
               child: FutureBuilder<List<Pjp>>(
@@ -258,9 +256,17 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                     return _buildEmptyState();
                   }
 
-                  final pjps = snapshot.data!;
+                  // --- ✅ CRITICAL FIX: Filter out COMPLETED PJPs ---
+                  final allPjps = snapshot.data!;
+                  final pjps = allPjps.where((p) => p.status != 'COMPLETED').toList();
+
+                  if (pjps.isEmpty) {
+                    return _buildEmptyState();
+                  }
+                  // ------------------------------------------------
+
                   return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 80), // Bottom padding for nav
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 80), 
                     itemCount: pjps.length,
                     separatorBuilder: (ctx, i) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
@@ -277,7 +283,6 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
     );
   }
 
-  // --- ✅ NEW: Calendar Strip Widget ---
   Widget _buildDateSelector() {
     return Container(
       height: 90,
@@ -287,7 +292,6 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: 30, // Show previous 2 days + next 27 days
         itemBuilder: (context, index) {
-          // Start from 2 days ago
           final date = DateTime.now().subtract(const Duration(days: 2)).add(Duration(days: index));
           final isSelected = DateUtils.isSameDay(date, _selectedDate);
           final isToday = DateUtils.isSameDay(date, DateTime.now());
@@ -311,7 +315,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text(
-                    DateFormat('E').format(date).toUpperCase(), // Mon, Tue...
+                    DateFormat('E').format(date).toUpperCase(), 
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
@@ -320,7 +324,7 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    DateFormat('d').format(date), // 27, 28...
+                    DateFormat('d').format(date), 
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -347,9 +351,13 @@ class _TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   }
 
   Widget _buildVisitCard(Pjp pjp) {
+    // Check pending vs approved vs In Progress
     final isPending = pjp.status.toUpperCase() == 'PENDING';
-    final statusColor = isPending ? Colors.orange : _accentGreen;
-    final statusText = isPending ? "PENDING" : "APPROVED";
+    final isInProgress = pjp.status.toUpperCase() == 'IN_PROGRESS';
+    
+    // Logic for colors
+    final statusColor = isPending ? Colors.orange : (isInProgress ? Colors.blue : _accentGreen);
+    final statusText = isPending ? "PENDING" : (isInProgress ? "IN PROGRESS" : "APPROVED");
 
     return Slidable(
       startActionPane: ActionPane(
