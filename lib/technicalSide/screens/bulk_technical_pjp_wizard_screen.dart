@@ -67,7 +67,7 @@ class _BulkTechnicalPjpWizardScreenState extends State<BulkTechnicalPjpWizardScr
     final navigator = Navigator.of(context);
 
     // --- 1. VALIDATION ---
-    const int minVisitsPerDay = 8;
+    const int minVisitsPerDay = 9;
 
     if (_selectedDates.isEmpty) {
       scaffoldMessenger.showSnackBar(const SnackBar(
