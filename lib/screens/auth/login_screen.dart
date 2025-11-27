@@ -78,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       // 3. Authenticate with Backend
-      final Employee employee = await AuthService().login(_loginIdController.text.trim(), password);
+      final Employee employee = await AuthService().login(enteredLoginId, password);
       
       if (!mounted) return;
 

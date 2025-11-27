@@ -1,17 +1,20 @@
 // lib/screens/app_selector_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-// import 'package:assetarchiverflutter/widgets/reusableglasscard.dart'; // No longer needed for Fintech look
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:assetarchiverflutter/api/auth_service.dart';
+import 'package:assetarchiverflutter/models/employee_model.dart';
 
-class AppSelectorScreen extends StatelessWidget {
+class AppSelectorScreen extends StatefulWidget {
   const AppSelectorScreen({super.key});
 
-  void _navigateToLogin(BuildContext context, bool isTechnical) {
-    Navigator.of(context).pushNamed(
-      '/salesforce_login_page',
-      arguments: {'isTechnical': isTechnical}, 
-    );
-  }
+  @override
+  State<AppSelectorScreen> createState() => _AppSelectorScreenState();
+}
+
+class _AppSelectorScreenState extends State<AppSelectorScreen> {
+  final AuthService _authService = AuthService();
+  bool _isCheckingAutoLogin = true;
 
   // --- FINTECH THEME PALETTE ---
   static const Color _bgLight   = Color(0xFFF3F4F6); // Corporate Grey
@@ -20,7 +23,55 @@ class AppSelectorScreen extends StatelessWidget {
   static const Color _cardNavy  = Color(0xFF0F172A); // Deep Navy
 
   @override
+  void initState() {
+    super.initState();
+    _checkAutoLogin();
+  }
+
+  Future<void> _checkAutoLogin() async {
+    try {
+      final Employee? employee = await _authService.tryAutoLogin();
+      if (!mounted || employee == null) {
+        setState(() => _isCheckingAutoLogin = false);
+        return;
+      }
+
+      final prefs = await SharedPreferences.getInstance();
+      final bool isTechnical = prefs.getBool('is_technical_mode') ?? false;
+
+      // If token + user OK, skip selector entirely
+      Navigator.of(context).pushNamedAndRemoveUntil(
+        isTechnical ? '/technical_home' : '/home',
+        (route) => false,
+        arguments: employee,
+      );
+    } catch (e) {
+      // Any failure: show selector normally
+      if (mounted) {
+        setState(() => _isCheckingAutoLogin = false);
+      }
+    }
+  }
+
+  void _navigateToLogin(BuildContext context, bool isTechnical) {
+    Navigator.of(context).pushNamed(
+      '/salesforce_login_page',
+      arguments: {'isTechnical': isTechnical},
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // Tiny loading state while we check token
+    if (_isCheckingAutoLogin) {
+      return const Scaffold(
+        backgroundColor: _bgLight,
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: _bgLight,
       body: SafeArea(
@@ -76,37 +127,37 @@ class AppSelectorScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 60),
 
-                // --- Option 1: Salesforce ---
-                 // _buildPortalCard(
-                  //  context,
-                   // title: 'SALES FORCE',
-                    //subtitle: '(EMP)',
-                    //icon: Icons.business_center,
-                    //color: Colors.blueAccent,
-                    //isTechnical: false,
-                  //).animate().slideX(begin: -1, duration: 600.ms, curve: Curves.easeOut),
+                // If you later re-enable Sales:
+                // _buildPortalCard(
+                //   context,
+                //   title: 'SALES FORCE',
+                //   subtitle: '(EMP)',
+                //   icon: Icons.business_center,
+                //   color: Colors.blueAccent,
+                //   isTechnical: false,
+                // ).animate().slideX(begin: -1, duration: 600.ms, curve: Curves.easeOut),
 
-                  // const SizedBox(height: 24),
+                // const SizedBox(height: 24),
 
-                  // --- Option 2: Technical ---
-                  _buildPortalCard(
-                    context,
-                    title: 'TECHNICAL SIDE',
-                    subtitle: '(TSE)',
-                    icon: Icons.engineering,
-                    color: const Color(0xFF0F766E), // Teal for Tech
-                    bgColor: const Color(0xFFF0FDF4), // Light Teal BG
-                    isTechnical: true,
-                  ).animate().slideX(begin: 1, duration: 600.ms, curve: Curves.easeOut, delay: 200.ms),
+                // --- Option 2: Technical ---
+                _buildPortalCard(
+                  context,
+                  title: 'TECHNICAL SIDE',
+                  subtitle: '(TSE)',
+                  icon: Icons.engineering,
+                  color: const Color(0xFF0F766E),       // Teal for Tech
+                  bgColor: const Color(0xFFF0FDF4),     // Light Teal BG
+                  isTechnical: true,
+                ).animate().slideX(begin: 1, duration: 600.ms, curve: Curves.easeOut, delay: 200.ms),
                   
-                  const Spacer(),
+                const Spacer(),
                   
-                  const Text(
-                    "Secure Enterprise Login",
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: _textGrey, fontSize: 12),
-                  ),
-                  const SizedBox(height: 20),
+                const Text(
+                  "Secure Enterprise Login",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: _textGrey, fontSize: 12),
+                ),
+                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -120,10 +171,9 @@ class AppSelectorScreen extends StatelessWidget {
     required String subtitle,
     required IconData icon,
     required Color color,
-    Color? bgColor, // Added optional param for light theme bg
+    Color? bgColor,
     required bool isTechnical,
   }) {
-    // Default bg if not provided (handles the commented out code case)
     final backgroundColor = bgColor ?? color.withOpacity(0.1);
 
     return Material(
