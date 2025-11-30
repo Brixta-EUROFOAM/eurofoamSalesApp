@@ -17,6 +17,7 @@ import '../technicalSide/models/mason_baglift_model.dart';
 import '../technicalSide/models/mason_kyc_model.dart';
 import '../technicalSide/models/mason_rewards_model.dart';
 import '../technicalSide/models/sites_model.dart';
+import '../technicalSide/models/mason_pc_model.dart';
 
 // --- ✅ 1. (NEW) TSO USER HELPER CLASS (DEFINED HERE) ---
 class TsoUser {
@@ -40,7 +41,8 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  static const String _baseUrl = 'http://13.203.79.51';
+  static const String _baseUrl = 'http://13.203.79.51'; //aws
+  //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
 
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
@@ -275,7 +277,45 @@ class ApiService {
     if (radarApiKey == null) {
       throw Exception('RADAR_API_KEY not found in .env file');
     }
-    throw Exception('Failed to reverse geocode.');
+
+    final url = Uri.parse(
+        'https://api.radar.io/v1/geocode/reverse?coordinates=$latitude,$longitude');
+
+    try {
+      final response = await http.get(
+        url,
+        headers: {'Authorization': radarApiKey},
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['addresses'] != null && (data['addresses'] as List).isNotEmpty) {
+          final address = data['addresses'][0];
+          
+          // Radar returns components. We try to map them to your fields.
+          // Note: Radar fields vary by country. Adjust based on India/Your region.
+          return {
+            'address': address['formattedAddress'] ?? '',
+            'region': address['state'] ?? address['county'] ?? '',
+            'area': address['city'] ?? address['placeLabel'] ?? '',
+            'pinCode': address['postalCode'] ?? '',
+          };
+        } else {
+          // No address found, return raw lat/lng as address
+          return {
+            'address': '$latitude, $longitude',
+            'region': '',
+            'area': '',
+            'pinCode': '',
+          };
+        }
+      } else {
+        throw Exception(
+            'Radar API Error: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Failed to reverse geocode: $e');
+    }
   }
 
   Future<List<dynamic>> searchPhotonAddress(String query) async {
@@ -814,6 +854,28 @@ class ApiService {
     return _get(
       'technical-sites/$siteId',
       (json) => TechnicalSite.fromJson(json),
+    );
+  }
+
+  Future<List<Mason>> fetchMasons({
+    String? search,
+    String? region,
+    String? area,
+    int? userId,
+    int limit = 50,
+  }) async {
+    final queryParams = <String, String>{'limit': limit.toString()};
+
+    if (search != null && search.isNotEmpty) queryParams['search'] = search;
+    if (region != null) queryParams['region'] = region;
+    if (area != null) queryParams['area'] = area;
+    if (userId != null) queryParams['userId'] = userId.toString();
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get(
+      'masons?$queryString',
+      (json) => (json as List).map((e) => Mason.fromJson(e)).toList(),
     );
   }
 }

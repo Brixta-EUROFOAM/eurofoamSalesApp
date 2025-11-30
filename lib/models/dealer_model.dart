@@ -1,5 +1,5 @@
 class Dealer {
-  final String? id; // Nullable for creation
+  final String? id; 
   final int? userId;
   final String type;
   final String? parentDealerId;
@@ -19,16 +19,12 @@ class Dealer {
   final String feedbacks;
   final String? remarks;
   
-  // --- Prisma Parity Fields ---
   final String? dealerDevelopmentStatus;
   final String? dealerDevelopmentObstacle;
   final double? salesGrowthPercentage;
   final int? noOfPJP;
-
-  // --- ✅ NEW FIELDS ADDED ---
   final String? nameOfFirm;
   final String? underSalesPromoterName;
-  // --- END NEW FIELDS ---
 
   // Verification & IDs
   final String? verificationStatus; // e.g., 'PENDING'
@@ -100,17 +96,12 @@ class Dealer {
     this.remarks,
     this.createdAt,
     this.updatedAt,
-
-    // --- Prisma Parity Fields ---
     this.dealerDevelopmentStatus,
     this.dealerDevelopmentObstacle,
     this.salesGrowthPercentage,
     this.noOfPJP,
-
-    // --- ✅ NEW FIELDS ADDED ---
     this.nameOfFirm,
     this.underSalesPromoterName,
-    // --- END NEW FIELDS ---
 
     this.verificationStatus,
     this.whatsappNo,
@@ -201,11 +192,8 @@ class Dealer {
       dealerDevelopmentObstacle: json['dealerDevelopmentObstacle'],
       salesGrowthPercentage: _parseDouble(json['salesGrowthPercentage']),
       noOfPJP: _parseInt(json['noOfPJP']),
-
-      // --- ✅ NEW FIELDS ADDED ---
       nameOfFirm: json['nameOfFirm'],
       underSalesPromoterName: json['underSalesPromoterName'],
-      // --- END NEW FIELDS ---
       
       verificationStatus: json['verificationStatus'],
       whatsappNo: json['whatsappNo'],
@@ -256,8 +244,6 @@ class Dealer {
     String? _nullIfEmpty(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
 
     return {
-      // --- ✅ CRITICAL FIX: REMOVED fields the server generates ---
-      // 'id': _nullIfEmpty(id), // <-- REMOVED
       'userId': userId,
       'type': type,
       'parentDealerId': _nullIfEmpty(parentDealerId),
@@ -279,16 +265,12 @@ class Dealer {
       // 'createdAt': createdAt?.toIso8601String(), // <-- REMOVED
       // 'updatedAt': updatedAt?.toIso8601String(), // <-- REMOVED
 
-      // --- Prisma Parity ---
       'dealerDevelopmentStatus': _nullIfEmpty(dealerDevelopmentStatus),
       'dealerDevelopmentObstacle': _nullIfEmpty(dealerDevelopmentObstacle),
       'salesGrowthPercentage': salesGrowthPercentage,
       'noOfPJP': noOfPJP,
-
-      // --- ✅ NEW FIELDS ADDED ---
       'nameOfFirm': _nullIfEmpty(nameOfFirm),
       'underSalesPromoterName': _nullIfEmpty(underSalesPromoterName),
-      // --- END NEW FIELDS ---
 
       'verificationStatus': _nullIfEmpty(verificationStatus),
       'whatsappNo': _nullIfEmpty(whatsappNo),

@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 
 // --- FORMS IMPORTS ---
+import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/create_tvr_form.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_bagLift.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_kyc.dart';
@@ -260,6 +261,17 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                 _openFullScreen(AddSiteForm(employee: widget.employee));
               },
             ),
+            _buildActionSheetItem(
+              icon: Icons.store_mall_directory_outlined,
+              title: "Add Dealer/Sub Dealer",
+              subtitle: "Add a new dealer/sub dealer",
+              iconBg: const Color(0xFFFDF4FF), 
+              iconColor: Colors.purple,
+              onTap: () {
+                Navigator.pop(context);
+                _openFullScreen(AddDealerForm(employee: widget.employee));
+              },
+            ),
           ],
         ),
       ),
@@ -453,11 +465,11 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
             // Technical Operations
             _buildFintechCard(
               title: "Technical Ops",
-              subtitle: "TVR, Site Registration",
+              subtitle: "TVR, Site Registration, Add Dealer",
               icon: Icons.architecture,
               iconColor: const Color(0xFF0F766E),
               iconBg: const Color(0xFFECFEFF),
-              actionText: "2 Actions",
+              actionText: "3 Actions",
               onTap: () => _showTechnicalActions(context),
             ),
           ]

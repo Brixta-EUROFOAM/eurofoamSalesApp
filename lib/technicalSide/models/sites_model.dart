@@ -15,8 +15,9 @@ class TechnicalSite {
   final String? stageOfConstruction;
   final DateTime? constructionStartDate;
   final String? relatedDealerId;
-  final String? relatedMasonId; // UUID for mason_pc_side
-
+  final String? relatedMasonId; 
+  final List<String>? associatedDealerIds;
+  final List<String>? associatedMasonIds;
   TechnicalSite({
     this.id,
     required this.siteName,
@@ -32,6 +33,8 @@ class TechnicalSite {
     this.constructionStartDate,
     this.relatedDealerId,
     this.relatedMasonId,
+    this.associatedDealerIds,
+    this.associatedMasonIds,
   });
 
   factory TechnicalSite.fromJson(Map<String, dynamic> json) {
@@ -52,6 +55,12 @@ class TechnicalSite {
           : null,
       relatedDealerId: json['relatedDealerID'], // Note: API usually returns camelCase, DB is mixed. Check casing.
       relatedMasonId: json['relatedMasonpcID'],
+      associatedDealerIds: json['associatedDealerIds'] != null
+          ? List<String>.from(json['associatedDealerIds'])
+          : null,
+      associatedMasonIds: json['associatedMasonIds'] != null
+          ? List<String>.from(json['associatedMasonIds'])
+          : null,
     );
   }
 
@@ -70,6 +79,8 @@ class TechnicalSite {
       'constructionStartDate': constructionStartDate?.toIso8601String(),
       'relatedDealerID': relatedDealerId,
       'relatedMasonpcID': relatedMasonId,
+      if (associatedDealerIds != null) 'associatedDealerIds': associatedDealerIds,
+      if (associatedMasonIds != null) 'associatedMasonIds': associatedMasonIds,
     };
   }
 }
