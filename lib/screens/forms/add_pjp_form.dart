@@ -1,3 +1,4 @@
+// lib/screens/forms/add_pjp_form.dart
 import 'package:flutter/material.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
@@ -29,6 +30,13 @@ class AddPjpFormState extends State<AddPjpForm> {
   bool _isSubmitting = false;
   late Future<List<Dealer>> _dealersFuture;
 
+  // --- 🎨 FINTECH THEME PALETTE ---
+  static const Color _surfaceWhite  = Colors.white;
+  static const Color _cardNavy      = Color(0xFF0F172A); 
+  static const Color _textDark      = Color(0xFF111827); 
+  static const Color _textGrey      = Color(0xFF6B7280); 
+  static const Color _inputFill     = Color(0xFFF9FAFB); 
+
   @override
   void initState() {
     super.initState();
@@ -48,7 +56,6 @@ class AddPjpFormState extends State<AddPjpForm> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Please select a dealer.'),
           backgroundColor: Colors.orange));
-      dev.log('Submit blocked: form invalid or dealer null', name: _log);
       return;
     }
     final dealer = _selectedDealer!;
@@ -56,7 +63,6 @@ class AddPjpFormState extends State<AddPjpForm> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('The selected dealer does not have location data saved.'),
           backgroundColor: Colors.orange));
-      dev.log('Submit blocked: dealer lacks lat/lon (dealerId=${dealer.id})', name: _log);
       return;
     }
 
@@ -66,49 +72,31 @@ class AddPjpFormState extends State<AddPjpForm> {
 
     try {
       final String displayName = '${dealer.name}, ${dealer.address}';
-      final String visitData =
-          '$displayName|${dealer.latitude}|${dealer.longitude}';
+      final String visitData = '$displayName|${dealer.latitude}|${dealer.longitude}';
 
-      // --- ✅ THIS IS THE FIX ---
-      // We now correctly set BOTH status fields as per your schema.
       final newPjp = Pjp(
         id: '',
         planDate: DateTime.now(),
         userId: int.parse(widget.employee.id),
         createdById: int.parse(widget.employee.id),
-        
-        // This is the JOURNEY status (pending, started, completed)
         status: 'PENDING', 
-        
-        // This is the ADMIN APPROVAL status (PENDING, VERIFIED)
         verificationStatus: 'PENDING', 
-
         areaToBeVisited: visitData,
         description: _descriptionController.text.isNotEmpty
             ? _descriptionController.text
             : null,
         dealerId: dealer.id,
-        dealerName: dealer.name, // Good to include this for the model
+        dealerName: dealer.name,
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
-      // --- END FIX ---
 
-      dev.log('CREATE PJP → payload: ${newPjp.toJson()}', name: _log);
-
-      final sw = Stopwatch()..start();
-      final created = await _apiService.createPjp(newPjp);
-      sw.stop();
-
-      dev.log(
-        'CREATE PJP ← success in ${sw.elapsedMilliseconds}ms (id=${created.id}, status=${created.status}, verificationStatus=${created.verificationStatus})',
-        name: _log,
-      );
+      await _apiService.createPjp(newPjp);
 
       widget.onPjpCreated();
       navigator.pop();
       scaffoldMessenger.showSnackBar(const SnackBar(
-          content: Text('PJP Created!'), backgroundColor: Colors.green));
+          content: Text('Visit Plan Created!'), backgroundColor: Colors.green));
     } catch (e, st) {
       dev.log('CREATE PJP ← ERROR', name: _log, error: e, stackTrace: st);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -119,16 +107,33 @@ class AddPjpFormState extends State<AddPjpForm> {
     }
   }
 
+  // --- UI Helper ---
+  InputDecoration _inputDecoration(String label, IconData icon) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: const TextStyle(color: _textGrey, fontWeight: FontWeight.w500),
+      prefixIcon: Icon(icon, color: _textGrey, size: 20),
+      filled: true,
+      fillColor: _inputFill,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: _cardNavy, width: 1.5),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final theme = widget.theme;
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         padding: const EdgeInsets.all(24.0),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surface,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24.0)),
+        decoration: const BoxDecoration(
+          color: _surfaceWhite,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24.0)),
         ),
         child: Form(
           key: _formKey,
@@ -136,83 +141,104 @@ class AddPjpFormState extends State<AddPjpForm> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Create New PJP',
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                      color: theme.colorScheme.onSurface,
-                      fontWeight: FontWeight.bold)),
+              // Drag Handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+
+              const Text(
+                'Plan New Visit',
+                style: TextStyle(
+                  color: _textDark,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  letterSpacing: -0.5,
+                )
+              ),
               const SizedBox(height: 24),
+              
+              // Dealer Dropdown
               FutureBuilder<List<Dealer>>(
                 future: _dealersFuture,
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
+                    return const Center(child: LinearProgressIndicator(color: _cardNavy));
                   }
                   if (snapshot.hasError) {
-                    return Text('Error loading dealers: ${snapshot.error}',
-                        style: TextStyle(color: theme.colorScheme.error));
+                    return Text('Error loading dealers', style: TextStyle(color: Colors.red[400]));
                   }
                   if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return Text('No dealers found for this user.',
-                        style: TextStyle(
-                            color:
-                                theme.colorScheme.onSurface.withOpacity(0.7)));
+                    return Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(color: _inputFill, borderRadius: BorderRadius.circular(12)),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.info_outline, color: _textGrey),
+                          SizedBox(width: 12),
+                          Expanded(child: Text('No dealers found.', style: TextStyle(color: _textGrey))),
+                        ],
+                      ),
+                    );
                   }
+                  
                   return DropdownButtonFormField<Dealer>(
-                    hint: Text('Select a Dealer',
-                        style: TextStyle(
-                            color:
-                                theme.colorScheme.onSurface.withOpacity(0.7))),
+                    hint: const Text('Select a Dealer'),
+                    dropdownColor: Colors.white,
                     isExpanded: true,
-                    dropdownColor: theme.colorScheme.surface,
-                    style: TextStyle(color: theme.colorScheme.onSurface),
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      enabledBorder: OutlineInputBorder(
-                          borderSide: BorderSide(
-                              color: theme.colorScheme.onSurface
-                                  .withOpacity(0.3)),
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                    items: snapshot.data!
-                        .map((dealer) => DropdownMenuItem(
-                            value: dealer,
-                            child: Text(
-                              dealer.name,
-                              overflow: TextOverflow.ellipsis,
-                            )))
-                        .toList(),
+                    style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 15),
+                    decoration: _inputDecoration("Select Dealer", Icons.store),
+                    items: snapshot.data!.map((dealer) => DropdownMenuItem(
+                        value: dealer,
+                        child: Text(
+                          dealer.name,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                    )).toList(),
                     onChanged: (value) => setState(() => _selectedDealer = value),
-                    validator: (value) =>
-                        value == null ? 'Please select a dealer' : null,
+                    validator: (value) => value == null ? 'Please select a dealer' : null,
                   );
                 },
               ),
+              
               const SizedBox(height: 16),
+              
+              // Description Input
               TextFormField(
                 controller: _descriptionController,
-                style: TextStyle(color: theme.colorScheme.onSurface),
-                decoration: InputDecoration(
-                  labelText: 'Description (Optional)',
-                  labelStyle: TextStyle(
-                      color: theme.colorScheme.onSurface.withOpacity(0.7)),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                  enabledBorder: OutlineInputBorder(
-                      borderSide: BorderSide(
-                          color: theme.colorScheme.onSurface.withOpacity(0.3)),
-                      borderRadius: BorderRadius.circular(12)),
-                ),
+                style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
+                decoration: _inputDecoration('Description (Optional)', Icons.notes),
+                maxLines: 2,
               ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _isSubmitting ? null : _submitForm,
-                style: theme.elevatedButtonTheme.style?.copyWith(
-                    minimumSize: MaterialStateProperty.all(
-                        const Size(double.infinity, 50))),
-                child: _isSubmitting
-                    ? const CircularProgressIndicator()
-                    : const Text('SUBMIT PJP'),
+              
+              const SizedBox(height: 32),
+              
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : _submitForm,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _cardNavy,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    disabledBackgroundColor: Colors.grey[300],
+                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Text(
+                          'SUBMIT PJP', 
+                          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0)
+                        ),
+                ),
               ),
             ],
           ),

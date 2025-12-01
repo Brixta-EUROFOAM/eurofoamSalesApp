@@ -1,4 +1,5 @@
 // lib/technicalSide/screens/technical_nav_screen.dart
+// lib/technicalSide/screens/technical_nav_screen.dart
 import 'package:flutter/material.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
@@ -24,15 +25,21 @@ class TechnicalNavScreen extends StatefulWidget {
 class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
   int _selectedIndex = 0;
   Map<String, dynamic>? _journeyData; 
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final GlobalKey<TechnicalPjpScreenState> _pjpKey = GlobalKey<TechnicalPjpScreenState>();
 
   // --- FINTECH THEME PALETTE ---
-  static const Color _bgLight        = Color(0xFFF3F4F6); // Corporate Grey
-  static const Color _navBarBg       = Colors.white;      // White Nav Bar
-  static const Color _cardNavy       = Color(0xFF0F172A); // Active Indicator
-  static const Color _textGrey       = Color(0xFF9CA3AF); // Inactive Icons
+  static const Color _bgLight        = Color(0xFFF3F4F6); 
+  static const Color _navBarBg       = Colors.white;      
+  static const Color _cardNavy       = Color(0xFF0F172A); 
+  static const Color _textGrey       = Color(0xFF9CA3AF); 
 
   void _onItemTapped(int index) {
     setState(() => _selectedIndex = index);
+    
+    if (index == 1) {
+      _pjpKey.currentState?.refreshPjpList();
+    }
   }
 
   // --- JOURNEY LOGIC ---
@@ -51,12 +58,19 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
 
   void _onJourneyCompleted(Pjp pjp, TechnicalSite site, DateTime checkInTime) {
     _clearJourneyData();
+    
+    // --- ✅ FIX: Force PJP Screen to refresh data from API ---
+    // This ensures the completed PJP disappears from the list immediately.
+    _pjpKey.currentState?.refreshPjpList();
+    
     _openDialog(CreateTvrScreen(employee: widget.employee));
   }
 
   // --- DRAWER NAVIGATION ACTIONS ---
   void _openDialog(Widget screen) {
-    if (Scaffold.of(context).isDrawerOpen) Navigator.pop(context); 
+    if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
+      Navigator.pop(context); 
+    }
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -68,20 +82,28 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
   Widget build(BuildContext context) {
     final List<Widget> pages = [
       TechnicalDashboardScreen(employee: widget.employee), // 0: Home
-      TechnicalPjpScreen(employee: widget.employee, onStartJourney: _startJourney), // 1: Visits
+      
+      // --- ✅ Connected the Key here ---
+      TechnicalPjpScreen(
+        key: _pjpKey, 
+        employee: widget.employee, 
+        onStartJourney: _startJourney
+      ), // 1: Visits
+      
       TechnicalJourneyScreen(
         employee: widget.employee,
         initialJourneyData: _journeyData,
-        onDestinationConsumed: () {},
-        onJourneyCompleted: _onJourneyCompleted,
+        onDestinationConsumed: () {}, // Journey started
+        onJourneyCompleted: _onJourneyCompleted, // Journey ended
       ), // 2: Journey
+      
       TechnicalProfileScreen(employee: widget.employee), // 3: Profile
     ];
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: _bgLight,
       
-      // --- 1. THE SIDE DRAWER (Added to match theme) ---
       drawer: Drawer(
         backgroundColor: Colors.white,
         child: Column(
@@ -102,7 +124,6 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
               leading: const Icon(Icons.logout, color: Colors.red),
               title: const Text("Log Out", style: TextStyle(color: Colors.red)),
               onTap: () {
-                // Add logout logic here or navigate to profile to logout
                 Navigator.pop(context);
                 setState(() => _selectedIndex = 3); // Go to Profile
               },
@@ -111,13 +132,13 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
         ),
       ),
 
-      // --- 2. MAIN BODY ---
+      // --- MAIN BODY ---
       body: IndexedStack(
         index: _selectedIndex,
         children: pages,
       ),
 
-      // --- 3. BOTTOM NAVIGATION BAR (Redesigned) ---
+      // --- BOTTOM NAVIGATION BAR ---
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: _navBarBg,
@@ -131,30 +152,25 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
         ),
         child: NavigationBarTheme(
           data: NavigationBarThemeData(
-            // Active Indicator (Pill shape)
             indicatorColor: _cardNavy,
-            
-            // Text Styles
             labelTextStyle: MaterialStateProperty.resolveWith((states) {
               if (states.contains(MaterialState.selected)) {
                 return const TextStyle(color: _cardNavy, fontWeight: FontWeight.bold, fontSize: 12);
               }
               return const TextStyle(color: _textGrey, fontWeight: FontWeight.w500, fontSize: 12);
             }),
-
-            // Icon Colors
             iconTheme: MaterialStateProperty.resolveWith((states) {
               if (states.contains(MaterialState.selected)) {
-                return const IconThemeData(color: Colors.white); // White icon on Navy pill
+                return const IconThemeData(color: Colors.white);
               }
-              return const IconThemeData(color: _textGrey); // Grey icon otherwise
+              return const IconThemeData(color: _textGrey);
             }),
           ),
           child: NavigationBar(
             selectedIndex: _selectedIndex,
             onDestinationSelected: _onItemTapped,
             backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white, // Removes Material 3 tint
+            surfaceTintColor: Colors.white,
             height: 70,
             elevation: 0,
             destinations: const [

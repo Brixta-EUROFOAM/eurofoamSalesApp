@@ -9,7 +9,6 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/widgets/theme_provider.dart';
 
-// --- (_ProfileStats class remains the same) ---
 class _ProfileStats {
   final int monthlyReportCount;
   final int monthlyPjpCount;
@@ -35,6 +34,14 @@ class EmployeeProfileScreen extends StatefulWidget {
 class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   final ApiService _apiService = ApiService();
   late Future<_ProfileStats> _statsFuture;
+
+  // --- FINTECH THEME PALETTE ---
+  final Color _bgLight       = const Color(0xFFF3F4F6); 
+  final Color _cardNavy      = const Color(0xFF0F172A); 
+  final Color _textDark      = const Color(0xFF111827); 
+  final Color _textGrey      = const Color(0xFF6B7280); 
+  final Color _surfaceWhite  = Colors.white;
+  final Color _dangerRed     = const Color(0xFFEF4444);
 
   @override
   void initState() {
@@ -99,8 +106,6 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   }
 
   void _showManageDealersSheet() {
-    final theme = Theme.of(context);
-    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -112,7 +117,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
         builder: (BuildContext context, ScrollController scrollController) {
           return Container(
             decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
+              color: _surfaceWhite,
               borderRadius: const BorderRadius.vertical(top: Radius.circular(24.0)),
             ),
             child: _ManageDealersContent(
@@ -126,62 +131,80 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     );
   }
 
-  // --- ✅ THIS IS THE CORRECTED BUILD METHOD ---
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    final theme = Theme.of(context);
 
-    return SafeArea(
-      child: FutureBuilder<_ProfileStats>(
+    return Scaffold(
+      backgroundColor: _bgLight,
+      appBar: AppBar(
+        backgroundColor: _bgLight,
+        elevation: 0,
+        centerTitle: true,
+        automaticallyImplyLeading: false,
+        title: Text(
+          'PROFILE',
+          style: TextStyle(
+            color: _textDark,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.5,
+          ),
+        ),
+      ),
+      body: FutureBuilder<_ProfileStats>(
         future: _statsFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              snapshot.data == null) {
-            return Center(
-              child: CircularProgressIndicator(color: theme.colorScheme.primary),
-            );
+          if (snapshot.connectionState == ConnectionState.waiting && snapshot.data == null) {
+            return Center(child: CircularProgressIndicator(color: _cardNavy));
           }
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'Error: ${snapshot.error}',
-                style: TextStyle(color: theme.colorScheme.error),
-              ),
-            );
-          }
-          final stats =
-              snapshot.data ??
-              _ProfileStats(
-                monthlyReportCount: 0,
-                monthlyPjpCount: 0,
-                allTimeDealerCount: 0,
-                allTimeCompletedTasksCount: 0,
-              );
+          
+          final stats = snapshot.data ?? _ProfileStats(
+            monthlyReportCount: 0,
+            monthlyPjpCount: 0,
+            allTimeDealerCount: 0,
+            allTimeCompletedTasksCount: 0,
+          );
 
           return RefreshIndicator(
             onRefresh: _refreshStats,
-            color: theme.colorScheme.onPrimary,
-            backgroundColor: theme.colorScheme.primary,
+            color: _cardNavy,
+            backgroundColor: Colors.white,
             child: ListView(
-              // --- ✅ THE FIX ---
-              // Add 120px of bottom padding to clear the floating nav bar
-              padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 120.0),
-              // --- END FIX ---
+              padding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 120.0),
               children: [
                 
-                // --- 1. NEW Profile Header Card ---
-                _ProfileHeaderCard(
+                // --- 1. Profile Header ---
+                _buildFintechProfileHeader(
                   initials: getInitials(),
                   displayName: widget.employee.displayName,
                   email: widget.employee.email ?? 'No email',
-                  role: _capitalize(widget.employee.role ?? 'Employee'),
+                  role: _capitalize(widget.employee.role ?? 'Sales Employee'),
                 ),
 
-                // --- 2. NEW Action & Stats List ---
-                const _SectionHeader('Toolbox & Stats'),
-                Card(
-                  clipBehavior: Clip.antiAlias,
+                const SizedBox(height: 32),
+
+                // --- 2. Overview Stats ---
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      "Overview Stats",
+                      style: TextStyle(color: _textDark, fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                    Icon(Icons.bar_chart, color: _textGrey, size: 20),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                Container(
+                  decoration: BoxDecoration(
+                    color: _surfaceWhite,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))
+                    ],
+                  ),
                   child: Column(
                     children: [
                       _ActionListTile(
@@ -197,64 +220,80 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         onTap: () {},
                       ),
                       _ActionListTile(
-                        icon: Icons.event_note_outlined,
-                        title: 'Apply for Leave',
+                        icon: Icons.assignment_outlined,
+                        title: 'Monthly Reports',
+                        trailing: stats.monthlyReportCount.toString(),
                         onTap: () {},
                       ),
                        _ActionListTile(
                         icon: Icons.map_outlined,
                         title: 'Brand Mapping',
                         onTap: () {},
-                        hideBorder: true, // No border on the last item
+                        hideBorder: true, 
                       ),
                     ],
                   ),
                 ),
 
-                // --- 3. NEW Settings Section ---
-                const _SectionHeader('App Settings'),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Theme Preference',
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 12),
-                        SegmentedButton<ThemeMode>(
+                const SizedBox(height: 32),
+
+                // --- 3. Settings ---
+                Text(
+                  "App Settings",
+                  style: TextStyle(color: _textDark, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+
+                Container(
+                  padding: const EdgeInsets.all(20.0),
+                  decoration: BoxDecoration(
+                    color: _surfaceWhite,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                       BoxShadow(color: Colors.grey.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 5))
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Theme Preference', 
+                        style: TextStyle(color: _textGrey, fontWeight: FontWeight.w600, fontSize: 14)
+                      ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<ThemeMode>(
+                          style: ButtonStyle(
+                            backgroundColor: MaterialStateProperty.resolveWith<Color>((states) {
+                              if (states.contains(MaterialState.selected)) return _cardNavy;
+                              return _bgLight;
+                            }),
+                            foregroundColor: MaterialStateProperty.resolveWith<Color>((states) {
+                              if (states.contains(MaterialState.selected)) return Colors.white;
+                              return _textGrey;
+                            }),
+                            side: MaterialStateProperty.all(BorderSide.none),
+                            shape: MaterialStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                          ),
                           segments: const [
-                            ButtonSegment(
-                              value: ThemeMode.light,
-                              label: Text('Light'),
-                              icon: Icon(Icons.light_mode_outlined),
-                            ),
-                            ButtonSegment(
-                              value: ThemeMode.dark,
-                              label: Text('Dark'),
-                              icon: Icon(Icons.dark_mode_outlined),
-                            ),
-                            ButtonSegment(
-                              value: ThemeMode.system,
-                              label: Text('System'),
-                              icon: Icon(Icons.phone_android_outlined),
-                            ),
+                            ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined)),
+                            ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined)),
+                            ButtonSegment(value: ThemeMode.system, label: Text('Auto'), icon: Icon(Icons.phone_android_outlined)),
                           ],
                           selected: { themeProvider.themeMode },
                           onSelectionChanged: (Set<ThemeMode> newSelection) {
                             themeProvider.setThemeMode(newSelection.first);
                           },
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
                 
-                // --- 4. Logout Button (Unchanged) ---
+                // --- 4. Logout ---
                 const SizedBox(height: 32),
-                _LogoutButton(),
+                _LogoutButton(color: _dangerRed),
               ],
             ),
           );
@@ -262,81 +301,69 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       ),
     );
   }
-}
 
-// --- ✅ NEW WIDGET: A clean header for the user's profile info ---
-class _ProfileHeaderCard extends StatelessWidget {
-  final String initials;
-  final String displayName;
-  final String email;
-  final String role;
+  // --- WIDGET BUILDERS ---
 
-  const _ProfileHeaderCard({
-    required this.initials,
-    required this.displayName,
-    required this.email,
-    required this.role,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          children: [
-            CircleAvatar(
-              radius: 40,
-              backgroundColor: theme.colorScheme.primary,
-              child: Text(
-                initials,
-                style: textTheme.headlineLarge?.copyWith(
-                  color: theme.colorScheme.onPrimary,
-                ),
-              ),
+  Widget _buildFintechProfileHeader({
+    required String initials,
+    required String displayName,
+    required String email,
+    required String role,
+  }) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 4),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 8))
+            ]
+          ),
+          child: CircleAvatar(
+            radius: 45,
+            backgroundColor: _cardNavy,
+            child: Text(
+              initials,
+              style: const TextStyle(fontSize: 30, color: Colors.white, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 16),
-            Text(
-              displayName,
-              style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: theme.colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              email,
-              style: textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Chip(
-              avatar: Icon(
-                Icons.work_outline,
-                color: theme.colorScheme.onSurfaceVariant,
-                size: 18,
-              ),
-              label: Text(
-                role,
-                style: textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-              backgroundColor: theme.colorScheme.surfaceVariant.withOpacity(0.5),
-              side: BorderSide.none,
-            ),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(height: 16),
+        Text(
+          displayName,
+          style: TextStyle(
+            fontSize: 22, 
+            fontWeight: FontWeight.bold, 
+            color: _textDark,
+            letterSpacing: 0.5,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(email, style: TextStyle(color: _textGrey, fontSize: 14)),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: BoxDecoration(
+            color: _cardNavy.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            role.toUpperCase(), 
+            style: TextStyle(
+              color: _cardNavy, 
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+              letterSpacing: 0.5
+            )
+          ),
+        ),
+      ],
     );
   }
 }
 
-// --- ✅ NEW WIDGET: A clean, reusable list tile for actions ---
 class _ActionListTile extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -354,43 +381,56 @@ class _ActionListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    const Color textDark = Color(0xFF111827);
+    const Color textGrey = Color(0xFF6B7280);
+    const Color cardNavy = Color(0xFF0F172A);
+
     return InkWell(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
         decoration: BoxDecoration(
           border: Border(
             bottom: hideBorder
                 ? BorderSide.none
-                : BorderSide(color: theme.colorScheme.outline.withOpacity(0.2)),
+                : BorderSide(color: Colors.grey.withOpacity(0.1)),
           ),
         ),
         child: Row(
           children: [
-            Icon(icon, color: theme.colorScheme.primary, size: 28),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, color: cardNavy, size: 20),
+            ),
             const SizedBox(width: 16),
             Expanded(
               child: Text(
                 title,
-                style: theme.textTheme.titleMedium?.copyWith(
+                style: const TextStyle(
                   fontWeight: FontWeight.w600,
-                  color: theme.colorScheme.onSurface,
+                  color: textDark,
+                  fontSize: 15,
                 ),
               ),
             ),
             if (trailing != null)
               Text(
                 trailing!,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+                style: const TextStyle(
+                  color: textGrey,
                   fontWeight: FontWeight.bold,
+                  fontSize: 14
                 ),
               )
             else
               Icon(
                 Icons.chevron_right,
-                color: theme.colorScheme.onSurfaceVariant.withOpacity(0.6),
+                color: textGrey.withOpacity(0.5),
+                size: 20,
               ),
           ],
         ),
@@ -399,30 +439,39 @@ class _ActionListTile extends StatelessWidget {
   }
 }
 
-// --- ✅ NEW WIDGET: A simple header for sections ---
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  const _SectionHeader(this.title); // <-- Positional argument
+class _LogoutButton extends StatelessWidget {
+  final Color color;
+  const _LogoutButton({required this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8.0, 24.0, 8.0, 8.0),
-      child: Text(
-        title.toUpperCase(),
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.8,
-            ),
+    return ElevatedButton.icon(
+      icon: const Icon(Icons.logout_rounded, size: 20),
+      label: const Text(
+        'Log Out',
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+      ),
+      onPressed: () async {
+        await AuthService().logout();
+        if (context.mounted) {
+          Navigator.of(context).pushNamedAndRemoveUntil('/selector', (route) => false);
+        }
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        foregroundColor: color,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: color.withOpacity(0.3), width: 1),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        shadowColor: Colors.transparent,
       ),
     );
   }
 }
 
-// --- (PerformanceChart class was removed) ---
-
-// --- (_ManageDealersContent class remains the same) ---
 class _ManageDealersContent extends StatefulWidget {
   final Employee employee;
   final ScrollController scrollController;
@@ -441,6 +490,11 @@ class _ManageDealersContent extends StatefulWidget {
 class _ManageDealersContentState extends State<_ManageDealersContent> {
   final ApiService _apiService = ApiService();
   late Future<List<Dealer>> _dealersFuture;
+
+  // Colors for this widget
+  static const Color _textDark = Color(0xFF111827);
+  static const Color _textGrey = Color(0xFF6B7280);
+  static const Color _cardNavy = Color(0xFF0F172A);
 
   @override
   void initState() {
@@ -467,18 +521,20 @@ class _ManageDealersContentState extends State<_ManageDealersContent> {
      final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Confirm Deletion'),
+        backgroundColor: Colors.white,
+        title: const Text('Confirm Deletion', style: TextStyle(color: _textDark, fontWeight: FontWeight.bold)),
         content: const Text(
           'Are you sure you want to delete this dealer? This action cannot be undone.',
+          style: TextStyle(color: _textGrey),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
+            child: const Text('Cancel', style: TextStyle(color: _textGrey)),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -488,85 +544,52 @@ class _ManageDealersContentState extends State<_ManageDealersContent> {
     try {
       await _apiService.deleteDealer(dealerId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Dealer deleted'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dealer deleted'), backgroundColor: Colors.green));
       _refreshDealers(notifyParent: true);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to delete: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete: $e'), backgroundColor: Colors.red));
     }
   }
 
-  void _editDealer(Dealer dealer) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Editing ${dealer.name}...')));
-  }
-
   void _showDealerActions(Dealer dealer) {
-    final theme = Theme.of(context);
-    
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (context) {
         return Container(
-          decoration: BoxDecoration(
-            color: theme.colorScheme.primary,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24.0)),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24.0)),
           ),
-          child: Wrap(
-            children: <Widget>[
-              ListTile(
-                leading: Icon(Icons.edit, color: theme.colorScheme.onPrimary.withOpacity(0.7)),
-                title: Text(
-                  'Edit Dealer',
-                  style: TextStyle(color: theme.colorScheme.onPrimary),
+          child: SafeArea(
+            child: Wrap(
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(dealer.name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _textDark)),
                 ),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  _editDealer(dealer);
-                },
-              ),
-              ListTile(
-                leading: Icon(Icons.delete, color: theme.colorScheme.error),
-                title: Text(
-                  'Delete Dealer',
-                  style: TextStyle(color: theme.colorScheme.error),
+                ListTile(
+                  leading: const Icon(Icons.edit, color: _cardNavy),
+                  title: const Text('Edit Dealer', style: TextStyle(color: _textDark)),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Edit feature coming soon...')));
+                  },
                 ),
-                onTap: () {
-                  Navigator.of(context).pop();
-                  if (dealer.id != null) {
-                    _deleteDealer(dealer.id!);
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Error: Dealer ID is missing.'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                },
-              ),
-              ListTile(
-                title: Center(
-                  child: Text(
-                    'Cancel',
-                    style: TextStyle(color: theme.colorScheme.onPrimary.withOpacity(0.7)),
-                  ),
+                ListTile(
+                  leading: const Icon(Icons.delete, color: Colors.red),
+                  title: const Text('Delete Dealer', style: TextStyle(color: Colors.red)),
+                  onTap: () {
+                    Navigator.of(context).pop();
+                    if (dealer.id != null) {
+                      _deleteDealer(dealer.id!);
+                    }
+                  },
                 ),
-                onTap: () => Navigator.of(context).pop(),
-              ),
-            ],
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         );
       },
@@ -575,16 +598,23 @@ class _ManageDealersContentState extends State<_ManageDealersContent> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 20.0),
+          padding: const EdgeInsets.all(24.0),
+          child: Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 20.0),
           child: Text(
             'Manage Your Dealers',
-            style: theme.textTheme.titleLarge?.copyWith(
-              color: theme.colorScheme.onSurface,
+            style: TextStyle(
+              color: _textDark,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ),
@@ -593,51 +623,39 @@ class _ManageDealersContentState extends State<_ManageDealersContent> {
             future: _dealersFuture,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return Center(
-                  child: CircularProgressIndicator(color: theme.colorScheme.primary),
-                );
+                return const Center(child: CircularProgressIndicator(color: _cardNavy));
               }
               if (snapshot.hasError) {
-                return Center(
-                  child: Text(
-                    'Error: ${snapshot.error}',
-                    style: TextStyle(color: theme.colorScheme.error),
-                  ),
-                );
+                return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
               }
               if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return Center(
-                  child: Text(
-                    'No dealers found for this user.',
-                    style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)),
-                  ),
-                );
+                return const Center(child: Text('No dealers found.', style: TextStyle(color: _textGrey)));
               }
               final dealers = snapshot.data!;
-              return ListView.builder(
+              return ListView.separated(
                 controller: widget.scrollController,
                 itemCount: dealers.length,
+                separatorBuilder: (ctx, i) => const Divider(height: 1, indent: 70, color: Color(0xFFF3F4F6)),
                 itemBuilder: (context, index) {
                   final dealer = dealers[index];
                   return ListTile(
-                    leading: Icon(Icons.store_outlined, color: theme.colorScheme.primary),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(12)),
+                      child: const Icon(Icons.store, color: Colors.green, size: 24),
+                    ),
                     title: Text(
                       dealer.name,
-                      style: TextStyle(
-                        color: theme.colorScheme.onSurface,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16),
                     ),
                     subtitle: Text(
                       dealer.address,
-                      style: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.7)),
+                      style: const TextStyle(color: _textGrey, fontSize: 13),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    trailing: Icon(
-                      Icons.more_vert,
-                      color: theme.colorScheme.onSurface.withOpacity(0.5),
-                    ),
+                    trailing: const Icon(Icons.more_vert, color: _textGrey),
                     onTap: () => _showDealerActions(dealer),
                   );
                 },
@@ -646,33 +664,6 @@ class _ManageDealersContentState extends State<_ManageDealersContent> {
           ),
         ),
       ],
-    );
-  }
-}
-
-// --- (_LogoutButton class remains the same) ---
-class _LogoutButton extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return ElevatedButton.icon(
-      icon: const Icon(Icons.logout),
-      label: const Text('LOG OUT'),
-      onPressed: () async {
-        await AuthService().logout();
-        if (context.mounted) {
-          Navigator.of(
-            context,
-          ).pushNamedAndRemoveUntil('/login', (route) => false);
-        }
-      },
-      style: ElevatedButton.styleFrom(
-        backgroundColor: theme.colorScheme.error,
-        foregroundColor: theme.colorScheme.onError,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        padding: const EdgeInsets.symmetric(vertical: 18),
-      ),
     );
   }
 }

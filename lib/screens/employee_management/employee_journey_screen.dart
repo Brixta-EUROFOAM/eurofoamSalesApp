@@ -1,12 +1,13 @@
 // lib/screens/employee_management/employee_journey_screen.dart
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as dev;
 
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/geotracking_data_model.dart';
-import 'package:salesmanapp/models/pjp_model.dart';      // ✅ NEW
-import 'package:salesmanapp/models/dealer_model.dart';   // ✅ NEW
+import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/models/dealer_model.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -23,17 +24,14 @@ class EmployeeJourneyScreen extends StatefulWidget {
   final Employee employee;
   final Map<String, dynamic>? initialJourneyData;
   final VoidCallback? onDestinationConsumed;
-
-  // --- ✅ NEW CALLBACK ---
   final Function(Pjp pjp, Dealer dealer, DateTime checkInTime)? onJourneyCompleted;
-  // ---
 
   const EmployeeJourneyScreen({
     super.key,
     required this.employee,
     this.initialJourneyData,
     this.onDestinationConsumed,
-    this.onJourneyCompleted, // ✅ in constructor
+    this.onJourneyCompleted,
   });
 
   @override
@@ -44,54 +42,72 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   final Completer<MapLibreMapController> _controllerCompleter = Completer();
   late Future<String> _styleFuture;
 
-  // --- ✅ REFACTORED: Replaced _originController with a simple String ---
-  String _distanceDisplay = "Set a destination";
+  // UI State
+  String _distanceDisplay = "Waiting for PJP...";
   final _destinationController = TextEditingController();
-  // ---
 
   final String? _stadiaApiKey = dotenv.env['STADIA_API_KEY'];
   final String? _radarApiKey = dotenv.env['RADAR_API_KEY'];
-
   final ApiService _apiService = ApiService();
 
+  // Journey State
   bool _isJourneyActive = false;
   double _totalDistanceTravelled = 0.0;
   Position? _lastRecordedPosition;
-
   String? _currentJourneyId;
+  String? _currentGeoTrackingDbId; // ✅ Stores the DB ID for Patching
 
-  // --- ✅ NEW STATE ---
+  // Data Holding State
   Pjp? _currentPjp;
   Dealer? _currentDealer;
-  // ---
-
   String? _currentPjpId;
   LatLng? _currentUserLocation;
   LatLng? _destinationLocation;
-
   final List<LatLng> _routeTaken = [];
 
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-      FlutterLocalNotificationsPlugin();
-  bool _isNearDestinationNotified = false;
+  // Map State Flags
+  bool _isUserLocationLayerAdded = false;
+  bool _isRouteLineLayerAdded = false;
+  bool _isTravelledLineLayerAdded = false;
 
+  // Notifications & Radar
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+  bool _isNearDestinationNotified = false;
   StreamSubscription<Position>? _positionStreamSubscription;
   Timer? _radarArrivalCheckTimer;
 
   static const _initialCameraPosition = CameraPosition(
-    target: LatLng(26.1445, 91.7362), // Centered on Guwahati
+    target: LatLng(26.1445, 91.7362),
     zoom: 12,
   );
+
+  // --- FINTECH THEME PALETTE ---
+  final Color _bgLight = const Color(0xFFF3F4F6);
+  final Color _cardNavy = const Color(0xFF0F172A);
+  final Color _textDark = const Color(0xFF111827);
+  final Color _textGrey = const Color(0xFF6B7280);
+  final Color _surfaceWhite = Colors.white;
+  final Color _dangerRed = const Color(0xFFEF4444);
 
   @override
   void initState() {
     super.initState();
     _initializeNotifications();
-    Radar.setUserId(widget.employee.id);
-    Radar.setDescription(widget.employee.displayName);
-    _setupRadarListeners();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Radar.setUserId(widget.employee.id);
+      Radar.setDescription(widget.employee.displayName);
+      _setupRadarListeners();
+
+      _determinePositionAndMoveCamera();
+      _startLocationStream();
+
+      if (widget.initialJourneyData != null) {
+        _processNewJourneyData(widget.initialJourneyData!);
+      }
+    });
+
     _styleFuture = _readStyle();
-    _initializeFirstTime();
   }
 
   @override
@@ -99,8 +115,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     super.didUpdateWidget(oldWidget);
     if (widget.initialJourneyData != oldWidget.initialJourneyData &&
         widget.initialJourneyData != null) {
-      debugPrint(
-          "--- didUpdateWidget TRIGGERED: A new journey has been started! ---");
       _processNewJourneyData(widget.initialJourneyData!);
     }
   }
@@ -110,116 +124,200 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _destinationController.dispose();
     _positionStreamSubscription?.cancel();
     _radarArrivalCheckTimer?.cancel();
-    if (_isJourneyActive) {
-      _stopJourney();
-    }
+    // If active, we don't auto-stop to prevent accidental data loss, 
+    // but in production you might want to save state or force stop.
     super.dispose();
   }
 
-  Future<void> _launchGoogleMapsNavigation() async {
-    if (_destinationLocation == null) {
-      _showError("Destination not set.");
+  void _processNewJourneyData(Map<String, dynamic> journeyData) async {
+    dev.log("🔐 LOCKING IN DEALER DATA...", name: 'SalesJourney');
+    final Pjp? pjp = journeyData['pjp'] as Pjp?;
+    final Dealer? dealer = journeyData['dealer'] as Dealer?;
+    final LatLng? destination = journeyData['destination'] as LatLng?;
+    final String? displayName = journeyData['displayName'] as String?;
+
+    if (destination == null || displayName == null || pjp == null || dealer == null) {
+      _showError('Error: Corrupt PJP Data.');
       return;
     }
-    final lat = _destinationLocation!.latitude;
-    final lng = _destinationLocation!.longitude;
-    final url = Uri.parse('google.navigation:q=$lat,$lng');
+
+    _currentPjpId = pjp.id;
+    _currentPjp = pjp;
+    _currentDealer = dealer;
+    _destinationLocation = destination;
+
+    if (mounted) {
+      setState(() {
+        _destinationController.text = displayName;
+        _distanceDisplay = "Ready to start";
+      });
+    }
+
+    _routeTaken.clear();
+    _isRouteLineLayerAdded = false;
+
+    final controller = await _controllerCompleter.future;
     try {
-      if (await canLaunchUrl(url)) {
-        await launchUrl(url);
-      } else {
-        throw 'Could not launch $url';
+      await controller.removeLayer('route-line');
+      await controller.removeSource('route-source');
+    } catch (_) {}
+
+    await _getDirectionsAndDrawRoute();
+    widget.onDestinationConsumed?.call();
+  }
+
+  Future<void> _startJourney() async {
+    if (_isJourneyActive || _destinationLocation == null || _currentPjp == null) {
+      _showError("Cannot start: Data not loaded.");
+      return;
+    }
+
+    _isNearDestinationNotified = false;
+    _routeTaken.clear();
+    _isTravelledLineLayerAdded = false;
+    _currentGeoTrackingDbId = null; 
+
+    final controller = await _controllerCompleter.future;
+    try {
+      await controller.removeLayer('rt-line');
+      await controller.removeSource('rt-source');
+    } catch (_) {}
+
+    try {
+      // 1. Get Initial Position
+      Position initialPosition = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      _lastRecordedPosition = initialPosition;
+      _routeTaken.add(LatLng(initialPosition.latitude, initialPosition.longitude));
+
+      // 2. Generate Client-Side Journey ID
+      _currentJourneyId = 'JRN-SALES-${widget.employee.id}-${DateTime.now().millisecondsSinceEpoch}';
+
+      _showTrackingNotification();
+      setState(() {
+        _isJourneyActive = true;
+        _totalDistanceTravelled = 0.0;
+        _distanceDisplay = "0.00 km";
+      });
+      _showError("Journey Tracking Started!");
+
+      // 3. POST: Create Journey Record
+      final startPoint = GeoTrackingPoint(
+        userId: int.parse(widget.employee.id),
+        journeyId: _currentJourneyId!,
+        latitude: initialPosition.latitude,
+        longitude: initialPosition.longitude,
+        destLat: _destinationLocation?.latitude,
+        destLng: _destinationLocation?.longitude,
+        // No siteId here, but we could add dealerId if the backend supported it.
+        // For now, we rely on PJP linking in the backend.
+        isActive: true,
+        locationType: 'JOURNEY_START',
+      );
+
+      // Capture the UUID for Patching
+      _currentGeoTrackingDbId = await _apiService.sendGeoTrackingPoint(startPoint);
+      dev.log("✅ Journey Started. DB ID: $_currentGeoTrackingDbId", name: 'SalesJourney');
+
+      // 4. Update PJP Status
+      if (_currentPjpId != null) {
+        await _apiService.updatePjp(_currentPjpId!, {'status': 'IN_PROGRESS'});
       }
+
+      _radarArrivalCheckTimer?.cancel();
+      _radarArrivalCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) => _performRadarArrivalCheck());
     } catch (e) {
-      _showError("Could not open Google Maps. Is it installed?");
+      _showError("Failed to start journey: $e");
+      setState(() => _isJourneyActive = false);
     }
   }
 
-  void _initializeNotifications() async {
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/launcher_icon');
-    const DarwinInitializationSettings initializationSettingsIOS =
-        DarwinInitializationSettings();
-    const InitializationSettings initializationSettings =
-        InitializationSettings(
-            android: initializationSettingsAndroid, iOS: initializationSettingsIOS);
-    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-  }
+  Future<void> _stopJourney() async {
+    dev.log("🛑 STOPPING JOURNEY...", name: 'SalesJourney');
+    _radarArrivalCheckTimer?.cancel();
+    _cancelTrackingNotification();
 
-  Future<void> _showNearArrivalNotification() async {
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-        'near_arrival_channel', 'Near Arrival Notifications',
-        channelDescription: 'Notifies when you are close to your destination',
-        importance: Importance.max,
-        priority: Priority.high,
-        showWhen: true);
-    const NotificationDetails platformDetails =
-        NotificationDetails(android: androidDetails);
-    await flutterLocalNotificationsPlugin.show(
-        0,
-        'Approaching Destination',
-        'You are about to reach ${_destinationController.text}.',
-        platformDetails);
-  }
+    if (!_isJourneyActive) return;
 
-  Future<void> _showTrackingNotification() async {
-    const int trackingNotificationId = 1;
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-      'tracking_channel',
-      'Tracking Notifications',
-      channelDescription:
-          'Shows when your location is being tracked for a journey.',
-      importance: Importance.low,
-      priority: Priority.low,
-      ongoing: true,
-      autoCancel: false,
-    );
-    const NotificationDetails platformDetails =
-        NotificationDetails(android: androidDetails);
-    await flutterLocalNotificationsPlugin.show(
-        trackingNotificationId,
-        'Journey in Progress',
-        'Your location is being actively tracked.',
-        platformDetails);
-  }
+    final DateTime checkInTime = DateTime.now();
 
-  Future<void> _cancelTrackingNotification() async {
-    const int trackingNotificationId = 1;
-    await flutterLocalNotificationsPlugin.cancel(trackingNotificationId);
-  }
+    // --- 1. PATCH: Update the existing Tracking Record ---
+    if (_currentGeoTrackingDbId != null && _lastRecordedPosition != null) {
+      try {
+        final updateData = {
+          'isActive': false,
+          'totalDistanceTravelled': _totalDistanceTravelled,
+          'latitude': _lastRecordedPosition!.latitude,
+          'longitude': _lastRecordedPosition!.longitude,
+          'locationType': 'JOURNEY_END',
+          'checkOutTime': checkInTime.toIso8601String(),
+        };
 
-  Future<void> _initializeFirstTime() async {
-    await _determinePositionAndMoveCamera();
-    _startLocationStream();
+        await _apiService.updateGeoTrackingPoint(_currentGeoTrackingDbId!, updateData);
+        dev.log("✅ GeoTracking PATCHED successfully", name: 'SalesJourney');
+      } catch (e) {
+        dev.log("⚠️ GeoTracking PATCH Failed: $e", name: 'SalesJourney');
+      }
+    } else {
+      dev.log("⚠️ Skipping PATCH: No DB ID available", name: 'SalesJourney');
+    }
 
-    if (widget.initialJourneyData != null) {
-      _processNewJourneyData(widget.initialJourneyData!);
+    // --- 2. Update PJP Status ---
+    if (_currentPjpId != null) {
+      try {
+        await _apiService.updatePjp(_currentPjpId!, {'status': 'COMPLETED'});
+        dev.log("✅ PJP Marked Completed", name: 'SalesJourney');
+      } catch (e) {
+        dev.log("❌ PJP Update Failed: $e", name: 'SalesJourney');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Network Error: $e"), backgroundColor: Colors.red));
+        }
+      }
+    }
+
+    // --- 3. Proceed to Form (DVR) ---
+    if (widget.onJourneyCompleted != null && _currentPjp != null && _currentDealer != null) {
+      widget.onJourneyCompleted!(_currentPjp!, _currentDealer!, checkInTime);
+    }
+
+    // --- 4. Cleanup UI ---
+    final controller = await _controllerCompleter.future;
+    try {
+      await controller.removeLayer('route-line');
+      await controller.removeSource('route-source');
+      await controller.removeLayer('rt-line');
+      await controller.removeSource('rt-source');
+    } catch (_) {}
+
+    _isRouteLineLayerAdded = false;
+    _isTravelledLineLayerAdded = false;
+
+    if (mounted) {
+      setState(() {
+        _isJourneyActive = false;
+        _currentJourneyId = null;
+        _currentPjp = null;
+        _currentDealer = null;
+        _currentPjpId = null;
+        _destinationLocation = null;
+        _distanceDisplay = "Visit Completed";
+        _routeTaken.clear();
+        _currentGeoTrackingDbId = null; 
+      });
     }
   }
 
+  // --- LOCATION LOGIC ---
   void _startLocationStream() {
-    const LocationSettings locationSettings = LocationSettings(
-      accuracy: LocationAccuracy.best,
-      distanceFilter: 1,
-    );
-
-    _positionStreamSubscription =
-        Geolocator.getPositionStream(locationSettings: locationSettings)
-            .listen(_onPositionUpdate, onError: (e) {
-      debugPrint("Error in location stream: $e");
-    });
+    const LocationSettings locationSettings = LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10);
+    _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings)
+        .listen(_onPositionUpdate, onError: (e) => dev.log("Loc Error: $e"));
   }
 
   void _onPositionUpdate(Position position) {
     _currentUserLocation = LatLng(position.latitude, position.longitude);
+    if (mounted) _drawUserLocationPointer(_currentUserLocation!);
 
-    if (mounted) {
-      _drawUserLocationPointer(_currentUserLocation!);
-    }
-
-    if (!_isJourneyActive) {
-      return;
-    }
+    if (!_isJourneyActive) return;
 
     if (_lastRecordedPosition != null) {
       final double movement = Geolocator.distanceBetween(
@@ -228,7 +326,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         position.latitude,
         position.longitude,
       );
-
       if (movement > 2.0) {
         _totalDistanceTravelled += movement;
         _lastRecordedPosition = position;
@@ -240,59 +337,147 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     }
 
     if (_destinationLocation != null && !_isNearDestinationNotified) {
-      final double distanceToDestination = Geolocator.distanceBetween(
+      final double dist = Geolocator.distanceBetween(
         position.latitude,
         position.longitude,
         _destinationLocation!.latitude,
         _destinationLocation!.longitude,
       );
-      if (distanceToDestination < 500) {
+      if (dist < 500) {
         _showNearArrivalNotification();
         _isNearDestinationNotified = true;
       }
     }
 
     if (mounted) {
-      setState(() {
-        final distanceKm = _totalDistanceTravelled / 1000.0;
-        _distanceDisplay = "${distanceKm.toStringAsFixed(2)} km";
-      });
+      setState(() => _distanceDisplay = "${(_totalDistanceTravelled / 1000.0).toStringAsFixed(2)} km");
     }
   }
 
-  // --- ✅ THE FIX: consume full objects from journeyData ---
-  void _processNewJourneyData(Map<String, dynamic> journeyData) async {
-    final Pjp? pjp = journeyData['pjp'] as Pjp?;
-    final Dealer? dealer = journeyData['dealer'] as Dealer?;
-    final LatLng? destination = journeyData['destination'] as LatLng?;
-    final String? displayName = journeyData['displayName'] as String?;
-
-    if (destination == null || displayName == null || pjp == null || dealer == null) {
-      _showError('Received invalid journey data from PJP.');
-      return;
-    }
-
-    _currentPjpId = pjp.id;   // Keep for Radar/updates
-    _currentPjp = pjp;        // Store full objects for DVR callback
-    _currentDealer = dealer;
-
-    _routeTaken.clear();
-
+  Future<void> _drawUserLocationPointer(LatLng point) async {
     final controller = await _controllerCompleter.future;
-    try {
-      await controller.removeLayer('route-taken-line');
-      await controller.removeSource('route-taken-source');
-    } catch (_) {}
+    final data = {
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'properties': {},
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [point.longitude, point.latitude],
+          },
+        },
+      ],
+    };
 
-    if (mounted) {
-      setState(() {
-        _destinationLocation = destination;
-        _destinationController.text = displayName;
-      });
+    if (_isUserLocationLayerAdded) {
+      try {
+        await controller.setGeoJsonSource('user-loc-s', data);
+      } catch (e) {
+        dev.log("Error updating user location source: $e");
+      }
+    } else {
+      try {
+        await controller.addSource('user-loc-s', GeojsonSourceProperties(data: data));
+        await controller.addCircleLayer('user-loc-s', 'user-loc-c-o', const CircleLayerProperties(circleColor: '#FFFFFF', circleRadius: 12.0));
+        await controller.addCircleLayer('user-loc-s', 'user-loc-c-i', const CircleLayerProperties(circleColor: '#0B4AA8', circleRadius: 8.0));
+        _isUserLocationLayerAdded = true;
+      } catch (e) {
+        _isUserLocationLayerAdded = true;
+      }
     }
+  }
 
-    await _getDirectionsAndDrawRoute();
-    widget.onDestinationConsumed?.call();
+  Future<void> _updateTravelledPolyline() async {
+    if (_routeTaken.length < 2) return;
+    final controller = await _controllerCompleter.future;
+    final data = {
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'properties': {},
+          'geometry': {
+            'type': 'LineString',
+            'coordinates': _routeTaken.map((p) => [p.longitude, p.latitude]).toList(),
+          },
+        },
+      ],
+    };
+
+    if (_isTravelledLineLayerAdded) {
+      await controller.setGeoJsonSource('rt-source', data);
+    } else {
+      try {
+        await controller.addSource('rt-source', GeojsonSourceProperties(data: data));
+        await controller.addLineLayer('rt-source', 'rt-line', const LineLayerProperties(lineColor: '#EF4444', lineWidth: 6.0));
+        _isTravelledLineLayerAdded = true;
+      } catch (e) {
+        _isTravelledLineLayerAdded = true;
+      }
+    }
+  }
+
+  Future<void> _getDirectionsAndDrawRoute() async {
+    if (_currentUserLocation == null || _destinationLocation == null) {
+      if (_currentUserLocation == null) await _determinePositionAndMoveCamera();
+      if (_currentUserLocation == null) return;
+    }
+    final locations = '${_currentUserLocation!.latitude},${_currentUserLocation!.longitude}|${_destinationLocation!.latitude},${_destinationLocation!.longitude}';
+    final url = Uri.parse('https://api.radar.io/v1/route/directions?locations=$locations&mode=car&units=metric&geometry=polyline5');
+    try {
+      final response = await http.get(url, headers: {'Authorization': _radarApiKey!});
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final polyline = PolylineCodec.decode(data['routes'][0]['geometry']['polyline']);
+        final routePoints = polyline.map((p) => LatLng(p[0].toDouble(), p[1].toDouble())).toList();
+
+        final controller = await _controllerCompleter.future;
+        final geoJson = {
+          'type': 'FeatureCollection',
+          'features': [
+            {
+              'type': 'Feature',
+              'properties': {},
+              'geometry': {
+                'type': 'LineString',
+                'coordinates': routePoints.map((p) => [p.longitude, p.latitude]).toList(),
+              },
+            },
+          ],
+        };
+
+        if (_isRouteLineLayerAdded) {
+          await controller.setGeoJsonSource('route-source', geoJson);
+        } else {
+          await controller.addSource('route-source', GeojsonSourceProperties(data: geoJson));
+          await controller.addLineLayer('route-source', 'route-line', const LineLayerProperties(lineColor: '#0B4AA8', lineWidth: 5.0, lineOpacity: 0.8));
+          _isRouteLineLayerAdded = true;
+        }
+      }
+    } catch (e) {
+      dev.log("Route Error: $e");
+    }
+  }
+
+  void _initializeNotifications() async {
+    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/launcher_icon');
+    const DarwinInitializationSettings iosSettings = DarwinInitializationSettings();
+    await flutterLocalNotificationsPlugin.initialize(const InitializationSettings(android: androidSettings, iOS: iosSettings));
+  }
+
+  Future<void> _showNearArrivalNotification() async {
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails('near_arrival_channel', 'Near Arrival', importance: Importance.max, priority: Priority.high);
+    await flutterLocalNotificationsPlugin.show(0, 'Approaching Destination', 'You are close to the dealer.', const NotificationDetails(android: androidDetails));
+  }
+
+  Future<void> _showTrackingNotification() async {
+    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails('tracking_channel', 'Tracking', importance: Importance.low, priority: Priority.low, ongoing: true, autoCancel: false);
+    await flutterLocalNotificationsPlugin.show(1, 'Journey Active', 'Tracking location...', const NotificationDetails(android: androidDetails));
+  }
+
+  Future<void> _cancelTrackingNotification() async {
+    await flutterLocalNotificationsPlugin.cancel(1);
   }
 
   void _setupRadarListeners() {
@@ -300,152 +485,26 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       if (!_isJourneyActive || _currentPjpId == null) return;
       final events = result['events'] as List<dynamic>?;
       if (events == null) return;
-      final arrivalEvent = events.firstWhere(
-        (event) =>
-            event['type'] == 'user.entered_geofence' &&
-            event['geofence'] != null &&
-            event['geofence']['externalId'] == _currentPjpId,
-        orElse: () => null,
-      );
-      if (arrivalEvent != null) {
-        debugPrint("✅ Matched geofence arrival event!");
-        _showDestinationArrivalNotification();
-      }
+      final arrivalEvent = events.firstWhere((event) => event['type'] == 'user.entered_geofence' && event['geofence']['externalId'] == _currentPjpId, orElse: () => null);
+      if (arrivalEvent != null) _showDestinationArrivalNotification();
     });
   }
 
   void _performRadarArrivalCheck() async {
-    if (!_isJourneyActive) {
-      _radarArrivalCheckTimer?.cancel();
-      return;
-    }
-    try {
-      debugPrint("--- Calling Radar.trackOnce() for arrival check ---");
-      await Radar.trackOnce();
-    } catch (e) {
-      debugPrint("Error calling Radar.trackOnce: $e");
-    }
+    if (_isJourneyActive) await Radar.trackOnce();
   }
 
-  void _startJourney() async {
-    if (_isJourneyActive || _destinationLocation == null) return;
-
-    _isNearDestinationNotified = false;
-    _routeTaken.clear();
-
-    try {
-      Position initialPosition =
-          await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      _lastRecordedPosition = initialPosition;
-      _routeTaken
-          .add(LatLng(initialPosition.latitude, initialPosition.longitude));
-    } catch (e) {
-      _showError("Could not get initial location: $e");
-      return;
-    }
-
-    _currentJourneyId =
-        'JRN-${widget.employee.id}-${DateTime.now().millisecondsSinceEpoch}';
-
-    try {
-      _showTrackingNotification();
-
-      setState(() {
-        _isJourneyActive = true;
-        _totalDistanceTravelled = 0.0;
-        _distanceDisplay = "0.00 km";
-      });
-      _showError("Journey Tracking Started!");
-
-      _radarArrivalCheckTimer?.cancel();
-      _radarArrivalCheckTimer = Timer.periodic(
-        const Duration(seconds: 30),
-        (_) => _performRadarArrivalCheck(),
-      );
-    } catch (e) {
-      _showError("Failed to start journey.");
-    }
-  }
-
-  // --- ✅ UPDATED: call onJourneyCompleted with PJP, Dealer, and check-in time
-  void _stopJourney() async {
-    _radarArrivalCheckTimer?.cancel();
-    _cancelTrackingNotification();
-
-    if (!_isJourneyActive) return;
-
-    // ✅ Check-in time for DVR
-    final DateTime dvrCheckInTime = DateTime.now();
-
-    if (_lastRecordedPosition != null && _currentJourneyId != null) {
-      final finalTrackingPoint = GeoTrackingPoint(
-        userId: int.parse(widget.employee.id),
-        journeyId: _currentJourneyId!,
-        latitude: _lastRecordedPosition!.latitude,
-        longitude: _lastRecordedPosition!.longitude,
-        totalDistanceTravelled: _totalDistanceTravelled,
-        isActive: false,
-        locationType: 'FINAL_STOP_SUMMARY',
-      );
-      _apiService.sendGeoTrackingPoint(finalTrackingPoint);
-    }
-
-    if (_currentPjpId != null) {
-      try {
-        await _apiService.updatePjp(_currentPjpId!, {'status': 'COMPLETED'});
-        debugPrint("✅ PJP status updated to completed.");
-      } catch (e) {
-        debugPrint("❌ Failed to update PJP status to completed: $e");
-      }
-    }
-
-    final finalDistanceKm = _totalDistanceTravelled / 1000.0;
-    if (mounted) {
-      setState(() {
-        _isJourneyActive = false;
-        _currentJourneyId = null;
-        _currentPjpId = null;
-        // keep _currentPjp and _currentDealer until after callback
-        _distanceDisplay =
-            "Journey Complete (${finalDistanceKm.toStringAsFixed(2)} km)";
-      });
-    }
-    _showError(
-        "Journey Ended. Total distance: ${finalDistanceKm.toStringAsFixed(2)} km.");
-
-    // ✅ Trigger DVR dialog upstream
-    if (widget.onJourneyCompleted != null &&
-        _currentPjp != null &&
-        _currentDealer != null) {
-      widget.onJourneyCompleted!(_currentPjp!, _currentDealer!, dvrCheckInTime);
-    }
-
-    // Clear objects after notifying
-    _currentPjp = null;
-    _currentDealer = null;
-  }
-
-  // --- ✅ UPDATED: uses _stopJourney which triggers DVR flow, simpler copy
   void _showDestinationArrivalNotification() {
     if (!mounted || !_isJourneyActive) return;
-
-    // 1) Stop tracking
-    // 2) Calls onJourneyCompleted
-    // 3) NavScreen opens DVR
     _stopJourney();
-
-    // Simple confirmation dialog
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('Destination Reached! 🎯'),
-        content: const Text('You have arrived. Please complete the visit report.'),
+        title: const Text('ARRIVED'),
+        content: const Text('You have reached the dealer location.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('OK'),
-          )
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
         ],
       ),
     );
@@ -455,205 +514,33 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     setState(() => _distanceDisplay = "Checking permissions...");
     try {
       String? status = await Radar.getPermissionsStatus();
-      if (status == 'DENIED' || status == 'NOT_DETERMINED') {
-        status = await Radar.requestPermissions(true);
-      }
+      if (status == 'DENIED' || status == 'NOT_DETERMINED') status = await Radar.requestPermissions(true);
       if (status != 'GRANTED_BACKGROUND' && status != 'GRANTED_FOREGROUND') {
-        setState(() => _distanceDisplay = 'Location permissions denied');
-        _showError('Background location permissions are required for tracking.');
+        setState(() => _distanceDisplay = 'Permission Denied');
         return;
       }
       setState(() => _distanceDisplay = "Fetching location...");
       Position position = await Geolocator.getCurrentPosition();
       _currentUserLocation = LatLng(position.latitude, position.longitude);
-
-      if (mounted) setState(() => _distanceDisplay = "My Current Location");
-
+      if (mounted && !_isJourneyActive) setState(() => _distanceDisplay = "My Location");
       final controller = await _controllerCompleter.future;
-      await controller.animateCamera(CameraUpdate.newCameraPosition(
-        CameraPosition(target: _currentUserLocation!, zoom: 15.0),
-      ));
+      await controller.animateCamera(CameraUpdate.newCameraPosition(CameraPosition(target: _currentUserLocation!, zoom: 15.0)));
       _drawUserLocationPointer(_currentUserLocation!);
     } catch (e) {
-      if (mounted) {
-        setState(() => _distanceDisplay = "Failed to get location");
-      }
-      _showError("Error getting location: $e");
+      if (mounted) setState(() => _distanceDisplay = "Loc Error");
     }
-  }
-
-  Future<void> _drawUserLocationPointer(LatLng point) async {
-    final controller = await _controllerCompleter.future;
-    try {
-      await controller.removeLayer('user-location-circle-outer');
-      await controller.removeLayer('user-location-circle-inner');
-      await controller.removeSource('user-location-source');
-    } catch (_) {}
-    await controller.addSource(
-        'user-location-source',
-        GeojsonSourceProperties(data: {
-          'type': 'FeatureCollection',
-          'features': [
-            {
-              'type': 'Feature',
-              'properties': {},
-              'geometry': {
-                'type': 'Point',
-                'coordinates': [point.longitude, point.latitude]
-              }
-            }
-          ]
-        }));
-    await controller.addCircleLayer(
-        'user-location-source',
-        'user-location-circle-outer',
-        const CircleLayerProperties(
-            circleColor: '#FFFFFF', circleRadius: 12.0, circleOpacity: 0.9));
-    await controller.addCircleLayer(
-        'user-location-source',
-        'user-location-circle-inner',
-        const CircleLayerProperties(
-            circleColor: '#3567FB', circleRadius: 8.0, circleOpacity: 1.0));
-  }
-
-  Future<void> _updateTravelledPolyline() async {
-    if (_routeTaken.length < 2) return;
-    final controller = await _controllerCompleter.future;
-    try {
-      await controller.removeLayer('route-taken-line');
-      await controller.removeSource('route-taken-source');
-    } catch (_) {}
-    await controller.addSource(
-        'route-taken-source',
-        GeojsonSourceProperties(data: {
-          'type': 'FeatureCollection',
-          'features': [
-            {
-              'type': 'Feature',
-              'properties': {},
-              'geometry': {
-                'type': 'LineString',
-                'coordinates':
-                    _routeTaken.map((p) => [p.longitude, p.latitude]).toList()
-              }
-            }
-          ]
-        }));
-    await controller.addLineLayer(
-        'route-taken-source',
-        'route-taken-line',
-        const LineLayerProperties(
-            lineColor: '#FF0000',
-            lineWidth: 6.0,
-            lineOpacity: 0.6,
-            lineCap: 'round',
-            lineJoin: 'round'));
-  }
-
-  Future<void> _handleDestinationSubmit(String destinationAddress) async {
-    if (_radarApiKey == null) return;
-    if (_currentUserLocation == null) {
-      _showError("Current location not available.");
-      return;
-    }
-    final autocompleteUrl = Uri.parse(
-        'https://api.radar.io/v1/autocomplete?query=$destinationAddress&near=${_currentUserLocation!.latitude},${_currentUserLocation!.longitude}');
-    try {
-      final response =
-          await http.get(autocompleteUrl, headers: {'Authorization': _radarApiKey});
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['addresses'] != null && data['addresses'].isNotEmpty) {
-          final lat = data['addresses'][0]['latitude'];
-          final lon = data['addresses'][0]['longitude'];
-          if (mounted) setState(() => _destinationLocation = LatLng(lat, lon));
-          _getDirectionsAndDrawRoute();
-        } else {
-          _showError("Could not find location.");
-        }
-      } else {
-        throw Exception('Failed to geocode address');
-      }
-    } catch (e) {
-      _showError("Error finding destination.");
-    }
-  }
-
-  Future<void> _getDirectionsAndDrawRoute() async {
-    if (_currentUserLocation == null || _destinationLocation == null) return;
-    final locations =
-        '${_currentUserLocation!.latitude},${_currentUserLocation!.longitude}|${_destinationLocation!.latitude},${_destinationLocation!.longitude}';
-    final url = Uri.parse(
-        'https://api.radar.io/v1/route/directions?locations=$locations&mode=car&units=metric&geometry=polyline5');
-    try {
-      final response =
-          await http.get(url, headers: {'Authorization': _radarApiKey!});
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final polylineString = data['routes'][0]['geometry']['polyline'];
-        final polyline = PolylineCodec.decode(polylineString);
-        final routePoints = polyline
-            .map((p) => LatLng(p[0].toDouble(), p[1].toDouble()))
-            .toList();
-        final controller = await _controllerCompleter.future;
-        try {
-          await controller.removeLayer('route-line');
-          await controller.removeSource('route-source');
-        } catch (_) {}
-        await controller.addSource(
-            'route-source',
-            GeojsonSourceProperties(data: {
-              'type': 'FeatureCollection',
-              'features': [
-                {
-                  'type': 'Feature',
-                  'properties': {},
-                  'geometry': {
-                    'type': 'LineString',
-                    'coordinates': routePoints
-                        .map((p) => [p.longitude, p.latitude])
-                        .toList()
-                  }
-                }
-              ]
-            }));
-        await controller.addLineLayer(
-            'route-source',
-            'route-line',
-            const LineLayerProperties(
-                lineColor: '#3567FB',
-                lineWidth: 5.0,
-                lineOpacity: 0.8,
-                lineCap: 'round',
-                lineJoin: 'round'));
-      } else {
-        throw Exception('Failed to load directions');
-      }
-    } catch (e) {
-      _showError("Error fetching route.");
-    }
-  }
-
-  void _showError(String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
-    }
-    debugPrint(message);
   }
 
   Future<String> _readStyle() async {
-    if (_stadiaApiKey == null) throw Exception("Stadia Maps API key not found.");
+    if (_stadiaApiKey == null) throw Exception("API Key Missing");
     return jsonEncode({
       "version": 8,
       "sources": {
         "stadia": {
           "type": "raster",
-          "tiles": [
-            "https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}@2x.png?api_key=$_stadiaApiKey"
-          ],
-          "tileSize": 256
-        }
+          "tiles": ["https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}@2x.png?api_key=$_stadiaApiKey"],
+          "tileSize": 256,
+        },
       },
       "layers": [
         {
@@ -661,98 +548,91 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           "source": "stadia",
           "type": "raster",
           "minzoom": 0,
-          "maxzoom": 22
-        }
-      ]
+          "maxzoom": 22,
+        },
+      ],
     });
+  }
+
+  Future<void> _launchGoogleMapsNavigation() async {
+    if (_destinationLocation == null) return;
+    final url = Uri.parse('google.navigation:q=${_destinationLocation!.latitude},${_destinationLocation!.longitude}');
+    if (await canLaunchUrl(url)) await launchUrl(url);
+  }
+
+  void _showError(String message) {
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool canStartJourney =
-        _destinationLocation != null && !_isJourneyActive;
+    final bool canStartJourney = _destinationLocation != null && !_isJourneyActive && _currentDealer != null;
 
     return Stack(
       children: [
-        // Map
         SizedBox.expand(
           child: FutureBuilder<String>(
             future: _styleFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (snapshot.hasError || !snapshot.hasData) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text('Error loading map: ${snapshot.error}',
-                        style: const TextStyle(color: Colors.white),
-                        textAlign: TextAlign.center),
-                  ),
-                );
-              }
+            builder: (ctx, snap) {
+              if (!snap.hasData) return Container(color: _bgLight);
               return MapLibreMap(
-                styleString: snapshot.data!,
+                styleString: snap.data!,
                 initialCameraPosition: _initialCameraPosition,
-                onMapCreated: (controller) {
-                  if (!_controllerCompleter.isCompleted) {
-                    _controllerCompleter.complete(controller);
-                  }
+                onMapCreated: (c) {
+                  if (!_controllerCompleter.isCompleted) _controllerCompleter.complete(c);
                 },
               );
             },
           ),
         ),
+        Positioned(
+          top: 50,
+          right: 16,
+          child: Container(
+            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+            child: IconButton(
+              icon: Icon(Icons.my_location, color: _cardNavy),
+              onPressed: _determinePositionAndMoveCamera,
+            ),
+          ),
+        ),
 
-        // Draggable bottom panel
         DraggableScrollableSheet(
-          initialChildSize: 0.30,
-          minChildSize: 0.30,
+          initialChildSize: 0.32,
+          minChildSize: 0.32,
           maxChildSize: 0.5,
-          builder: (BuildContext context, ScrollController scrollController) {
+          builder: (context, scrollController) {
             return Container(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surface,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(24.0),
-                  topRight: Radius.circular(24.0),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    blurRadius: 10.0,
-                    color: Colors.black.withOpacity(0.2),
-                  )
-                ],
+                color: _surfaceWhite,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(30.0)),
               ),
               child: ListView(
                 controller: scrollController,
-                padding: const EdgeInsets.all(16.0),
+                padding: const EdgeInsets.all(24.0),
                 children: [
-                  // Drag handle
                   Center(
                     child: Container(
                       width: 40,
                       height: 5,
-                      margin: const EdgeInsets.only(bottom: 12.0),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      margin: const EdgeInsets.only(bottom: 24.0),
+                      decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
 
-                  // Content
                   _isJourneyActive
                       ? _buildActiveJourneyPanel(context)
                       : _buildIdleJourneyPanel(context),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
+
                   _StartJourneySlider(
+                    key: ValueKey(_isJourneyActive),
                     isJourneyActive: _isJourneyActive,
-                    onSlideAction:
-                        _isJourneyActive ? _stopJourney : _startJourney,
+                    onSlideAction: _isJourneyActive ? _stopJourney : _startJourney,
                     canStart: canStartJourney,
+                    cardNavy: _cardNavy,
+                    dangerRed: _dangerRed,
                   ),
                 ],
               ),
@@ -767,26 +647,31 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          "Plan your Journey",
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          _distanceDisplay,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
+        Row(
+          children: [
+            Icon(Icons.store, color: _textGrey, size: 20),
+            const SizedBox(width: 8),
+            Text("SELECTED DEALER", style: TextStyle(fontWeight: FontWeight.w900, color: _textGrey, fontSize: 12)),
+          ],
         ),
         const SizedBox(height: 16),
-        _buildLocationInputField(
-          controller: _destinationController,
-          hintText: 'Enter Destination...',
-          icon: Icons.location_on,
-          readOnly: widget.initialJourneyData != null,
-          onSubmitted: _handleDestinationSubmit,
+        Container(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(color: _bgLight, borderRadius: BorderRadius.circular(16)),
+          child: Center(
+            child: TextField(
+              controller: _destinationController,
+              readOnly: true,
+              style: TextStyle(color: _textDark, fontWeight: FontWeight.w600),
+              decoration: InputDecoration(
+                prefixIcon: Icon(Icons.lock_outline, color: _textGrey),
+                hintText: "Waiting for PJP...",
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -795,163 +680,88 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   Widget _buildActiveJourneyPanel(BuildContext context) {
     return Column(
       children: [
-        Card(
-          elevation: 0,
-          color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Distance
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "DISTANCE TRAVELLED",
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _distanceDisplay,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                    ],
-                  ),
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(color: _cardNavy, borderRadius: BorderRadius.circular(24)),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("DISTANCE", style: TextStyle(color: Colors.white60, fontSize: 10)),
+                    const SizedBox(height: 8),
+                    Text(_distanceDisplay, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+                  ],
                 ),
-                // Navigate
-                ElevatedButton(
-                  onPressed: _launchGoogleMapsNavigation,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.primary,
-                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                    shape: const CircleBorder(),
-                    padding: const EdgeInsets.all(16),
-                  ),
-                  child: const Icon(Icons.navigation_rounded),
+              ),
+              InkWell(
+                onTap: _launchGoogleMapsNavigation,
+                borderRadius: BorderRadius.circular(50),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
+                  child: const Icon(Icons.near_me_rounded, color: Colors.white, size: 28),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
-        const SizedBox(height: 12),
-        // Destination readout
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.flag, color: Colors.green),
-          title: const Text("DESTINATION"),
-          subtitle: Text(
-            _destinationController.text,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Icon(Icons.flag_rounded, color: _textDark, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _destinationController.text.toUpperCase(),
+                style: TextStyle(fontWeight: FontWeight.bold, color: _textDark, fontSize: 12),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ],
-    );
-  }
-
-  Widget _buildLocationInputField({
-    required TextEditingController controller,
-    required String hintText,
-    required IconData icon,
-    bool readOnly = false,
-    void Function(String)? onSubmitted,
-  }) {
-    return Container(
-      height: 60,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(16.0),
-      ),
-      child: Center(
-        child: TextField(
-          controller: controller,
-          readOnly: readOnly,
-          onSubmitted: onSubmitted,
-          style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-          decoration: InputDecoration(
-            hintText: hintText,
-            hintStyle: TextStyle(
-              color: Theme.of(context)
-                  .colorScheme
-                  .onSurfaceVariant
-                  .withOpacity(0.7),
-            ),
-            prefixIcon: Icon(
-              icon,
-              size: 22,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            border: InputBorder.none,
-            contentPadding:
-                const EdgeInsets.symmetric(vertical: 15.0, horizontal: 10),
-          ),
-        ),
-      ),
     );
   }
 }
 
 class _StartJourneySlider extends StatelessWidget {
   final bool isJourneyActive;
-  final VoidCallback onSlideAction;
+  final Future<void> Function() onSlideAction;
   final bool canStart;
+  final Color cardNavy;
+  final Color dangerRed;
 
   const _StartJourneySlider({
+    super.key,
     required this.isJourneyActive,
     required this.onSlideAction,
     required this.canStart,
+    required this.cardNavy,
+    required this.dangerRed,
   });
 
   @override
   Widget build(BuildContext context) {
-    final String slideText =
-        isJourneyActive ? 'SLIDE TO END JOURNEY' : 'SLIDE TO START JOURNEY';
-    final Color outerColor = isJourneyActive
-        ? Colors.redAccent.withAlpha(230)
-        : Theme.of(context).colorScheme.primary.withAlpha(230);
-    final Icon sliderIcon =
-        isJourneyActive ? const Icon(Icons.stop) : const Icon(Icons.arrow_forward_ios);
+    final String slideText = isJourneyActive ? 'SLIDE TO END VISIT' : 'SLIDE TO START';
+    final Color outerColor = isJourneyActive ? dangerRed : cardNavy;
+    final Icon sliderIcon = isJourneyActive ? Icon(Icons.stop_rounded, color: dangerRed) : Icon(Icons.arrow_forward_rounded, color: cardNavy);
     final bool isEnabled = canStart || isJourneyActive;
 
     return SlideAction(
-      onSubmit: isEnabled
-          ? () {
-              onSlideAction();
-              return null;
-            }
-          : () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                content: Text('Please set a destination before starting.'),
-                backgroundColor: Colors.orange,
-              ));
-              return null;
-            },
+      onSubmit: isEnabled ? () async { await onSlideAction(); return null; } : null,
       innerColor: Colors.white,
-      outerColor: isEnabled ? outerColor : Colors.grey.withOpacity(0.75),
+      outerColor: isEnabled ? outerColor : Colors.grey[300],
       sliderButtonIcon: sliderIcon,
-      text: isEnabled ? slideText : 'DESTINATION NOT SET',
+      text: isEnabled ? slideText : 'LOADING PJP DATA...',
       enabled: isEnabled,
-      textStyle: const TextStyle(
-        color: Colors.white,
-        fontSize: 16,
-        fontWeight: FontWeight.bold,
-        letterSpacing: 0.5,
-      ),
-      borderRadius: 16,
+      textStyle: TextStyle(color: isEnabled ? Colors.white : Colors.grey[500], fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1.0),
+      borderRadius: 20,
       elevation: 0,
-      height: 65,
+      height: 64,
     );
   }
 }

@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_radar/flutter_radar.dart';
-import '../../models/employee_model.dart';
-import '../../models/dealer_model.dart';
-import '../../api/api_service.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
 
 class AddDealerForm extends StatefulWidget {
   final Employee employee;
@@ -96,7 +96,6 @@ class _AddDealerFormState extends State<AddDealerForm> {
       );
 
       // 4. Reverse Geocode (Radar)
-      // NOTE: This calls ApiService. Ensure ApiService has the implementation!
       final addressDetails = await _apiService.reverseGeocodeWithRadar(
         latitude: bestPosition.latitude,
         longitude: bestPosition.longitude,
@@ -112,13 +111,15 @@ class _AddDealerFormState extends State<AddDealerForm> {
         });
       }
     } catch (e) {
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text('Location Error: $e'), 
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4),
-        ),
-      );
+      if (mounted) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text('Location Error: $e'), 
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isFetchingLocation = false);
     }
@@ -170,7 +171,9 @@ class _AddDealerFormState extends State<AddDealerForm> {
       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Dealer created successfully!'), backgroundColor: Colors.green));
       navigator.pop();
     } catch (e) {
-      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red));
+      if (mounted) {
+        scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red));
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }

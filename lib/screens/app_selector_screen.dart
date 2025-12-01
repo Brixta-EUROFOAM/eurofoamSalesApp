@@ -127,19 +127,19 @@ class _AppSelectorScreenState extends State<AppSelectorScreen> {
                 ),
                 const SizedBox(height: 60),
 
-                // If you later re-enable Sales:
-                // _buildPortalCard(
-                //   context,
-                //   title: 'SALES FORCE',
-                //   subtitle: '(EMP)',
-                //   icon: Icons.business_center,
-                //   color: Colors.blueAccent,
-                //   isTechnical: false,
-                // ).animate().slideX(begin: -1, duration: 600.ms, curve: Curves.easeOut),
+                // Sales Portal
+                _buildPortalCard(
+                  context,
+                  title: 'SALES FORCE',
+                  subtitle: '(EMP)',
+                  icon: Icons.business_center,
+                  color: Colors.blueAccent,
+                  isTechnical: false,
+                ).animate().slideX(begin: -1, duration: 600.ms, curve: Curves.easeOut),
 
-                // const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-                // --- Option 2: Technical ---
+                // Technical Portal
                 _buildPortalCard(
                   context,
                   title: 'TECHNICAL SIDE',

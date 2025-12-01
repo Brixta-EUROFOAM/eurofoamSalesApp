@@ -1,3 +1,4 @@
+// lib/screens/employee_management/bulk_pjp_wizard_screen.dart
 import 'package:flutter/material.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
@@ -5,14 +6,11 @@ import 'package:salesmanapp/api/api_service.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'dart:developer' as dev;
 
-// --- ✅ NEW IMPORTS ---
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
-// ---
 
 const _log = 'BulkPjpWizard';
 
-// (StatefulWidget class is unchanged)
 class BulkPjpWizardScreen extends StatefulWidget {
   final Employee employee;
   final VoidCallback onPjpCreated;
@@ -41,19 +39,25 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
   // --- INITIALIZATION / LOCATION STATE ---
   late Future<Map<String, List<Dealer>>> _dealersByRegionFuture;
   Map<String, List<Dealer>> _loadedDealersByRegion = {};
-  String? _currentRegion; // To store the user's current region
-  String _loadingMessage = "Loading..."; // To show loading status
-  bool _isInitializing = true; // To show a full-screen loader
-  // ---
+  String? _currentRegion; 
+  String _loadingMessage = "Loading..."; 
+  bool _isInitializing = true; 
+
+  // --- 🎨 FINTECH THEME PALETTE ---
+  static const Color _bgLight       = Color(0xFFF3F4F6); 
+  static const Color _surfaceWhite  = Colors.white;
+  static const Color _cardNavy      = Color(0xFF0F172A); 
+  static const Color _textDark      = Color(0xFF111827); 
+  static const Color _textGrey      = Color(0xFF6B7280); 
+  static const Color _accentGreen   = Color(0xFF10B981); 
+  static const Color _accentOrange  = Color(0xFFF59E0B);
 
   @override
   void initState() {
     super.initState();
-    // Start the full init process
     _dealersByRegionFuture = _loadInitialData();
   }
 
-  // --- COMBINED INITIALIZATION FUNCTION ---
   Future<Map<String, List<Dealer>>> _loadInitialData() async {
     try {
       if (!mounted) return {};
@@ -62,19 +66,15 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
         _loadingMessage = "Getting your location...";
       });
 
-      // 1. Get current region
       _currentRegion = await _getCurrentRegion();
       dev.log('Current Region found: $_currentRegion', name: _log);
 
       if (!mounted) return {};
       setState(() => _loadingMessage = "Loading all dealers...");
 
-      // 2. Load all dealers
-      final dealers =
-          await _apiService.fetchDealers(userId: int.parse(widget.employee.id));
+      final dealers = await _apiService.fetchDealers(userId: int.parse(widget.employee.id));
       dev.log('BulkPjpWizard: Found ${dealers.length} dealers.', name: _log);
 
-      // 3. Group them
       _loadedDealersByRegion = _groupDealersByRegion(dealers);
 
       if (!mounted) return {};
@@ -89,7 +89,6 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
     }
   }
 
-  // --- FUNCTION TO GET USER'S CURRENT REGION ---
   Future<String?> _getCurrentRegion() async {
     try {
       var status = await Permission.location.request();
@@ -98,15 +97,13 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
         return null;
       }
 
-      Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.medium);
-
+      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
       final geoData = await _apiService.reverseGeocodeWithRadar(
         latitude: position.latitude,
         longitude: position.longitude,
       );
 
-      return geoData['region']; // Returns 'city' or 'Unknown Region'
+      return geoData['region']; 
     } catch (e) {
       dev.log('Failed to get current region: $e', name: _log);
       return null;
@@ -122,77 +119,45 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
     return map;
   }
 
-  // --- ✅ SMART SCHEDULER ALGORITHM (filters null/empty IDs safely) ---
   Future<void> _generateAndSubmitSmartPlan() async {
     setState(() => _isSubmitting = true);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
-    // --- 1. VALIDATION ---
     const int minVisitsPerDay = 8;
 
     if (_selectedDates.isEmpty) {
-      scaffoldMessenger.showSnackBar(const SnackBar(
-        content: Text('Please select at least one date.'),
-        backgroundColor: Colors.orange,
-      ));
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Please select at least one date.'), backgroundColor: Colors.orange));
       if (mounted) setState(() => _isSubmitting = false);
       return;
     }
 
-    // Filter the pool for valid IDs before scheduling
-    final List<Dealer> dealerPool = _selectedDealerPool
-        .where((d) => d.id != null && d.id!.isNotEmpty)
-        .toList();
+    final List<Dealer> dealerPool = _selectedDealerPool.where((d) => d.id != null && d.id!.isNotEmpty).toList();
 
-    // Must have at least 8 dealers
     if (dealerPool.length < minVisitsPerDay) {
-      scaffoldMessenger.showSnackBar(SnackBar(
-        content: Text(
-            'Please select at least $minVisitsPerDay unique dealers to create a plan.'),
-        backgroundColor: Colors.orange,
-      ));
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Please select at least $minVisitsPerDay unique dealers to create a plan.'), backgroundColor: Colors.orange));
       if (mounted) setState(() => _isSubmitting = false);
       return;
     }
 
-    // --- 2. THE SCHEDULING ALGORITHM ---
-    dev.log(
-        'Running Smart Scheduler... Dates: ${_selectedDates.length}, Dealers: ${dealerPool.length}',
-        name: _log);
+    dev.log('Running Smart Scheduler... Dates: ${_selectedDates.length}, Dealers: ${dealerPool.length}', name: _log);
 
     final sortedDates = _selectedDates.toList()..sort();
-
-    // Track how many times each dealer has been assigned
-    final Map<String, int> dealerVisitCount = {
-      for (var d in dealerPool) d.id!: 0
-    };
-
-    // Final plan map (date -> dealers)
-    final Map<DateTime, Set<Dealer>> finalPlan = {};
+    
+    // Track usage count
+    final Map<String, int> dealerVisitCount = { for (var d in dealerPool) d.id!: 0 };
 
     for (final date in sortedDates) {
-      dealerPool.sort((a, b) =>
-          dealerVisitCount[a.id!]!.compareTo(dealerVisitCount[b.id!]!));
+      dealerPool.sort((a, b) => dealerVisitCount[a.id!]!.compareTo(dealerVisitCount[b.id!]!));
       final dealersForThisDay = dealerPool.take(minVisitsPerDay);
-      finalPlan[date] = dealersForThisDay.toSet();
       for (var dealer in dealersForThisDay) {
         dealerVisitCount[dealer.id!] = dealerVisitCount[dealer.id!]! + 1;
       }
     }
 
-    dev.log('Smart Scheduler complete. Plan generated for ${finalPlan.length} days.',
-        name: _log);
-
-    // --- 4. SUBMIT TO API ---
     try {
       final List<String> allDealerIds = dealerPool.map((d) => d.id!).toList();
       final DateTime baseDate = sortedDates.first;
-
-      dev.log(
-          'Submitting bulk PJP: ${allDealerIds.length} unique dealers, starting from $baseDate',
-          name: _log);
-
       const String planDescription = "Monthly PJP Plan";
 
       final response = await _apiService.createBulkPjp(
@@ -209,48 +174,29 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
       final createdCount = response['totalRowsCreated'] ?? 0;
       final skippedCount = response['totalRowsSkipped'] ?? 0;
 
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text(
-              'Smart Plan submitted! $createdCount created, $skippedCount skipped.'),
-          backgroundColor: Colors.green,
-        ),
-      );
-
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Smart Plan submitted! $createdCount created, $skippedCount skipped.'), backgroundColor: _accentGreen));
       widget.onPjpCreated();
       navigator.pop();
     } catch (e, st) {
-      dev.log('Error submitting bulk plan: $e',
-          name: _log, error: e, stackTrace: st);
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text('Error submitting bulk plan: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      dev.log('Error submitting bulk plan: $e', name: _log, error: e, stackTrace: st);
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Error submitting bulk plan: $e'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
-  // --- END SMART SCHEDULER ---
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    // Full screen loader on init
     if (_isInitializing) {
       return Scaffold(
-        appBar: AppBar(
-          title: const Text('Bulk PJP Wizard'),
-        ),
+        backgroundColor: _bgLight,
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 20),
-              Text(_loadingMessage, style: theme.textTheme.titleMedium),
+              const CircularProgressIndicator(color: _cardNavy),
+              const SizedBox(height: 24),
+              Text(_loadingMessage, style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16)),
             ],
           ),
         ),
@@ -258,226 +204,211 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
     }
 
     return Scaffold(
+      backgroundColor: _bgLight,
       appBar: AppBar(
-        title: Text(_currentStep == 0
-            ? 'Step 1: Select Dates'
-            : 'Step 2: Assign Dealers'),
-        backgroundColor: theme.colorScheme.surface,
-        elevation: 1,
+        backgroundColor: _bgLight,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          _currentStep == 0 ? 'Step 1: Select Dates' : 'Step 2: Assign Dealers',
+          style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 18),
+        ),
       ),
-      backgroundColor: theme.colorScheme.background,
-      body: Stepper(
-        type: StepperType.horizontal,
-        currentStep: _currentStep,
-        onStepContinue: () {
-          // Step 2 now calls the Smart Scheduler
-          if (_currentStep == 0) {
-            if (_selectedDates.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                    content: Text('Please select at least one date.'),
-                    backgroundColor: Colors.orange),
-              );
-              return;
+      body: Theme(
+        data: Theme.of(context).copyWith(
+          colorScheme: const ColorScheme.light(primary: _cardNavy), // Tint for stepper
+        ),
+        child: Stepper(
+          type: StepperType.horizontal,
+          currentStep: _currentStep,
+          elevation: 0,
+          onStepContinue: () {
+            if (_currentStep == 0) {
+              if (_selectedDates.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select at least one date.'), backgroundColor: Colors.orange));
+                return;
+              }
+              setState(() => _currentStep = 1);
+            } else {
+              _generateAndSubmitSmartPlan();
             }
-            setState(() => _currentStep = 1);
-          } else {
-            _generateAndSubmitSmartPlan();
-          }
-        },
-        onStepCancel: () {
-          if (_currentStep == 1) {
-            setState(() => _currentStep = 0);
-          }
-        },
-        controlsBuilder: (context, details) {
-          return Padding(
-            padding: const EdgeInsets.only(top: 24.0),
-            child: _isSubmitting
-                ? const Center(child: CircularProgressIndicator())
-                : Row(
-                    children: [
-                      ElevatedButton(
-                        onPressed: details.onStepContinue,
-                        child: Text(_currentStep == 0 ? 'NEXT' : 'SUBMIT PLAN'),
-                      ),
-                      if (_currentStep == 1)
-                        TextButton(
-                          onPressed: details.onStepCancel,
-                          child: const Text('BACK'),
+          },
+          onStepCancel: () {
+            if (_currentStep == 1) {
+              setState(() => _currentStep = 0);
+            }
+          },
+          controlsBuilder: (context, details) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 32.0),
+              child: _isSubmitting
+                  ? const Center(child: CircularProgressIndicator(color: _cardNavy))
+                  : Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: details.onStepContinue,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _cardNavy,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 16),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              elevation: 0,
+                            ),
+                            child: Text(
+                              _currentStep == 0 ? 'NEXT STEP' : 'GENERATE PLAN', 
+                              style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0)
+                            ),
+                          ),
                         ),
-                    ],
-                  ),
-          );
-        },
-        steps: [
-          _buildStep1Calendar(theme),
-          _buildStep2DealerAssignment(theme),
-        ],
+                        if (_currentStep == 1) ...[
+                          const SizedBox(width: 16),
+                          TextButton(
+                            onPressed: details.onStepCancel,
+                            child: const Text('BACK', style: TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
+                          ),
+                        ],
+                      ],
+                    ),
+            );
+          },
+          steps: [
+            _buildStep1Calendar(),
+            _buildStep2DealerAssignment(),
+          ],
+        ),
       ),
     );
   }
 
-  Step _buildStep1Calendar(ThemeData theme) {
+  Step _buildStep1Calendar() {
     return Step(
-      title: const Text('Dates'),
+      title: const Text('Dates', style: TextStyle(fontSize: 12)),
       isActive: _currentStep == 0,
-      content: Column(
-        children: [
-          TableCalendar(
-            focusedDay: _focusedDay,
-            firstDay: DateTime.now(),
-            lastDay: DateTime.now().add(const Duration(days: 60)),
-            calendarFormat: CalendarFormat.month,
-            selectedDayPredicate: (day) => _selectedDates.contains(
-              DateTime.utc(day.year, day.month, day.day),
-            ),
-            onDaySelected: (selectedDay, focusedDay) {
-              final selectedDayUtc = DateTime.utc(
-                  selectedDay.year, selectedDay.month, selectedDay.day);
-              setState(() {
-                dev.log('Selected: $selectedDayUtc, Focused: $focusedDay',
-                    name: _log);
-                _focusedDay = focusedDay;
-                if (_selectedDates.contains(selectedDayUtc)) {
-                  _selectedDates.remove(selectedDayUtc);
-                } else {
-                  _selectedDates.add(selectedDayUtc);
-                }
-              });
-            },
-            calendarStyle: CalendarStyle(
-              selectedDecoration: BoxDecoration(
-                color: theme.colorScheme.primary,
-                shape: BoxShape.circle,
+      state: _currentStep > 0 ? StepState.complete : StepState.indexed,
+      content: Container(
+        decoration: BoxDecoration(
+          color: _surfaceWhite,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        padding: const EdgeInsets.only(bottom: 16),
+        child: Column(
+          children: [
+            TableCalendar(
+              focusedDay: _focusedDay,
+              firstDay: DateTime.now(),
+              lastDay: DateTime.now().add(const Duration(days: 60)),
+              calendarFormat: CalendarFormat.month,
+              selectedDayPredicate: (day) => _selectedDates.contains(DateTime.utc(day.year, day.month, day.day)),
+              onDaySelected: (selectedDay, focusedDay) {
+                final selectedDayUtc = DateTime.utc(selectedDay.year, selectedDay.month, selectedDay.day);
+                setState(() {
+                  _focusedDay = focusedDay;
+                  if (_selectedDates.contains(selectedDayUtc)) {
+                    _selectedDates.remove(selectedDayUtc);
+                  } else {
+                    _selectedDates.add(selectedDayUtc);
+                  }
+                });
+              },
+              calendarStyle: CalendarStyle(
+                selectedDecoration: const BoxDecoration(color: _cardNavy, shape: BoxShape.circle),
+                todayDecoration: BoxDecoration(color: _cardNavy.withOpacity(0.4), shape: BoxShape.circle),
+                defaultTextStyle: const TextStyle(color: _textDark),
+                weekendTextStyle: const TextStyle(color: _textDark),
               ),
-              todayDecoration: BoxDecoration(
-                color: theme.colorScheme.primary.withOpacity(0.5),
-                shape: BoxShape.circle,
+              headerStyle: const HeaderStyle(
+                titleCentered: true,
+                formatButtonVisible: false,
+                titleTextStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textDark),
               ),
-              disabledTextStyle: TextStyle(
-                  color: theme.colorScheme.onSurface.withOpacity(0.3)),
             ),
-            enabledDayPredicate: (day) {
-              final today = DateTime.now();
-              final normalizedToday =
-                  DateTime.utc(today.year, today.month, today.day);
-              final normalizedDay =
-                  DateTime.utc(day.year, day.month, day.day);
-              return !normalizedDay.isBefore(normalizedToday);
-            },
-            headerStyle: HeaderStyle(
-              titleCentered: true,
-              formatButtonVisible: false,
-              titleTextStyle: theme.textTheme.titleLarge!,
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text('${_selectedDates.length} days selected', style: const TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              '${_selectedDates.length} days selected',
-              style: theme.textTheme.titleMedium,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  // STEP 2: Dealer Pool builder
-  Step _buildStep2DealerAssignment(ThemeData theme) {
+  Step _buildStep2DealerAssignment() {
     const int minVisits = 8;
     final int totalDealers = _selectedDealerPool.length;
     final bool hasError = totalDealers < minVisits;
 
     return Step(
-      title: const Text('Dealers'),
+      title: const Text('Dealers', style: TextStyle(fontSize: 12)),
       isActive: _currentStep == 1,
       content: FutureBuilder<Map<String, List<Dealer>>>(
         future: _dealersByRegionFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Padding(
-              padding: EdgeInsets.all(32.0),
-              child: Center(child: CircularProgressIndicator()),
-            );
+            return const Center(child: CircularProgressIndicator(color: _cardNavy));
           }
 
           if (snapshot.hasError) {
-            dev.log('Error in _buildStep2DealerAssignment: ${snapshot.error}',
-                name: _log, error: snapshot.error);
-            return Padding(
-              padding: const EdgeInsets.all(32.0),
-              child: Center(
-                child: Text(
-                  'Error loading dealers: ${snapshot.error}',
-                  style: TextStyle(color: theme.colorScheme.error),
-                ),
-              ),
-            );
+            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
           }
 
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.all(32.0),
-              child: Text('No dealers found for this user.'),
-            );
+            return const Text('No dealers found.', style: TextStyle(color: _textGrey));
           }
 
           return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Select all dealers you want to include in this month\'s plan. The app will automatically create a balanced schedule for you.',
-                style: theme.textTheme.bodyMedium,
+              const Text(
+                'Select the dealers for this plan. Our algorithm will auto-schedule them.',
+                style: TextStyle(color: _textGrey, fontSize: 14),
               ),
               const SizedBox(height: 24),
-              Card(
-                margin: const EdgeInsets.symmetric(vertical: 8),
+              
+              // Summary Card
+              Container(
+                decoration: BoxDecoration(
+                  color: _surfaceWhite,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: hasError ? Colors.red.shade200 : Colors.transparent),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]
+                ),
                 child: ListTile(
-                  title: Text(
-                    'Edit Dealer Pool',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  subtitle: Text(
-                    '$totalDealers dealers selected',
-                    style: TextStyle(
-                      color: hasError ? theme.colorScheme.error : null,
-                    ),
-                  ),
-                  trailing: Icon(
-                    hasError
-                        ? Icons.warning_amber_rounded
-                        : Icons.check_circle,
-                    color: hasError ? theme.colorScheme.error : Colors.green,
-                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  title: const Text('Dealer Pool', style: TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
+                  subtitle: Text('$totalDealers dealers selected', style: TextStyle(color: hasError ? Colors.red : _textGrey)),
+                  trailing: Icon(Icons.edit_rounded, color: _cardNavy),
                   onTap: () async {
                     final updatedDealers = await showDialog<Set<Dealer>>(
                       context: context,
                       builder: (_) => _DealerSelectionDialog(
-                        theme: theme,
                         dealersByRegion: _loadedDealersByRegion,
-                        initialSelection: _selectedDealerPool, // master pool
+                        initialSelection: _selectedDealerPool, 
                         currentRegion: _currentRegion,
                       ),
                     );
 
                     if (updatedDealers != null) {
                       setState(() {
-                        _selectedDealerPool = updatedDealers; // Save master pool
+                        _selectedDealerPool = updatedDealers; 
                       });
                     }
                   },
                 ),
               ),
+              
               if (hasError)
                 Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Text(
-                    'Please select at least $minVisits dealers.',
-                    style: theme.textTheme.bodyMedium
-                        ?.copyWith(color: theme.colorScheme.error),
+                  padding: const EdgeInsets.only(top: 12.0),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, size: 16, color: Colors.red),
+                      const SizedBox(width: 8),
+                      Text('Select at least $minVisits dealers.', style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ],
                   ),
                 ),
             ],
@@ -489,16 +420,14 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
 }
 
 // ================================
-// Dealer selection dialog (location-aware sorting)
+// Dealer Selection Dialog (Styled)
 // ================================
 class _DealerSelectionDialog extends StatefulWidget {
-  final ThemeData theme;
   final Map<String, List<Dealer>> dealersByRegion;
   final Set<Dealer> initialSelection;
   final String? currentRegion;
 
   const _DealerSelectionDialog({
-    required this.theme,
     required this.dealersByRegion,
     required this.initialSelection,
     this.currentRegion,
@@ -520,134 +449,114 @@ class _DealerSelectionDialogState extends State<_DealerSelectionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    // Sort regions to put current region first
     final allRegions = widget.dealersByRegion.keys.toList();
     final List<String> sortedRegions = [];
 
-    if (widget.currentRegion != null &&
-        allRegions.contains(widget.currentRegion)) {
+    if (widget.currentRegion != null && allRegions.contains(widget.currentRegion)) {
       sortedRegions.add(widget.currentRegion!);
     }
-
-    final otherRegions =
-        allRegions.where((r) => r != widget.currentRegion).toList()..sort();
+    final otherRegions = allRegions.where((r) => r != widget.currentRegion).toList()..sort();
     sortedRegions.addAll(otherRegions);
 
-    // Filter the sorted list based on search
     final filteredRegions = sortedRegions.where((region) {
       if (_searchQuery.isEmpty) return true;
       if (region.toLowerCase().contains(_searchQuery.toLowerCase())) return true;
       return widget.dealersByRegion[region]!.any(
-        (dealer) =>
-            dealer.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+        (dealer) => dealer.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
             dealer.area.toLowerCase().contains(_searchQuery.toLowerCase()),
       );
     }).toList();
 
     return AlertDialog(
-      title: const Text('Select Dealers'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            decoration: InputDecoration(
-              hintText: 'Search by dealer, region, or area...',
-              prefixIcon: Icon(
-                Icons.search,
-                color: widget.theme.colorScheme.onSurface.withOpacity(0.7),
+      backgroundColor: _BulkPjpWizardScreenState._surfaceWhite,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text('Select Dealers', style: TextStyle(color: _BulkPjpWizardScreenState._textDark, fontWeight: FontWeight.bold)),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              decoration: InputDecoration(
+                hintText: 'Search dealer or region...',
+                hintStyle: const TextStyle(color: _BulkPjpWizardScreenState._textGrey),
+                prefixIcon: const Icon(Icons.search, color: _BulkPjpWizardScreenState._textGrey),
+                filled: true,
+                fillColor: _BulkPjpWizardScreenState._bgLight,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(
-                  color: widget.theme.colorScheme.onSurface.withOpacity(0.3),
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
+              onChanged: (value) => setState(() => _searchQuery = value),
             ),
-            onChanged: (value) => setState(() => _searchQuery = value),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.maxFinite,
-            height: MediaQuery.of(context).size.height * 0.5,
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: filteredRegions.length,
-              itemBuilder: (context, index) {
-                final region = filteredRegions[index];
-                final isCurrentRegion = region == widget.currentRegion;
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: filteredRegions.length,
+                itemBuilder: (context, index) {
+                  final region = filteredRegions[index];
+                  final isCurrentRegion = region == widget.currentRegion;
+                  final dealersInRegion = widget.dealersByRegion[region]!.where((dealer) {
+                    if (_searchQuery.isEmpty) return true;
+                    return dealer.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                        dealer.area.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                        region.toLowerCase().contains(_searchQuery.toLowerCase());
+                  }).toList();
 
-                final dealersInRegion =
-                    widget.dealersByRegion[region]!.where((dealer) {
-                  if (_searchQuery.isEmpty) return true;
-                  return dealer.name
-                          .toLowerCase()
-                          .contains(_searchQuery.toLowerCase()) ||
-                      dealer.area
-                          .toLowerCase()
-                          .contains(_searchQuery.toLowerCase()) ||
-                      region
-                          .toLowerCase()
-                          .contains(_searchQuery.toLowerCase());
-                }).toList();
+                  if (dealersInRegion.isEmpty) return const SizedBox.shrink();
 
-                if (dealersInRegion.isEmpty) return const SizedBox.shrink();
-
-                return ExpansionTile(
-                  title: Text(
-                    region,
-                    style: widget.theme.textTheme.titleMedium?.copyWith(
-                      color: isCurrentRegion
-                          ? widget.theme.colorScheme.primary
-                          : null,
-                      fontWeight: isCurrentRegion
-                          ? FontWeight.bold
-                          : FontWeight.normal,
+                  return Theme(
+                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      title: Text(
+                        region,
+                        style: TextStyle(
+                          color: isCurrentRegion ? _BulkPjpWizardScreenState._cardNavy : _BulkPjpWizardScreenState._textDark,
+                          fontWeight: isCurrentRegion ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      leading: Icon(
+                        isCurrentRegion ? Icons.my_location : Icons.location_city,
+                        color: isCurrentRegion ? _BulkPjpWizardScreenState._accentOrange : _BulkPjpWizardScreenState._textGrey,
+                      ),
+                      initiallyExpanded: isCurrentRegion && _searchQuery.isEmpty,
+                      children: dealersInRegion.map((dealer) {
+                        final isSelected = _selectedDealers.contains(dealer);
+                        return CheckboxListTile(
+                          activeColor: _BulkPjpWizardScreenState._cardNavy,
+                          title: Text(dealer.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                          subtitle: Text(dealer.area, style: const TextStyle(fontSize: 12, color: _BulkPjpWizardScreenState._textGrey)),
+                          value: isSelected,
+                          onChanged: (bool? value) {
+                            setState(() {
+                              if (value == true) _selectedDealers.add(dealer);
+                              else _selectedDealers.remove(dealer);
+                            });
+                          },
+                        );
+                      }).toList(),
                     ),
-                  ),
-                  leading: isCurrentRegion
-                      ? Icon(Icons.my_location,
-                          color: widget.theme.colorScheme.primary)
-                      : Icon(Icons.location_city,
-                          color:
-                              widget.theme.colorScheme.onSurface.withOpacity(0.6)),
-                  initiallyExpanded: isCurrentRegion && _searchQuery.isEmpty,
-                  children: dealersInRegion.map((dealer) {
-                    final isSelected = _selectedDealers.contains(dealer);
-
-                    return CheckboxListTile(
-                      title: Text(dealer.name),
-                      subtitle: Text(dealer.area),
-                      value: isSelected,
-                      onChanged: (bool? value) {
-                        setState(() {
-                          if (value == true) {
-                            _selectedDealers.add(dealer);
-                          } else {
-                            _selectedDealers.remove(dealer);
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
-                );
-              },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('CANCEL'),
+          child: const Text('CANCEL', style: TextStyle(color: _BulkPjpWizardScreenState._textGrey)),
         ),
         ElevatedButton(
-          onPressed: () {
-            Navigator.of(context).pop(_selectedDealers);
-          },
-          child: Text('SAVE (${_selectedDealers.length})'),
+          onPressed: () => Navigator.of(context).pop(_selectedDealers),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _BulkPjpWizardScreenState._cardNavy,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+          child: Text('SAVE (${_selectedDealers.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
         ),
       ],
     );

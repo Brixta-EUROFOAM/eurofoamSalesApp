@@ -41,8 +41,8 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  static const String _baseUrl = 'http://13.203.79.51'; //aws
-  //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  //static const String _baseUrl = 'http://13.203.79.51'; //aws
+  static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
 
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
@@ -265,8 +265,32 @@ class ApiService {
     return {};
   }
 
-  Future<void> sendGeoTrackingPoint(GeoTrackingPoint point) async {
-    // Implementation skipped for brevity
+  Future<String?> sendGeoTrackingPoint(GeoTrackingPoint point) async {
+    final body = point.toJson();
+    
+    // 2. POST to /api/geotracking
+    final response = await _post(
+      'geotracking', 
+      body, 
+      (json) => json, // We just want the raw JSON response to extract the ID
+    );
+
+    dev.log('GeoTracking point sent successfully: ${point.locationType}', name: 'ApiService');
+    
+    // 3. Extract and return the ID (useful if you need to PATCH this point later)
+    if (response is Map<String, dynamic> && response['id'] != null) {
+      return response['id'].toString();
+    }
+    return null;
+  }
+
+  Future<void> updateGeoTrackingPoint(String id, Map<String, dynamic> updateData) async {
+    await _patch(
+      'geotracking/$id', 
+      updateData, 
+      (json) => json,
+    );
+    dev.log('GeoTracking point $id updated successfully', name: 'ApiService');
   }
 
   Future<Map<String, String>> reverseGeocodeWithRadar({
@@ -353,8 +377,12 @@ class ApiService {
     );
   }
 
-  Future<Dealer> fetchDealerById(String dealerId) {
-    throw Exception('Failed to fetch dealer.');
+  Future<Dealer> fetchDealerById(String dealerId) async {
+    // Calls GET /api/dealers/:id
+    return _get(
+      'dealers/$dealerId',
+      (json) => Dealer.fromJson(json),
+    );
   }
 
   Future<List<Dealer>> fetchDealersByUserId(int userId) async {

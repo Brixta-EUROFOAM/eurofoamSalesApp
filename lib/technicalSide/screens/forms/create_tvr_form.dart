@@ -532,7 +532,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
 
                       // --- 2. EXTENDED CONTACT INFO ---
                       _buildSectionHeader("CONTACT DETAILS"),
-                      _buildFintechInput(controller: _whatsappNoController, label: 'WhatsApp Number', keyboardType: TextInputType.phone, isRequired: false),
+                      _buildFintechInput(controller: _whatsappNoController, label: 'WhatsApp/Phone Number', keyboardType: TextInputType.phone, isRequired: false),
                       const SizedBox(height: 16),
                       _buildFintechInput(controller: _emailIdController, label: 'Email ID', isRequired: false, keyboardType: TextInputType.emailAddress),
                       const SizedBox(height: 16),

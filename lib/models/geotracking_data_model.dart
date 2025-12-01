@@ -27,8 +27,7 @@ class GeoTrackingPoint {
   final String? ipAddress;
   final String? siteName;
   final String? activityType;
-  
-  // Note: checkInTime/checkOutTime are handled server-side or via separate logic
+  final String? siteId;
 
   GeoTrackingPoint({
     required this.userId,
@@ -52,17 +51,14 @@ class GeoTrackingPoint {
     this.ipAddress,
     this.siteName,
     this.activityType,
+    this.siteId,
   });
 
-  /// Converts the Dart object to a JSON map suitable for the server.
-  /// Numeric values are converted to strings to preserve precision and match server expectations.
   Map<String, dynamic> toJson() {
-    return {
+    final Map<String, dynamic> data = {
       'userId': userId,
       'journeyId': journeyId,
       'isActive': isActive,
-
-      // Core Location/Trip fields (sent as strings to match server numeric handling)
       'latitude': latitude.toString(),
       'longitude': longitude.toString(),
       'destLat': destLat?.toString(),
@@ -72,9 +68,7 @@ class GeoTrackingPoint {
       'heading': heading?.toStringAsFixed(2),
       'altitude': altitude?.toStringAsFixed(2),
       'totalDistanceTravelled': totalDistanceTravelled?.toStringAsFixed(3),
-      
-      // Optional state fields
-      'recordedAt': recordedAt,
+      'recordedAt': recordedAt, // Leave this as is here
       'locationType': locationType,
       'appState': appState,
       'batteryLevel': batteryLevel?.toStringAsFixed(2),
@@ -83,7 +77,11 @@ class GeoTrackingPoint {
       'ipAddress': ipAddress,
       'siteName': siteName,
       'activityType': activityType,
+      'siteId': siteId,
     };
+    // This allows the backend to use its default values (like defaultNow() for dates)
+    data.removeWhere((key, value) => value == null);
+
+    return data;
   }
 }
-

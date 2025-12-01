@@ -1,5 +1,5 @@
 // lib/screens/nav_screen.dart
-import 'dart:ui'; // Still needed for dialog blur if you use it elsewhere
+import 'dart:ui'; 
 import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
@@ -14,12 +14,7 @@ import 'package:salesmanapp/screens/employee_management/employee_profile_screen.
 import 'package:salesmanapp/screens/employee_management/employee_pjp_screen.dart';
 import 'package:salesmanapp/screens/employee_management/employee_journey_screen.dart';
 import 'package:salesmanapp/screens/employee_management/employee_salesorder_screen.dart';
-
 import 'package:salesmanapp/screens/forms/create_dvr.dart';
-import 'package:salesmanapp/screens/forms/create_leave_form.dart';
-import 'package:salesmanapp/screens/forms/create_competition_form.dart';
-import 'package:salesmanapp/screens/forms/create_daily_task_form.dart';
-import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
 
 // --- NavProvider ---
 class NavProvider with ChangeNotifier {
@@ -36,7 +31,7 @@ class NavProvider with ChangeNotifier {
 
   // ✅ Saves the entire journey map and navigates to Journey tab
   void startJourney(Map<String, dynamic> data) {
-    _journeyData = data; // richer map with pjp, dealer, etc.
+    _journeyData = data; 
     _selectedIndex = 3;
     notifyListeners();
   }
@@ -46,7 +41,6 @@ class NavProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Optional debug hooks
   void refreshDashboard() {
     debugPrint("Refreshing Dashboard...");
   }
@@ -67,12 +61,14 @@ class NavScreen extends StatefulWidget {
 class _NavScreenState extends State<NavScreen> {
   late final NavProvider _navProvider;
 
-  final GlobalKey<EmployeeDashboardScreenState> _dashboardKey =
-      GlobalKey<EmployeeDashboardScreenState>();
+  // Keys to access state of children for refreshing
+  final GlobalKey<EmployeeDashboardScreenState> _dashboardKey = GlobalKey<EmployeeDashboardScreenState>();
+  final GlobalKey<EmployeePJPScreenState> _pjpKey = GlobalKey<EmployeePJPScreenState>();
 
-  // ✅ Key for PJP screen so we can refresh it directly
-  final GlobalKey<EmployeePJPScreenState> _pjpKey =
-      GlobalKey<EmployeePJPScreenState>();
+  // --- 🎨 FINTECH THEME PALETTE ---
+  static const Color _bgLight   = Color(0xFFF3F4F6); 
+  static const Color _cardNavy  = Color(0xFF0F172A); 
+  static const Color _textGrey  = Color(0xFF9CA3AF); 
 
   @override
   void initState() {
@@ -86,8 +82,7 @@ class _NavScreenState extends State<NavScreen> {
     super.dispose();
   }
 
-  // --- ✅ NEW FUNCTION ---
-  // Opens the DVR dialog and pre-fills it using journey data.
+  // --- Logic to open DVR upon Journey Completion ---
   void _showCreateDvrDialogFromJourney(
     BuildContext context,
     Employee employee,
@@ -98,12 +93,10 @@ class _NavScreenState extends State<NavScreen> {
     dev.log('Auto-opening DVR for PJP ${pjp.id} at $checkInTime', name: 'NavScreen');
     showDialog(
       context: context,
-      barrierDismissible: false, // user must complete or cancel explicitly
+      barrierDismissible: false, 
       builder: (_) => Dialog(
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24.0),
-        ),
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
         child: CreateDvrScreen(
           employee: employee,
           pjp: pjp,
@@ -113,7 +106,6 @@ class _NavScreenState extends State<NavScreen> {
       ),
     );
   }
-  // --- END NEW FUNCTION ---
 
   @override
   Widget build(BuildContext context) {
@@ -121,14 +113,7 @@ class _NavScreenState extends State<NavScreen> {
       value: _navProvider,
       child: Consumer<NavProvider>(
         builder: (context, provider, child) {
-          final pageTitles = [
-            'Home',
-            'PJP',
-            'Sales Order',
-            'Journey',
-            'Profile',
-          ];
-
+          
           final pages = <Widget>[
             EmployeeDashboardScreen(
               key: _dashboardKey,
@@ -148,9 +133,6 @@ class _NavScreenState extends State<NavScreen> {
               initialJourneyData: provider.journeyData,
               employee: widget.employee,
               onDestinationConsumed: provider.clearJourneyData,
-
-              // --- ✅ THE FIX ---
-              // Connect journey completion to DVR dialog
               onJourneyCompleted: (Pjp pjp, Dealer dealer, DateTime checkInTime) {
                 _showCreateDvrDialogFromJourney(
                   context,
@@ -160,19 +142,19 @@ class _NavScreenState extends State<NavScreen> {
                   checkInTime,
                 );
               },
-              // --- END FIX ---
             ),
             EmployeeProfileScreen(employee: widget.employee),
           ];
 
           return Scaffold(
-            appBar: AppBar(
-              title: Text(pageTitles[provider.selectedIndex]),
-            ),
-            drawer: _buildDrawer(context, widget.employee),
+            backgroundColor: _bgLight,
+            // No AppBar here - Individual screens handle their own headers
+            // No Drawer here - Replaced by Dashboard "Sales Operations" sheet
             body: Stack(
               children: [
                 IndexedStack(index: provider.selectedIndex, children: pages),
+                
+                // Floating Nav Bar
                 Positioned(
                   bottom: 0,
                   left: 0,
@@ -181,7 +163,6 @@ class _NavScreenState extends State<NavScreen> {
                 ),
               ],
             ),
-            bottomNavigationBar: null, // handled by the floating nav
           );
         },
       ),
@@ -189,173 +170,44 @@ class _NavScreenState extends State<NavScreen> {
   }
 
   Widget _buildFloatingNavBar(BuildContext context, NavProvider provider) {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-      elevation: 8,
-      shadowColor: Colors.black.withOpacity(0.3),
-      shape: RoundedRectangleBorder(
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 30),
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(24.0),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: BottomNavigationBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        items: const <BottomNavigationBarItem>[
-          BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.checklist_rtl), label: 'PJP'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.shopping_cart_outlined),
-            label: 'Sales Order',
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
-          BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Journey'),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
-        ],
-        currentIndex: provider.selectedIndex,
-        onTap: (index) {
-          if (index == 0) _dashboardKey.currentState?.refreshData();
-          if (index == 1) _pjpKey.currentState?.refreshPjpList();
-          provider.changePage(index);
-        },
-      ),
-    );
-  }
-
-  // --- Drawer and dialog helpers ---
-
-  void _showAddDealerDialog(BuildContext context, Employee employee) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: Theme.of(dialogContext).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24.0),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: AddDealerForm(employee: employee),
-      ),
-    );
-  }
-
-  void _showCreateDvrDialog(BuildContext context, Employee employee) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        backgroundColor: Theme.of(dialogContext).colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24.0),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: CreateDvrScreen(employee: employee),
-      ),
-    );
-  }
-
-  void _showApplyForLeaveDialog(BuildContext context, Employee employee) {
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: CreateLeaveFormScreen(employee: employee),
-      ),
-    );
-  }
-
-  void _showCompetitionFormDialog(BuildContext context, Employee employee) {
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: CreateCompetitionFormScreen(employee: employee),
-      ),
-    );
-  }
-
-  void _showCreateDailyTaskDialog(BuildContext context, Employee employee) {
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: CreateDailyTaskScreen(employee: employee),
-      ),
-    );
-  }
-
-  Widget _buildDrawer(BuildContext context, Employee employee) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-
-    return Drawer(
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          UserAccountsDrawerHeader(
-            accountName: Text(
-              employee.displayName,
-              style: textTheme.titleLarge?.copyWith(
-                color: theme.colorScheme.onPrimary,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            accountEmail: Text(
-              employee.email ?? '',
-              style: textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onPrimary.withOpacity(0.8),
-              ),
-            ),
-            decoration: BoxDecoration(color: theme.colorScheme.primary),
-          ),
-          _buildDrawerActionItem(context,
-              icon: Icons.person_add_alt,
-              text: 'ADD DEALER', onTap: () {
-            Navigator.pop(context);
-            _showAddDealerDialog(context, employee);
-          }),
-          _buildDrawerActionItem(context,
-              icon: Icons.description_outlined,
-              text: 'CREATE DVR', onTap: () {
-            Navigator.pop(context);
-            _showCreateDvrDialog(context, employee);
-          }),
-          _buildDrawerActionItem(context,
-              icon: Icons.assessment_outlined,
-              text: 'COMPETETION FORM', onTap: () {
-            Navigator.pop(context);
-            _showCompetitionFormDialog(context, employee);
-          }),
-          _buildDrawerActionItem(context,
-              icon: Icons.account_box_sharp,
-              text: 'APPLY FOR LEAVE', onTap: () {
-            Navigator.pop(context);
-            _showApplyForLeaveDialog(context, employee);
-          }),
-          _buildDrawerActionItem(context,
-              icon: Icons.task_alt,
-              text: 'CREATE DAILY TASK', onTap: () {
-            Navigator.pop(context);
-            _showCreateDailyTaskDialog(context, employee);
-          }),
         ],
       ),
-    );
-  }
-
-  Widget _buildDrawerActionItem(
-    BuildContext context, {
-    required IconData icon,
-    required String text,
-    VoidCallback? onTap,
-  }) {
-    final theme = Theme.of(context);
-    final iconColor = theme.colorScheme.onSurface.withOpacity(0.7);
-    final textColor = theme.colorScheme.onSurface;
-
-    return ListTile(
-      leading: Icon(icon, color: iconColor),
-      title: Text(text, style: TextStyle(color: textColor)),
-      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24.0),
+        child: BottomNavigationBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          type: BottomNavigationBarType.fixed,
+          selectedItemColor: _cardNavy,
+          unselectedItemColor: _textGrey,
+          selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 11),
+          items: const <BottomNavigationBarItem>[
+            BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'Home'),
+            BottomNavigationBarItem(icon: Icon(Icons.calendar_today_rounded), label: 'Visits'),
+            BottomNavigationBarItem(icon: Icon(Icons.shopping_bag_outlined), label: 'Orders'),
+            BottomNavigationBarItem(icon: Icon(Icons.near_me_rounded), label: 'Journey'),
+            BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profile'),
+          ],
+          currentIndex: provider.selectedIndex,
+          onTap: (index) {
+            if (index == 0) _dashboardKey.currentState?.refreshData();
+            if (index == 1) _pjpKey.currentState?.refreshPjpList();
+            provider.changePage(index);
+          },
+        ),
+      ),
     );
   }
 }

@@ -29,6 +29,13 @@ class _CreateCompetitionFormScreenState extends State<CreateCompetitionFormScree
   bool _isSubmitting = false;
   String? _selectedSchemeOption;
 
+  // --- 🎨 FINTECH THEME PALETTE ---
+  static const Color _surfaceWhite  = Colors.white;
+  static const Color _cardNavy      = Color(0xFF0F172A); 
+  static const Color _textDark      = Color(0xFF111827); 
+  static const Color _textGrey      = Color(0xFF6B7280); 
+  static const Color _inputFill     = Color(0xFFF9FAFB); 
+
   @override
   void dispose() {
     _brandNameController.dispose();
@@ -81,100 +88,203 @@ class _CreateCompetitionFormScreenState extends State<CreateCompetitionFormScree
     }
   }
 
-  InputDecoration _inputDecoration(String label, {bool isRequired = true}) {
-    return InputDecoration(
-      labelText: '$label${isRequired ? '*' : ''}',
-      labelStyle: const TextStyle(color: Colors.white70),
-      filled: true,
-      fillColor: Colors.transparent,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-      enabledBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white30), borderRadius: BorderRadius.circular(12)),
-      focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Colors.white), borderRadius: BorderRadius.circular(12)),
+  // --- UI Helper Widgets ---
+
+  Widget _buildFintechInput({
+    required TextEditingController controller,
+    required String label,
+    String? hint,
+    bool isRequired = true,
+    TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RichText(
+          text: TextSpan(
+            text: label,
+            style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Roboto'), 
+            children: [
+              if (isRequired) const TextSpan(text: ' *', style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
+          validator: isRequired ? (v) => v!.isEmpty ? '$label is required' : null : null,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: _inputFill,
+            hintText: hint,
+            hintStyle: TextStyle(color: Colors.grey[400]),
+            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _cardNavy, width: 1.5),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFintechDropdown({
+    required String label,
+    required String? value,
+    required List<String> items,
+    required void Function(String?) onChanged,
+    bool isRequired = true,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RichText(
+          text: TextSpan(
+            text: label,
+            style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Roboto'),
+            children: [
+              if (isRequired) const TextSpan(text: ' *', style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<String>(
+          value: value,
+          isExpanded: true,
+          dropdownColor: _surfaceWhite,
+          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: _inputFill,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cardNavy, width: 1.5)),
+          ),
+          items: items.map((type) => DropdownMenuItem(value: type, child: Text(type))).toList(),
+          onChanged: onChanged,
+          validator: isRequired ? (v) => v == null ? 'Required' : null : null,
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.transparent, // Transparent to look like a dialog
       body: Center(
         child: SingleChildScrollView(
           child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24.0),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                child: Container(
-                  padding: const EdgeInsets.all(24.0),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF020a67).withOpacity(0.9),
-                    borderRadius: BorderRadius.circular(24.0),
-                    border: Border.all(color: Colors.white.withOpacity(0.2)),
-                  ),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      mainAxisSize: MainAxisSize.min,
+            padding: const EdgeInsets.all(20.0),
+            child: Container(
+              padding: const EdgeInsets.all(24.0),
+              decoration: BoxDecoration(
+                color: _surfaceWhite,
+                borderRadius: BorderRadius.circular(24.0),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10))
+                ],
+              ),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // --- Header ---
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text('Competition Form', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                            IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white),
-                              onPressed: () => Navigator.of(context).pop(),
-                            ),
-                          ],
+                        const Text(
+                          'Competition Form', 
+                          style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)
                         ),
-                        const Divider(color: Colors.white24, height: 30),
-                        
-                        TextFormField(controller: _brandNameController, style: const TextStyle(color: Colors.white), decoration: _inputDecoration('Brand Name'), validator: (v) => v!.isEmpty ? 'Brand name is required' : null),
-                        const SizedBox(height: 16),
-                        
-                        TextFormField(controller: _billingController, style: const TextStyle(color: Colors.white), decoration: _inputDecoration('Billing'), validator: (v) => v!.isEmpty ? 'Billing info is required' : null),
-                        const SizedBox(height: 16),
-
-                        TextFormField(controller: _nodController, style: const TextStyle(color: Colors.white), decoration: _inputDecoration('NOD (Net of Distributor)'), validator: (v) => v!.isEmpty ? 'NOD is required' : null),
-                        const SizedBox(height: 16),
-
-                        TextFormField(controller: _retailController, style: const TextStyle(color: Colors.white), decoration: _inputDecoration('Retail'), validator: (v) => v!.isEmpty ? 'Retail info is required' : null),
-                        const SizedBox(height: 16),
-                        
-                        DropdownButtonFormField<String>(
-                          initialValue: _selectedSchemeOption,
-                          dropdownColor: const Color(0xFF0D47A1),
-                          style: const TextStyle(color: Colors.white),
-                          decoration: _inputDecoration('Schemes'),
-                          items: ['Yes', 'No']
-                              .map((type) => DropdownMenuItem(value: type, child: Text(type)))
-                              .toList(),
-                          onChanged: (value) => setState(() => _selectedSchemeOption = value),
-                          validator: (v) => v == null ? 'Please select an option' : null,
-                        ),
-                        const SizedBox(height: 16),
-
-                        TextFormField(controller: _avgSchemeCostController, keyboardType: TextInputType.number, style: const TextStyle(color: Colors.white), decoration: _inputDecoration('Average Scheme Cost'), validator: (v) => v!.isEmpty ? 'Average cost is required' : null),
-                        const SizedBox(height: 16),
-                        
-                        TextFormField(controller: _remarksController, style: const TextStyle(color: Colors.white), decoration: _inputDecoration('Remarks', isRequired: false), maxLines: 3),
-                        const SizedBox(height: 24),
-                        
-                        ElevatedButton(
-                          onPressed: _isSubmitting ? null : _submitForm,
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: const Size(double.infinity, 50),
-                            backgroundColor: Colors.amber,
-                            foregroundColor: Colors.black,
-                          ),
-                          child: _isSubmitting
-                              ? const CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.black))
-                              : const Text('SUBMIT REPORT', style: TextStyle(fontWeight: FontWeight.bold)),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: _textGrey),
+                          onPressed: () => Navigator.of(context).pop(),
                         ),
                       ],
                     ),
-                  ),
+                    const Divider(color: Color(0xFFF3F4F6), height: 30),
+                    
+                    _buildFintechInput(
+                      controller: _brandNameController, 
+                      label: 'Brand Name', 
+                      hint: 'e.g. Star Cement'
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    _buildFintechInput(
+                      controller: _billingController, 
+                      label: 'Billing', 
+                      hint: 'Billing details'
+                    ),
+                    const SizedBox(height: 16),
+
+                    _buildFintechInput(
+                      controller: _nodController, 
+                      label: 'NOD (Net of Distributor)', 
+                      hint: 'Enter NOD value'
+                    ),
+                    const SizedBox(height: 16),
+
+                    _buildFintechInput(
+                      controller: _retailController, 
+                      label: 'Retail', 
+                      hint: 'Retail details'
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    _buildFintechDropdown(
+                      label: 'Schemes Active?',
+                      value: _selectedSchemeOption,
+                      items: ['Yes', 'No'],
+                      onChanged: (val) => setState(() => _selectedSchemeOption = val),
+                    ),
+                    const SizedBox(height: 16),
+
+                    _buildFintechInput(
+                      controller: _avgSchemeCostController, 
+                      label: 'Average Scheme Cost', 
+                      hint: '0.0',
+                      keyboardType: TextInputType.number
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    _buildFintechInput(
+                      controller: _remarksController, 
+                      label: 'Remarks', 
+                      hint: 'Additional observations...',
+                      isRequired: false, 
+                      maxLines: 3
+                    ),
+                    const SizedBox(height: 24),
+                    
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _isSubmitting ? null : _submitForm,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _cardNavy,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: _isSubmitting
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                            : const Text('SUBMIT REPORT', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),

@@ -14,8 +14,10 @@ class DailyVisitReport {
   
   final DateTime reportDate;
   final String dealerType;
+
   final String? dealerName;
   final String? subDealerName;
+
   final String location;
   final double latitude;
   final double longitude;
@@ -73,7 +75,7 @@ class DailyVisitReport {
   });
 
   factory DailyVisitReport.fromJson(Map<String, dynamic> json) {
-    List<String> _parseBrandSelling(dynamic jsonField) {
+    List<String> parseBrandSelling(dynamic jsonField) {
       if (jsonField is List) {
         return jsonField.map((e) => e.toString()).toList();
       }
@@ -103,7 +105,7 @@ class DailyVisitReport {
       visitType: json['visitType'] ?? 'PLANNED',
       dealerTotalPotential: double.tryParse(json['dealerTotalPotential']?.toString() ?? '0.0') ?? 0.0,
       dealerBestPotential: double.tryParse(json['dealerBestPotential']?.toString() ?? '0.0') ?? 0.0,
-      brandSelling: _parseBrandSelling(json['brandSelling']),
+      brandSelling: parseBrandSelling(json['brandSelling']),
       contactPerson: json['contactPerson'],
       contactPersonPhoneNo: json['contactPersonPhoneNo'],
       todayOrderMt: double.tryParse(json['todayOrderMt']?.toString() ?? '0.0') ?? 0.0,
@@ -123,14 +125,12 @@ class DailyVisitReport {
   }
 
   Map<String, dynamic> toJson() {
-    return {
+    final Map<String, dynamic> data = {
       'userId': userId,
       'dealerId': dealerId, 
       'subDealerId': subDealerId,
       'reportDate': reportDate.toIso8601String().split('T').first,
       'dealerType': dealerType,
-      'dealerName': dealerName,
-      'subDealerName': subDealerName,
       'location': location,
       'latitude': latitude,
       'longitude': longitude,
@@ -152,5 +152,8 @@ class DailyVisitReport {
       'outTimeImageUrl': outTimeImageUrl,
       'pjpId': pjpId,
     };
+
+    data.removeWhere((key, value) => value == null);
+    return data;
   }
 }

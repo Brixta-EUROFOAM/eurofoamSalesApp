@@ -2,7 +2,7 @@
 
 import 'dart:io';
 import 'dart:async';
-import 'dart:convert'; // Added for debug printing JSON
+import 'dart:convert'; 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
@@ -33,21 +33,17 @@ class CreateDvrScreen extends StatefulWidget {
 
 class _CreateDvrScreenState extends State<CreateDvrScreen> {
   final _formKey = GlobalKey<FormState>();
-  final ApiService _apiService = ApiService();
+  final _apiService = ApiService();
   final ImagePicker _picker = ImagePicker();
 
   // --- Controllers ---
   final _contactPersonController = TextEditingController();
   final _contactPhoneController = TextEditingController();
   final _brandSellingController = TextEditingController();
-  
-  // Editable Controllers for Potentials
   final _potentialController = TextEditingController(); 
   final _bestPotentialController = TextEditingController(); 
-  
   final _todayOrderMtController = TextEditingController();
   final _todayCollectionController = TextEditingController();
-  
   final _feedbackController = TextEditingController();
   final _remarksController = TextEditingController();
   final _solutionController = TextEditingController();
@@ -55,12 +51,10 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   // --- State ---
   bool _isSubmitting = false;
   bool _isUploadingImage = false;
-  bool _isSubDealerVisit = false; // Track sub-dealer visit
-  
+  bool _isSubDealerVisit = false; 
   Dealer? _selectedDealer;
-  Dealer? _selectedParentDealer; // Parent dealer for sub-dealer visit
-  List<Dealer> _parentDealers = []; // List for parent dropdown
-
+  Dealer? _selectedParentDealer; 
+  // List<Dealer> _parentDealers = []; // Removed local list, using search dialog now
   String? _visitType = 'PLANNED'; 
   
   // Check-In Data
@@ -69,7 +63,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   File? _inTimeImageFile;
   Position? _checkInLocation;
 
-  // --- THEME COLORS ---
+  // --- 🎨 FINTECH THEME PALETTE ---
   static const Color _surfaceWhite = Colors.white;
   static const Color _textDark = Color(0xFF111827);
   static const Color _textGrey = Color(0xFF6B7280);
@@ -81,11 +75,25 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   void initState() {
     super.initState();
     _initializeData();
-    _fetchParentDealers();
+    // _fetchParentDealers(); // No longer needed, we search on demand
+  }
+
+  @override
+  void dispose() {
+    _contactPersonController.dispose();
+    _contactPhoneController.dispose();
+    _brandSellingController.dispose();
+    _potentialController.dispose();
+    _bestPotentialController.dispose();
+    _todayOrderMtController.dispose();
+    _todayCollectionController.dispose();
+    _feedbackController.dispose();
+    _remarksController.dispose();
+    _solutionController.dispose();
+    super.dispose();
   }
 
   void _initializeData() {
-    // Case 1: PJP Journey (Pre-filled)
     if (widget.dealer != null) {
       _onDealerSelected(widget.dealer!);
       setState(() {
@@ -93,31 +101,12 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
         _visitType = 'PLANNED'; 
         if (widget.dealer!.parentDealerId != null) {
            _isSubDealerVisit = true;
-           // Logic to handle pre-filling parent would go here if needed
         }
       });
-    } 
-    // Case 2: Manual DVR (Ad-hoc)
-    else {
+    } else {
       setState(() {
         _visitType = 'UNPLANNED';
       });
-    }
-  }
-
-  Future<void> _fetchParentDealers() async {
-    try {
-       final dealers = await _apiService.fetchDealers(
-        userId: int.tryParse(widget.employee.id),
-        limit: 1000,
-      );
-      if (mounted) {
-        setState(() {
-           _parentDealers = dealers;
-        });
-      }
-    } catch (e) {
-      debugPrint("Error loading parent dealers: $e");
     }
   }
 
@@ -125,26 +114,23 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     setState(() {
       _selectedDealer = dealer;
       
-      // Auto-detect sub-dealer
       if (dealer.parentDealerId != null) {
         _isSubDealerVisit = true;
+        // Ideally, you'd fetch the parent dealer info here if you have the ID
+        // But for now, we let the user select/confirm it if it's missing or just rely on the ID if we had it loaded.
       } else {
         _isSubDealerVisit = false;
         _selectedParentDealer = null;
       }
       
-      // Pre-fill fields
       _contactPersonController.text = dealer.name; 
       _contactPhoneController.text = dealer.phoneNo;
       _brandSellingController.text = dealer.brandSelling.join(", ");
-      
-      // Pre-fill Potentials
       _potentialController.text = dealer.totalPotential.toString();
       _bestPotentialController.text = dealer.bestPotential.toString();
     });
   }
 
-  // --- Search Dialog ---
   Future<void> _openDealerSearch() async {
     final result = await showDialog<Dealer>(
       context: context,
@@ -156,6 +142,23 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
 
     if (result != null) {
       _onDealerSelected(result);
+    }
+  }
+
+  // --- ✅ NEW: Open Search for Parent Dealer ---
+  Future<void> _openParentDealerSearch() async {
+    final result = await showDialog<Dealer>(
+      context: context,
+      builder: (context) => _ServerDealerSearchDialog(
+        api: _apiService, 
+        userId: int.tryParse(widget.employee.id) // Optional: restrict to user's dealers if needed
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        _selectedParentDealer = result;
+      });
     }
   }
 
@@ -208,7 +211,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
        return;
     }
 
-    // Sub-Dealer Validation
     if (_isSubDealerVisit && _selectedParentDealer == null && _selectedDealer!.parentDealerId == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select the Parent Dealer.")));
        return;
@@ -217,7 +219,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      // 1. Capture Check-Out Photo
       final XFile? outImage = await _picker.pickImage(source: ImageSource.camera, imageQuality: 50);
       String? outTimeUrl;
       
@@ -225,20 +226,19 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
         outTimeUrl = await _apiService.uploadImageToR2(File(outImage.path));
       }
 
-      // 2. Parse Brands
       final List<String> brandsList = _brandSellingController.text
           .split(',')
           .map((e) => e.trim())
           .where((element) => element.isNotEmpty)
           .toList();
 
-      // 3. Determine IDs
       String? finalDealerId;
       String? finalSubDealerId;
       String finalDealerType;
 
       if (_isSubDealerVisit) {
          finalSubDealerId = _selectedDealer!.id;
+         // Prioritize selected parent, fallback to dealer's existing parentId
          finalDealerId = _selectedParentDealer?.id ?? _selectedDealer!.parentDealerId;
          finalDealerType = 'Sub Dealer';
          if (finalDealerId == null) throw Exception("Parent Dealer ID missing for Sub-Dealer visit");
@@ -248,44 +248,32 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
          finalDealerType = 'Dealer';
       }
 
-      // 4. Location Logic
-      String locationStr = _checkInLocation != null 
-            ? "${_checkInLocation!.latitude},${_checkInLocation!.longitude}" 
-            : (_selectedDealer!.address.length > 490 ? _selectedDealer!.address.substring(0, 490) : _selectedDealer!.address);
+      String locationStr = _selectedDealer!.address;
+      if (locationStr.length > 490) {
+        locationStr = locationStr.substring(0, 490);
+      }
 
-      // 5. Construct DVR Object
       final dvr = DailyVisitReport(
         userId: int.parse(widget.employee.id),
         reportDate: DateTime.now(),
-        
         dealerId: finalDealerId, 
         subDealerId: finalSubDealerId,
-        
         dealerType: finalDealerType,
-        dealerName: _isSubDealerVisit ? _selectedParentDealer?.name : _selectedDealer!.name, 
-        subDealerName: _isSubDealerVisit ? _selectedDealer!.name : null,
-        
+        // dealerName and subDealerName removed to satisfy strict backend
         location: locationStr,
         latitude: _checkInLocation?.latitude ?? _selectedDealer!.latitude ?? 0.0,
         longitude: _checkInLocation?.longitude ?? _selectedDealer!.longitude ?? 0.0,
         visitType: _visitType!,
-        
-        // Edited Stats
         dealerTotalPotential: double.tryParse(_potentialController.text.trim()) ?? 0.0,
         dealerBestPotential: double.tryParse(_bestPotentialController.text.trim()) ?? 0.0,
-        
         brandSelling: brandsList.isEmpty ? ["N/A"] : brandsList,
-        
         contactPerson: _contactPersonController.text.trim(),
         contactPersonPhoneNo: _contactPhoneController.text.trim(),
-
         todayOrderMt: double.tryParse(_todayOrderMtController.text.trim()) ?? 0.0,
         todayCollectionRupees: double.tryParse(_todayCollectionController.text.trim()) ?? 0.0,
-        
         feedbacks: _feedbackController.text.trim(),
         solutionBySalesperson: _solutionController.text.isNotEmpty ? _solutionController.text.trim() : null,
         anyRemarks: _remarksController.text.isNotEmpty ? _remarksController.text.trim() : null,
-        
         checkInTime: _checkInTime!,
         checkOutTime: DateTime.now(),
         inTimeImageUrl: _inTimeImageUrl,
@@ -304,11 +292,9 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     } catch (e) {
       debugPrint("DVR Submission Error: $e");
       if (mounted) {
-        String errorMsg = "Submission Failed";
-        if (e.toString().contains("<html>")) {
-           errorMsg = "Server Error (500). Check logs.";
-        } else {
-           errorMsg = "Error: $e";
+        String errorMsg = "Submission Failed: $e";
+        if (e.toString().contains("500")) {
+           errorMsg = "Server Error (500). Please check data format.";
         }
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(errorMsg), backgroundColor: Colors.red));
       }
@@ -317,17 +303,65 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     }
   }
 
-  InputDecoration _inputDecoration(String label, {String? hint}) {
-    return InputDecoration(
-      labelText: label,
-      hintText: hint,
-      labelStyle: const TextStyle(color: _textGrey, fontSize: 13),
-      hintStyle: TextStyle(color: _textGrey.withOpacity(0.5)),
-      filled: true,
-      fillColor: _inputFill,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cardNavy, width: 1.5)),
+  // --- UI Helper Widgets ---
+
+  Widget _buildFintechInput({
+    required TextEditingController controller,
+    required String label,
+    String? hint,
+    bool isRequired = true,
+    TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
+    String? Function(String?)? validator,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RichText(
+          text: TextSpan(
+            text: label,
+            style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Roboto'), 
+            children: [
+              if (isRequired) const TextSpan(text: ' *', style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: controller,
+          keyboardType: keyboardType,
+          maxLines: maxLines,
+          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
+          validator: validator ?? (isRequired ? (v) => v!.isEmpty ? 'Required' : null : null),
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: _inputFill,
+            hintText: hint,
+            hintStyle: TextStyle(color: Colors.grey[400]),
+            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _cardNavy, width: 1.5),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 24.0, bottom: 12.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(),
+          const SizedBox(height: 12),
+          Text(title.toUpperCase(), style: const TextStyle(color: _textGrey, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+        ],
+      ),
     );
   }
 
@@ -417,21 +451,37 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                       ],
                     ),
                     
-                    // Parent Dropdown
+                    // Parent Dropdown (Now uses Search Dialog)
                     if (_isSubDealerVisit) 
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
-                        child: DropdownButtonFormField<Dealer>(
-                          value: _selectedParentDealer,
-                          isExpanded: true,
-                          dropdownColor: _surfaceWhite,
-                          hint: const Text("Select Parent Dealer *"),
-                          decoration: _inputDecoration("Parent Dealer"),
-                          items: _parentDealers.map((d) => DropdownMenuItem(
-                             value: d,
-                             child: Text(d.name, overflow: TextOverflow.ellipsis, style: const TextStyle(color: _textDark)),
-                          )).toList(),
-                          onChanged: (val) => setState(() => _selectedParentDealer = val),
+                        child: InkWell(
+                          onTap: _openParentDealerSearch, // ✅ Opens Search Dialog
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                            decoration: BoxDecoration(
+                              color: _inputFill,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _selectedParentDealer != null 
+                                      ? "${_selectedParentDealer!.name} (${_selectedParentDealer!.region})" 
+                                      : "Select Parent Dealer *",
+                                    style: TextStyle(
+                                      color: _selectedParentDealer != null ? _textDark : _textGrey,
+                                      fontWeight: _selectedParentDealer != null ? FontWeight.w600 : FontWeight.normal,
+                                      fontSize: 15,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const Icon(Icons.search, color: _textGrey),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     
@@ -446,7 +496,15 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                         value: t, child: Text(t)
                       )).toList(),
                       onChanged: (val) => setState(() => _visitType = val),
-                      decoration: _inputDecoration("Visit Type"),
+                      decoration: InputDecoration( // Correctly using the helper inside the method now or defining inline
+                        filled: true,
+                        fillColor: _inputFill,
+                        labelText: "Visit Type",
+                        labelStyle: const TextStyle(color: _textGrey, fontSize: 13),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cardNavy, width: 1.5)),
+                      ),
                     ),
 
                     const SizedBox(height: 24),
@@ -491,115 +549,52 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                               ],
                             ),
                           ),
-                          const Icon(Icons.check_circle, color: Colors.green),
+                          const Icon(Icons.check_circle, color: _accentGreen),
                         ],
                       ),
                     ),
                     const SizedBox(height: 20),
                     
-                    const Text("CONTACT INFO", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _textGrey)),
-                    const SizedBox(height: 8),
-                    
+                    _buildSectionHeader("CONTACT INFO"),
                     Row(
                       children: [
-                        Expanded(child: TextFormField(
-                          controller: _contactPersonController,
-                          style: const TextStyle(color: _textDark),
-                          decoration: _inputDecoration("Contact Person"),
-                        )),
+                        Expanded(child: _buildFintechInput(controller: _contactPersonController, label: "Contact Person")),
                         const SizedBox(width: 12),
-                        Expanded(child: TextFormField(
-                          controller: _contactPhoneController,
-                          keyboardType: TextInputType.phone,
-                          style: const TextStyle(color: _textDark),
-                          decoration: _inputDecoration("Phone"),
-                        )),
+                        Expanded(child: _buildFintechInput(controller: _contactPhoneController, label: "Phone", keyboardType: TextInputType.phone)),
                       ],
                     ),
-                    const SizedBox(height: 16),
 
-                    const Text("BUSINESS DATA", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _textGrey)),
-                    const SizedBox(height: 8),
-
-                    // 🟢 FIXED: Editable Inputs for Potentials
+                    _buildSectionHeader("BUSINESS DATA"),
                     Row(
                       children: [
-                        Expanded(child: TextFormField(
-                          controller: _potentialController,
-                          keyboardType: TextInputType.number,
-                          style: const TextStyle(color: _textDark),
-                          decoration: _inputDecoration("Total Potential"),
-                          validator: (v) => v!.isEmpty ? 'Required' : null,
-                        )),
+                        Expanded(child: _buildFintechInput(controller: _potentialController, label: "Total Potential", keyboardType: TextInputType.number)),
                         const SizedBox(width: 12),
-                        Expanded(child: TextFormField(
-                          controller: _bestPotentialController,
-                          keyboardType: TextInputType.number,
-                          style: const TextStyle(color: _textDark),
-                          decoration: _inputDecoration("Best Potential"),
-                          validator: (v) => v!.isEmpty ? 'Required' : null,
-                        )),
+                        Expanded(child: _buildFintechInput(controller: _bestPotentialController, label: "Best Potential", keyboardType: TextInputType.number)),
                       ],
                     ),
                     const SizedBox(height: 12),
 
-                    TextFormField(
-                      controller: _brandSellingController,
-                      style: const TextStyle(color: _textDark),
-                      decoration: _inputDecoration("Brands Selling (Comma separated)"),
-                      validator: (v) => v!.isEmpty ? 'At least one brand required' : null,
-                    ),
+                    _buildFintechInput(controller: _brandSellingController, label: "Brands Selling (Comma separated)"),
                     const SizedBox(height: 12),
 
                     Row(
                       children: [
-                        Expanded(child: TextFormField(
-                          controller: _todayOrderMtController,
-                          keyboardType: TextInputType.number,
-                          style: const TextStyle(color: _textDark),
-                          decoration: _inputDecoration("Today Order (MT)"),
-                          validator: (v) => v!.isEmpty ? 'Required' : null,
-                        )),
+                        Expanded(child: _buildFintechInput(controller: _todayOrderMtController, label: "Today Order (MT)", keyboardType: TextInputType.number)),
                         const SizedBox(width: 12),
-                        Expanded(child: TextFormField(
-                          controller: _todayCollectionController,
-                          keyboardType: TextInputType.number,
-                          style: const TextStyle(color: _textDark),
-                          decoration: _inputDecoration("Collection (₹)"),
-                          validator: (v) => v!.isEmpty ? 'Required' : null,
-                        )),
+                        Expanded(child: _buildFintechInput(controller: _todayCollectionController, label: "Collection (₹)", keyboardType: TextInputType.number)),
                       ],
                     ),
-                    const SizedBox(height: 16),
 
-                    const Text("QUALITATIVE DATA", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _textGrey)),
-                    const SizedBox(height: 8),
-                    
-                    TextFormField(
-                      controller: _feedbackController,
-                      style: const TextStyle(color: _textDark),
-                      decoration: _inputDecoration("Market Feedback / Issues"),
-                      maxLines: 2,
-                      validator: (v) => v!.isEmpty ? 'Required' : null,
-                    ),
+                    _buildSectionHeader("QUALITATIVE DATA"),
+                    _buildFintechInput(controller: _feedbackController, label: "Market Feedback / Issues", maxLines: 2),
                     const SizedBox(height: 12),
 
-                    TextFormField(
-                      controller: _solutionController,
-                      style: const TextStyle(color: _textDark),
-                      decoration: _inputDecoration("Solution by Salesperson (Optional)"),
-                      maxLines: 2,
-                    ),
+                    _buildFintechInput(controller: _solutionController, label: "Solution by Salesperson (Optional)", isRequired: false, maxLines: 2),
                     const SizedBox(height: 12),
                     
-                    TextFormField(
-                      controller: _remarksController,
-                      style: const TextStyle(color: _textDark),
-                      decoration: _inputDecoration("Competitor Info / Remarks (Optional)"),
-                      maxLines: 2,
-                    ),
+                    _buildFintechInput(controller: _remarksController, label: "Competitor Info / Remarks (Optional)", isRequired: false, maxLines: 2),
                     
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
                     
                     ElevatedButton(
                       onPressed: _isSubmitting ? null : _submitDvr,
@@ -709,7 +704,6 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(dealer.name, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600)),
-                    // 🟢 UPDATED FORMAT: Dealer Name (Region, Area)
                     subtitle: Text("${dealer.region}, ${dealer.area}", style: const TextStyle(color: _textGrey, fontSize: 12)),
                     onTap: () => Navigator.pop(context, dealer),
                   );
