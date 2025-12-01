@@ -1,3 +1,4 @@
+// lib/technicalSide/screens/technical_dashboard_screen.dart
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -32,9 +33,9 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
   
   bool _isCheckingIn = false;
   bool _isCheckingOut = false;
-  
-  // --- NEW STATE VARIABLE ADDED HERE ---
-  bool _isCheckedIn = false; // Tracks if user has checked in to toggle UI buttons
+  bool _isCheckedIn = false; 
+
+  DateTime? _lastCheckInTime; 
 
   String _greeting = 'Good Morning';
 
@@ -50,6 +51,35 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _setGreeting();
+    refreshData();
+  }
+
+  // Simple refresh to update greeting or check status if needed
+  void refreshData() {
+    if (mounted) {
+      setState(() {
+        _setGreeting();
+      });
+      _checkAttendanceStatus(); 
+    }
+  }
+
+  // Fetch today's attendance to restore state and timer
+  Future<void> _checkAttendanceStatus() async {
+    try {
+      final att = await _apiService.fetchTodaysAttendance(int.parse(widget.employee.id));
+      if (mounted) {
+        setState(() {
+          // If checkOutTime is null, they are currently checked in
+          _isCheckedIn = att.checkOutTime == null;
+          // Store the check-in time for the 30-min logic
+          _lastCheckInTime = att.createdAt; 
+        });
+      }
+    } catch (e) {
+      // 404 or error means likely not checked in today
+      if (mounted) setState(() => _isCheckedIn = false);
+    }
   }
 
   void _setGreeting() {
@@ -98,12 +128,14 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
         'inTimeImageUrl': imageUrl,
         'inTimeImageCaptured': true,
       };
-      await _apiService.checkIn(checkInData);
       
-      // --- UPDATE UI STATE ON SUCCESS ---
+      // Capture returned object to get official timestamp
+      final newAttendance = await _apiService.checkIn(checkInData);
+      
       if (mounted) {
         setState(() {
-          _isCheckedIn = true; // Makes Check In inactive, Check Out active
+          _isCheckedIn = true;
+          _lastCheckInTime = newAttendance.createdAt; // Set time for validation
         });
       }
 
@@ -117,6 +149,26 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
   
   Future<void> _handleCheckOut() async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    // --- 30 MINUTE CHECK LOGIC ---
+    if (_lastCheckInTime != null) {
+      final difference = DateTime.now().difference(_lastCheckInTime!);
+      const minMinutes = 30;
+
+      if (difference.inMinutes < minMinutes) {
+        final remaining = minMinutes - difference.inMinutes;
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text("Minimum 30 mins shift required. Wait $remaining more minute(s)."),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          )
+        );
+        return; 
+      }
+    }
+    // -------------------------------
+
     setState(() => _isCheckingOut = true);
     try {
       final position = await _getCurrentPosition();
@@ -135,10 +187,9 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
       };
       await _apiService.checkOut(checkOutData);
 
-      // --- UPDATE UI STATE ON SUCCESS ---
       if (mounted) {
         setState(() {
-          _isCheckedIn = false; // Resets the buttons for the next day/cycle
+          _isCheckedIn = false;
         });
       }
 
@@ -157,7 +208,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
   }
 
   Future<void> _handleRefresh() async {
-    setState(() { _setGreeting(); });
+    refreshData();
   }
 
   void _openFullScreen(Widget page) {
@@ -371,9 +422,9 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                     ],
                   ),
                   const SizedBox(height: 24),
-                  const Text(
-                    "Ready to Start", 
-                    style: TextStyle(
+                  Text(
+                    _isCheckedIn ? "You are Checked In" : "Ready to Start?", 
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 28,
                       fontWeight: FontWeight.bold,

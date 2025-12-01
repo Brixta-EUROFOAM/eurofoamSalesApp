@@ -1,9 +1,12 @@
-// lib/screens/forms/create_tvr.dart
+// lib/technicalSide/screens/forms/create_tvr_form.dart
 import 'dart:io';
-import 'dart:ui';
+import 'dart:async';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
 import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/technicalSide/models/sites_model.dart';
+import 'package:salesmanapp/technicalSide/models/mason_pc_model.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,26 +14,39 @@ import 'package:intl/intl.dart';
 
 class CreateTvrScreen extends StatefulWidget {
   final Employee employee;
-  const CreateTvrScreen({super.key, required this.employee});
+  final Pjp? pjp;
+  final TechnicalSite? site;
+  final DateTime? initialCheckInTime;
+
+  const CreateTvrScreen({
+    super.key, 
+    required this.employee,
+    this.pjp,
+    this.site,
+    this.initialCheckInTime,
+  });
 
   @override
   State<CreateTvrScreen> createState() => _CreateTvrScreenState();
 }
 
 class _CreateTvrScreenState extends State<CreateTvrScreen> {
-  // Keys & Services
   final _formKey = GlobalKey<FormState>();
   final _apiService = ApiService();
   final _imagePicker = ImagePicker();
 
-  // --- Form Controllers (Existing) ---
+  // --- SELECTION STATE ---
+  TechnicalSite? _selectedSite;
+  Mason? _selectedMason;
+
+  // --- CONTROLLERS ---
   final _siteNameConcernedPersonController = TextEditingController();
   final _phoneNoController = TextEditingController();
   final _emailIdController = TextEditingController();
   final _clientsRemarksController = TextEditingController();
   final _salespersonRemarksController = TextEditingController();
   final _siteVisitBrandInUseController = TextEditingController();
-  // _siteVisitStageController removed in favor of dropdown
+  
   final _conversionFromBrandController = TextEditingController();
   final _conversionQuantityValueController = TextEditingController();
   final _associatedPartyNameController = TextEditingController();
@@ -40,7 +56,6 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   final _promotionalActivityController = TextEditingController();
   final _channelPartnerVisitController = TextEditingController();
 
-  // --- Form Controllers (NEW) ---
   final _whatsappNoController = TextEditingController();
   final _siteAddressController = TextEditingController();
   final _marketNameController = TextEditingController();
@@ -57,49 +72,63 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   final _influencerNameController = TextEditingController();
   final _influencerPhoneController = TextEditingController();
   final _influencerProductivityController = TextEditingController();
+  
+  // New Region/Area controllers
+  final _regionController = TextEditingController();
+  final _areaController = TextEditingController();
 
-  // --- State Management ---
+  // --- STATE ---
   bool _isSubmitting = false;
   bool _isUploadingImage = false;
   
   // Dropdowns
-  String? _selectedVisitType;
+  String? _selectedVisitType = 'Site Visit';
   String? _selectedVisitCategory;
   String? _selectedCustomerType;
   String? _selectedConversionType;
   String? _selectedConversionUnit;
-  String? _selectedStage; // NEW: State for Construction Stage
+  String? _selectedStage;
 
-  // Booleans (Switches)
+  // Booleans
   bool _isConverted = false;
   bool _isTechService = false;
   bool _isSchemeEnrolled = false;
 
-  // Workflow Data Holders
+  // Check-In Data
   DateTime? _checkInTime;
   File? _inTimeImageFile;
   String? _inTimeImageUrl;
   Position? _capturedLocation;
 
-  // --- FINTECH THEME PALETTE ---
+  // --- THEME ---
   static const Color _surfaceWhite  = Colors.white;
-  static const Color _cardNavy      = Color(0xFF0F172A); // Deep Navy
-  static const Color _textDark      = Color(0xFF111827); // Navy/Black
-  static const Color _textGrey      = Color(0xFF6B7280); // Subtitle Grey
-  static const Color _inputFill     = Color(0xFFF9FAFB); // Very light grey
+  static const Color _cardNavy      = Color(0xFF0F172A); 
+  static const Color _textDark      = Color(0xFF111827); 
+  static const Color _textGrey      = Color(0xFF6B7280); 
+  static const Color _inputFill     = Color(0xFFF9FAFB); 
   static const Color _accentGreen   = Color(0xFF10B981); 
   static const Color _accentOrange  = Color(0xFFF59E0B);
 
   @override
+  void initState() {
+    super.initState();
+    // Handle passed data
+    if (widget.site != null) {
+      _onSiteSelected(widget.site!);
+    }
+    if (widget.initialCheckInTime != null) {
+      _checkInTime = widget.initialCheckInTime;
+    }
+  }
+
+  @override
   void dispose() {
-    // Dispose Existing
     _siteNameConcernedPersonController.dispose();
     _phoneNoController.dispose();
     _emailIdController.dispose();
     _clientsRemarksController.dispose();
     _salespersonRemarksController.dispose();
     _siteVisitBrandInUseController.dispose();
-    // _siteVisitStageController.dispose();
     _conversionFromBrandController.dispose();
     _conversionQuantityValueController.dispose();
     _associatedPartyNameController.dispose();
@@ -108,8 +137,6 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     _qualityComplaintController.dispose();
     _promotionalActivityController.dispose();
     _channelPartnerVisitController.dispose();
-    
-    // Dispose New
     _whatsappNoController.dispose();
     _siteAddressController.dispose();
     _marketNameController.dispose();
@@ -126,18 +153,50 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     _influencerNameController.dispose();
     _influencerPhoneController.dispose();
     _influencerProductivityController.dispose();
-    
+    _regionController.dispose();
+    _areaController.dispose();
     super.dispose();
   }
 
-  // --- Core Logic ---
+  void _onSiteSelected(TechnicalSite site) {
+    setState(() {
+      _selectedSite = site;
+      _siteNameConcernedPersonController.text = site.concernedPerson;
+      _phoneNoController.text = site.phoneNo;
+      _siteAddressController.text = site.address;
+      _regionController.text = site.region ?? '';
+      _areaController.text = site.area ?? '';
+      if(site.stageOfConstruction != null) _selectedStage = site.stageOfConstruction;
+    });
+  }
+
+  void _onMasonSelected(Mason mason) {
+    setState(() {
+      _selectedMason = mason;
+      _influencerNameController.text = mason.name;
+      _influencerPhoneController.text = mason.phoneNumber;
+    });
+  }
+
+  Future<void> _openSiteSearch() async {
+    final TechnicalSite? result = await showDialog(
+      context: context,
+      builder: (context) => _ServerSiteSearchDialog(api: _apiService, userId: int.parse(widget.employee.id)),
+    );
+    if (result != null) _onSiteSelected(result);
+  }
+
+  Future<void> _openMasonSearch() async {
+    final Mason? result = await showDialog(
+      context: context,
+      builder: (context) => _ServerMasonSearchDialog(api: _apiService),
+    );
+    if (result != null) _onMasonSelected(result);
+  }
 
   Future<void> _handleCheckIn() async {
-    if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Please fill Site Name and Phone Number first.'),
-        backgroundColor: Colors.orange,
-      ));
+    if (_selectedSite == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a site first.')));
       return;
     }
 
@@ -145,7 +204,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     setState(() => _isUploadingImage = true);
     try {
       final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      final pickedFile = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 70, maxWidth: 1024);
+      final pickedFile = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 70);
+      
       if (pickedFile == null) {
          if(mounted) setState(() => _isUploadingImage = false);
          return;
@@ -162,9 +222,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           _inTimeImageUrl = imageUrl;
           _capturedLocation = position; 
         });
-        scaffoldMessenger.showSnackBar(const SnackBar(
-          content: Text('Checked-In with photo and location successfully.'), backgroundColor: _accentGreen,
-        ));
+        scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Checked-In successfully.'), backgroundColor: _accentGreen));
       }
     } catch (e) {
       if (mounted) {
@@ -176,57 +234,87 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   Future<void> _submitTvr() async {
+    // --- 1. Validation Feedback ---
     if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please fill all required fields.'), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Please fill all required fields (marked in Red).'),
+        backgroundColor: Colors.orange,
+      ));
       return;
     }
     
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
+    if (_checkInTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Check-in is required.')));
+      return;
+    }
+
+    // --- 2. 10 Minute Limit Logic ---
+    final now = DateTime.now();
+    final difference = now.difference(_checkInTime!);
+    const minMinutes = 10; 
+
+    if (difference.inMinutes < minMinutes) {
+      final remaining = minMinutes - difference.inMinutes;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Minimum 10 mins required. Wait $remaining more minute(s)."),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 4),
+        )
+      );
+      return;
+    }
+
+    // --- 3. Calculate Time Spent ---
+    final hours = difference.inHours;
+    final minutes = difference.inMinutes.remainder(60);
+    final String timeSpentStr = '${hours}h ${minutes}m';
+
     setState(() => _isSubmitting = true);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     try {
-      final pickedFile = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 70, maxWidth: 1024);
-      if (pickedFile == null) {
-        scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Check-out photo is required to submit.'), backgroundColor: Colors.orange));
-        setState(() => _isSubmitting = false);
-        return;
+      final pickedFile = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 70);
+      String? outTimeImageUrl;
+      
+      if (pickedFile != null) {
+        outTimeImageUrl = await _apiService.uploadImageToR2(File(pickedFile.path));
       }
-      final outTimeImageFile = File(pickedFile.path);
-      final outTimeImageUrl = await _apiService.uploadImageToR2(outTimeImageFile);
-      final checkOutTime = DateTime.now();
-
-      final locationString = "[Site Location: ${_capturedLocation!.latitude}, ${_capturedLocation!.longitude}]";
-      final finalSalespersonRemarks = '$locationString\n${_salespersonRemarksController.text}';
 
       final tvrReport = TechnicalVisitReport(
-        // Core
         userId: int.parse(widget.employee.id),
-        reportDate: _checkInTime!,
+        reportDate: DateTime.now(),
         visitType: _selectedVisitType!,
         
-        // Contact & Loc
+        // IDs
+        siteId: _selectedSite?.id, 
+        masonId: _selectedMason?.id, 
+        pjpId: widget.pjp?.id, 
+        
+        // Contact
         siteNameConcernedPerson: _siteNameConcernedPersonController.text,
         phoneNo: _phoneNoController.text,
         whatsappNo: _whatsappNoController.text.isNotEmpty ? _whatsappNoController.text : null,
         emailId: _emailIdController.text.isNotEmpty ? _emailIdController.text : null,
         siteAddress: _siteAddressController.text.isNotEmpty ? _siteAddressController.text : null,
         marketName: _marketNameController.text.isNotEmpty ? _marketNameController.text : null,
+        region: _regionController.text.isNotEmpty ? _regionController.text : null, 
+        area: _areaController.text.isNotEmpty ? _areaController.text : null, 
+        
         latitude: _capturedLocation?.latitude,
         longitude: _capturedLocation?.longitude,
 
-        // Visit Specifics
         visitCategory: _selectedVisitCategory,
         customerType: _selectedCustomerType,
         purposeOfVisit: _purposeOfVisitController.text.isNotEmpty ? _purposeOfVisitController.text : null,
 
-        // Construction & Stock
-        constAreaSqFt: _constAreaSqFtController.text.isNotEmpty ? int.tryParse(_constAreaSqFtController.text) : null,
+        // Construction
+        siteVisitStage: _selectedStage,
+        constAreaSqFt: int.tryParse(_constAreaSqFtController.text),
         siteVisitBrandInUse: _siteVisitBrandInUseController.text.split(',').map((e) => e.trim()).where((s) => s.isNotEmpty).toList(),
-        siteVisitStage: _selectedStage, // Using Dropdown value
-        currentBrandPrice: _currentBrandPriceController.text.isNotEmpty ? double.tryParse(_currentBrandPriceController.text) : null,
-        siteStock: _siteStockController.text.isNotEmpty ? double.tryParse(_siteStockController.text) : null,
-        estRequirement: _estRequirementController.text.isNotEmpty ? double.tryParse(_estRequirementController.text) : null,
+        currentBrandPrice: double.tryParse(_currentBrandPriceController.text),
+        siteStock: double.tryParse(_siteStockController.text),
+        estRequirement: double.tryParse(_estRequirementController.text),
 
         // Dealers
         supplyingDealerName: _supplyingDealerNameController.text.isNotEmpty ? _supplyingDealerNameController.text : null,
@@ -238,31 +326,33 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         isConverted: _isConverted,
         conversionType: _isConverted ? _selectedConversionType : null,
         conversionFromBrand: _conversionFromBrandController.text.isNotEmpty ? _conversionFromBrandController.text : null,
-        conversionQuantityValue: _conversionQuantityValueController.text.isNotEmpty ? double.tryParse(_conversionQuantityValueController.text) : null,
-        conversionQuantityUnit: _isConverted ? _selectedConversionUnit : null, 
+        conversionQuantityValue: double.tryParse(_conversionQuantityValueController.text),
+        conversionQuantityUnit: _isConverted ? _selectedConversionUnit : null,
 
-        // Technical Service
+        // Technical
         isTechService: _isTechService,
-        serviceDesc: _isTechService && _serviceDescController.text.isNotEmpty ? _serviceDescController.text : null,
+        serviceDesc: _serviceDescController.text.isNotEmpty ? _serviceDescController.text : null,
         serviceType: _serviceTypeController.text.isNotEmpty ? _serviceTypeController.text : null,
         dhalaiVerificationCode: _dhalaiVerificationCodeController.text.isNotEmpty ? _dhalaiVerificationCodeController.text : null,
         isVerificationStatus: _isVerificationStatusController.text.isNotEmpty ? _isVerificationStatusController.text : null,
         qualityComplaint: _qualityComplaintController.text.isNotEmpty ? _qualityComplaintController.text : null,
 
-        // Influencer
+        // Mason
         influencerName: _influencerNameController.text.isNotEmpty ? _influencerNameController.text : null,
         influencerPhone: _influencerPhoneController.text.isNotEmpty ? _influencerPhoneController.text : null,
         isSchemeEnrolled: _isSchemeEnrolled,
         influencerProductivity: _influencerProductivityController.text.isNotEmpty ? _influencerProductivityController.text : null,
         influencerType: _influencerTypeController.text.split(',').map((e) => e.trim()).where((s) => s.isNotEmpty).toList(),
 
-        // Remarks & Meta
+        // Remarks
         clientsRemarks: _clientsRemarksController.text,
-        salespersonRemarks: finalSalespersonRemarks,
+        salespersonRemarks: _salespersonRemarksController.text,
         promotionalActivity: _promotionalActivityController.text.isNotEmpty ? _promotionalActivityController.text : null,
         
+        // Metadata
         checkInTime: _checkInTime!,
-        checkOutTime: checkOutTime,
+        checkOutTime: now,
+        timeSpentinLoc: timeSpentStr, 
         inTimeImageUrl: _inTimeImageUrl,
         outTimeImageUrl: outTimeImageUrl,
       );
@@ -270,18 +360,19 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       await _apiService.createTvr(tvrReport);
 
       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('TVR submitted successfully!'), backgroundColor: _accentGreen));
-      navigator.pop();
+      if (mounted) Navigator.pop(context);
 
     } catch (e) {
       if(mounted) {
-        scaffoldMessenger.showSnackBar(SnackBar(content: Text('$e'), backgroundColor: Colors.red));
+        scaffoldMessenger.showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
-  // --- UI Helper Widgets ---
+  // --- UI WIDGETS ---
+
   Widget _buildFintechInput({
     required TextEditingController controller,
     required String label,
@@ -289,7 +380,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     bool isRequired = true,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
-    String? Function(String?)? validator,
+    bool readOnly = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,16 +399,16 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           controller: controller,
           keyboardType: keyboardType,
           maxLines: maxLines,
+          readOnly: readOnly,
           style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
-          validator: validator,
+          validator: isRequired ? (v) => v!.isEmpty ? 'Required' : null : null,
           decoration: InputDecoration(
             filled: true,
-            fillColor: _inputFill,
+            fillColor: readOnly ? Colors.grey[200] : _inputFill,
             hintText: hint,
             hintStyle: TextStyle(color: Colors.grey[400]),
             contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: _cardNavy, width: 1.5),
@@ -338,28 +429,19 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        RichText(
-          text: TextSpan(
-            text: label,
-            style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Roboto'),
-            children: [
-              if (isRequired) const TextSpan(text: ' *', style: TextStyle(color: Colors.red)),
-            ],
-          ),
-        ),
+        RichText(text: TextSpan(text: label, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 13, fontFamily: 'Roboto'), children: [if (isRequired) const TextSpan(text: ' *', style: TextStyle(color: Colors.red))])),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: value,
           isExpanded: true,
-          dropdownColor: Colors.white,
+          dropdownColor: _surfaceWhite,
           style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
           decoration: InputDecoration(
-            filled: true,
-            fillColor: _inputFill,
+            filled: true, fillColor: _inputFill,
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
           ),
-          items: items.map((type) => DropdownMenuItem(value: type, child: Text(type))).toList(),
+          items: items.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
           onChanged: onChanged,
           validator: isRequired ? (v) => v == null ? 'Required' : null : null,
         ),
@@ -374,7 +456,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }) {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: _inputFill,
         borderRadius: BorderRadius.circular(12),
@@ -402,7 +484,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         children: [
           const Divider(),
           const SizedBox(height: 12),
-          Text(title, style: const TextStyle(color: _textGrey, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+          Text(title.toUpperCase(), style: const TextStyle(color: _textGrey, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0)),
         ],
       ),
     );
@@ -411,272 +493,404 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black54, // Dimmed background
+      backgroundColor: Colors.transparent, // Dialog-like
       body: Center(
         child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Container(
-              padding: const EdgeInsets.all(24.0),
-              decoration: BoxDecoration(
-                color: _surfaceWhite,
-                borderRadius: BorderRadius.circular(24.0),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10))
-                ]
-              ),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Header
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Technical Visit Report', style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: _textGrey),
-                          onPressed: () => Navigator.of(context).pop(),
-                        )
-                      ],
-                    ),
-                    const Divider(height: 30, color: Color(0xFFF3F4F6)),
-
-                    // --- Step 1: Check-In Details ---
-                    if (_checkInTime == null) ...[
-                      _buildFintechInput(controller: _siteNameConcernedPersonController, label: 'Site Name / Concerned Person', validator: (v) => v!.isEmpty ? 'Required' : null),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _phoneNoController, label: 'Phone Number', keyboardType: TextInputType.phone, validator: (v) => v!.isEmpty ? 'Required' : null),
-                      const SizedBox(height: 24),
-                      
-                      ElevatedButton.icon(
-                        onPressed: _isUploadingImage ? null : _handleCheckIn,
-                        icon: _isUploadingImage ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.camera_alt),
-                        label: const Text('CHECK-IN (PHOTO & LOCATION)', style: TextStyle(fontWeight: FontWeight.bold)),
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 50),
-                          backgroundColor: _accentOrange,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                      ),
+          padding: const EdgeInsets.all(20),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: _surfaceWhite,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20)],
+            ),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Technical Visit Report', style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)),
+                      IconButton(icon: const Icon(Icons.close, color: _textGrey), onPressed: () => Navigator.of(context).pop()),
                     ],
-                    
-                    // --- Step 2: Full Form ---
-                    if (_checkInTime != null) ...[
-                      // Check-in Summary Card
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF0FDF4), // Light Green BG
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFBBF7D0)),
-                        ),
+                  ),
+                  const Divider(height: 30, color: Color(0xFFF3F4F6)),
+
+                  // --- Step 1: Check-In ---
+                  if (_checkInTime == null) ...[
+                    // Site Selector
+                    InkWell(
+                      onTap: _openSiteSearch,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                        decoration: BoxDecoration(color: _inputFill, borderRadius: BorderRadius.circular(12)),
                         child: Row(
                           children: [
-                            _inTimeImageFile != null 
-                              ? ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.file(_inTimeImageFile!, width: 50, height: 50, fit: BoxFit.cover))
-                              : const Icon(Icons.check_circle, color: _accentGreen, size: 40),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(_siteNameConcernedPersonController.text, style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold)),
-                                  Text('Checked-In at ${DateFormat('hh:mm a').format(_checkInTime!)}', style: const TextStyle(color: _textGrey, fontSize: 12)),
-                                ],
-                              ),
-                            ),
-                            const Icon(Icons.location_on, color: _accentGreen),
+                            Expanded(child: Text(_selectedSite != null ? "${_selectedSite!.siteName} (${_selectedSite!.region})" : "Select Construction Site *", style: TextStyle(color: _selectedSite != null ? _textDark : _textGrey, fontWeight: FontWeight.bold))),
+                            const Icon(Icons.search, color: _textGrey),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 24),
-
-                      // --- 1. VISIT META ---
-                      _buildFintechDropdown(
-                        label: 'Visit Type', 
-                        value: _selectedVisitType, 
-                        items: ['Site Visit', 'Conversion', 'Influencer Meet', 'Service', 'Complaint', 'Promotional', 'Partner Visit'],
-                        onChanged: (v) => setState(() => _selectedVisitType = v)
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _siteNameConcernedPersonController, label: 'Concerned Person', readOnly: true),
+                    const SizedBox(height: 24),
+                    ElevatedButton.icon(
+                      onPressed: _isUploadingImage ? null : _handleCheckIn,
+                      icon: _isUploadingImage ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.camera_alt),
+                      label: const Text('CHECK-IN (PHOTO)', style: TextStyle(fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(backgroundColor: _accentOrange, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                    ),
+                  ] 
+                  
+                  // --- Step 2: Full Form ---
+                  else ...[
+                    // Info Banner
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFBBF7D0))),
+                      child: Row(
                         children: [
-                          Expanded(
-                            child: _buildFintechDropdown(
-                              label: 'Visit Category', 
-                              value: _selectedVisitCategory, 
-                              isRequired: false,
-                              items: ['New Site', 'Followup Site'],
-                              onChanged: (v) => setState(() => _selectedVisitCategory = v)
-                            ),
-                          ),
+                          _inTimeImageFile != null ? ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.file(_inTimeImageFile!, width: 50, height: 50, fit: BoxFit.cover)) : const Icon(Icons.check_circle, color: _accentGreen, size: 40),
                           const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildFintechDropdown(
-                              label: 'Customer Type', 
-                              value: _selectedCustomerType, 
-                              isRequired: false,
-                              items: ['IHB', 'Contractor', 'Builder', 'Government'],
-                              onChanged: (v) => setState(() => _selectedCustomerType = v)
-                            ),
-                          ),
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(_selectedSite?.siteName ?? "Site Visit", style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold)),
+                            Text('In: ${DateFormat('hh:mm a').format(_checkInTime!)}', style: const TextStyle(color: _textGrey, fontSize: 12)),
+                          ])),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _purposeOfVisitController, label: 'Purpose of Visit', isRequired: false),
+                    ),
+                    const SizedBox(height: 24),
 
-                      // --- 2. EXTENDED CONTACT INFO ---
-                      _buildSectionHeader("CONTACT DETAILS"),
-                      _buildFintechInput(controller: _whatsappNoController, label: 'WhatsApp/Phone Number', keyboardType: TextInputType.phone, isRequired: false),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _emailIdController, label: 'Email ID', isRequired: false, keyboardType: TextInputType.emailAddress),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _siteAddressController, label: 'Site Address', isRequired: false, maxLines: 2),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _marketNameController, label: 'Market / Depo Name', isRequired: false),
-
-                      // --- 3. CONSTRUCTION DETAILS ---
-                      _buildSectionHeader("CONSTRUCTION & SITE INFO"),
-                      Row(
-                        children: [
-                          Expanded(child: _buildFintechInput(controller: _constAreaSqFtController, label: 'Const. Area (Sq.Ft)', keyboardType: TextInputType.number, isRequired: false)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildFintechDropdown(
-                              label: 'Stage', 
-                              value: _selectedStage, 
-                              isRequired: false,
-                              items: ['Foundation', 'Plinth', 'Column / Lintel', 'Slab Casting', 'Plastering / Finishing', 'Flooring'],
-                              onChanged: (v) => setState(() => _selectedStage = v)
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _siteVisitBrandInUseController, label: 'Brands in Use', hint: 'Brand A, Brand B', validator: (v) => v!.isEmpty ? 'Required' : null),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(child: _buildFintechInput(controller: _currentBrandPriceController, label: 'Current Price', keyboardType: TextInputType.number, isRequired: false)),
-                          const SizedBox(width: 12),
-                          Expanded(child: _buildFintechInput(controller: _siteStockController, label: 'Site Stock', keyboardType: TextInputType.number, isRequired: false)),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _estRequirementController, label: 'Est. Requirement', keyboardType: TextInputType.number, isRequired: false),
-
-                      // --- 4. DEALER INFO ---
-                      _buildSectionHeader("DEALER INFORMATION"),
-                      // Updated to Multi-line with format hint
-                      _buildFintechInput(
-                        controller: _supplyingDealerNameController, 
-                        label: 'Supplying Dealers & Brands', 
-                        hint: 'e.g. Gupta Traders (Star, Dalmia), Sharma Hardware (Ultratech)',
-                        maxLines: 2,
-                        isRequired: false
-                      ),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _nearbyDealerNameController, label: 'Nearby Best Dealer', isRequired: false),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _associatedPartyNameController, label: 'Associated Party Name', isRequired: false),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _channelPartnerVisitController, label: 'Partner Visit Details', isRequired: false),
-
-                      // --- 5. CONVERSION DATA ---
-                      _buildSectionHeader("CONVERSION"),
-                      _buildFintechSwitch(label: "Is Converted?", value: _isConverted, onChanged: (v) => setState(() => _isConverted = v)),
-                      if (_isConverted) ...[
-                        const SizedBox(height: 12),
-                        _buildFintechDropdown(
-                          label: 'Conversion Type',
-                          value: _selectedConversionType,
-                          items: ['New', 'Retention'],
-                          onChanged: (v) => setState(() => _selectedConversionType = v),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildFintechInput(controller: _conversionFromBrandController, label: 'Converted From (Brand)', isRequired: true),
-                        const SizedBox(height: 16),
-                        Row(
-                          children: [
-                            Expanded(flex: 2, child: _buildFintechInput(controller: _conversionQuantityValueController, label: 'Qty', isRequired: true, keyboardType: TextInputType.number)),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              flex: 1, 
-                              child: _buildFintechDropdown(
-                                label: 'Unit', 
-                                value: _selectedConversionUnit, 
-                                items: ['Bags', 'MT'], 
-                                onChanged: (v) => setState(() => _selectedConversionUnit = v),
-                                isRequired: true
-                              )
-                            ),
-                          ],
-                        ),
+                    // Visit Info
+                    _buildFintechDropdown(label: 'Visit Type', value: _selectedVisitType, items: ['Site Visit', 'Service', 'Complaint', 'Influencer Meet'], onChanged: (v) => setState(() => _selectedVisitType = v)),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: _buildFintechDropdown(label: 'Visit Category', value: _selectedVisitCategory, items: ['New', 'Follow Up', 'Complaint'], onChanged: (v) => setState(() => _selectedVisitCategory = v), isRequired: false)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _buildFintechDropdown(label: 'Customer Type', value: _selectedCustomerType, items: ['IHB', 'Contractor', 'Builder', 'Government'], onChanged: (v) => setState(() => _selectedCustomerType = v), isRequired: false)),
                       ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _purposeOfVisitController, label: 'Purpose of Visit', isRequired: false),
 
-                      // --- 6. TECHNICAL SERVICES ---
-                      _buildSectionHeader("TECHNICAL SERVICES"),
-                      _buildFintechSwitch(label: "Technical Service Provided?", value: _isTechService, onChanged: (v) => setState(() => _isTechService = v)),
-                      if (_isTechService) ...[
-                        const SizedBox(height: 12),
-                        _buildFintechInput(controller: _serviceTypeController, label: 'Service Type', isRequired: true, hint: 'e.g. Slump Test'),
-                        const SizedBox(height: 16),
-                        _buildFintechInput(controller: _serviceDescController, label: 'Service Description', isRequired: false, maxLines: 2),
-                        // const SizedBox(height: 16),
-                        // _buildFintechInput(controller: _dhalaiVerificationCodeController, label: 'Dhalai Code', isRequired: false),
-                        // const SizedBox(height: 16),
-                        // _buildFintechInput(controller: _isVerificationStatusController, label: 'Verification Status', isRequired: false),
+                    // Site Info
+                    _buildSectionHeader("SITE INFO"),
+                    Row(
+                      children: [
+                        Expanded(child: _buildFintechInput(controller: _regionController, label: 'Region', readOnly: true, isRequired: false)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _buildFintechInput(controller: _areaController, label: 'Area', readOnly: true, isRequired: false)),
                       ],
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _qualityComplaintController, label: 'Quality Complaint Details', isRequired: false),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _marketNameController, label: 'Market Name', isRequired: false),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _siteAddressController, label: 'Site Address', maxLines: 2, isRequired: false),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: _buildFintechInput(controller: _constAreaSqFtController, label: 'Area (SqFt)', keyboardType: TextInputType.number, isRequired: false)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _buildFintechDropdown(label: 'Stage', value: _selectedStage, items: ['Foundation', 'Plinth', 'Roofing', 'Finishing'], onChanged: (v) => setState(() => _selectedStage = v), isRequired: false)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _siteVisitBrandInUseController, label: 'Brands in Use', hint: 'Brand A, Brand B'),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: _buildFintechInput(controller: _currentBrandPriceController, label: 'Current Price', keyboardType: TextInputType.number, isRequired: false)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _buildFintechInput(controller: _siteStockController, label: 'Site Stock', keyboardType: TextInputType.number, isRequired: false)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _estRequirementController, label: 'Est. Requirement', keyboardType: TextInputType.number, isRequired: false),
 
-                      // --- 7. INFLUENCER INFO ---
-                      _buildSectionHeader("INFLUENCER / MASON"),
-                      _buildFintechInput(controller: _influencerTypeController, label: 'Influencer Type', hint: 'e.g., Mason, Contractor', validator: (v) => v!.isEmpty ? 'Required' : null),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _influencerNameController, label: 'Influencer Name', isRequired: false),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _influencerPhoneController, label: 'Influencer Phone', keyboardType: TextInputType.phone, isRequired: false),
-                      const SizedBox(height: 16),
-                      _buildFintechSwitch(label: "Enrolled in Scheme?", value: _isSchemeEnrolled, onChanged: (v) => setState(() => _isSchemeEnrolled = v)),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(controller: _influencerProductivityController, label: 'Productivity (Bags)', isRequired: false),
+                    // Dealer Info
+                    _buildSectionHeader("DEALER INFO"),
+                    _buildFintechInput(controller: _supplyingDealerNameController, label: 'Supplying Dealer', isRequired: false),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _nearbyDealerNameController, label: 'Nearby Dealer', isRequired: false),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _associatedPartyNameController, label: 'Associated Party', isRequired: false),
+                    const SizedBox(height: 16),
+                    //_buildFintechInput(controller: _channelPartnerVisitController, label: 'Partner Visit Details', isRequired: false),
 
-                      // --- 8. REMARKS & CLOSING ---
-                      _buildSectionHeader("REMARKS"),
-                      _buildFintechInput(controller: _clientsRemarksController, label: "Client's Remarks", maxLines: 2, validator: (v) => v!.isEmpty ? 'Required' : null),
+                    // Conversion
+                    _buildSectionHeader("CONVERSION"),
+                    _buildFintechSwitch(label: "Is Converted?", value: _isConverted, onChanged: (v) => setState(() => _isConverted = v)),
+                    if (_isConverted) ...[
+                      const SizedBox(height: 12),
+                      _buildFintechDropdown(label: 'Conversion Type', value: _selectedConversionType, items: ['New', 'Retention'], onChanged: (v) => setState(() => _selectedConversionType = v), isRequired: true),
                       const SizedBox(height: 16),
-                      _buildFintechInput(controller: _salespersonRemarksController, label: 'Salesperson Remarks', maxLines: 2, validator: (v) => v!.isEmpty ? 'Required' : null),
+                      _buildFintechInput(controller: _conversionFromBrandController, label: 'From Brand', isRequired: true),
                       const SizedBox(height: 16),
-                      _buildFintechInput(controller: _promotionalActivityController, label: 'Promotional Activity', isRequired: false),
-                      
-                      const SizedBox(height: 32),
-                      
-                      // Submit Button
-                      ElevatedButton(
-                        onPressed: _isSubmitting ? null : _submitTvr,
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(double.infinity, 50),
-                          backgroundColor: _accentGreen,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        ),
-                        child: _isSubmitting
-                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                            : const Text('SUBMIT & CHECK-OUT (PHOTO)', style: TextStyle(fontWeight: FontWeight.bold)),
+                      Row(
+                        children: [
+                          Expanded(child: _buildFintechInput(controller: _conversionQuantityValueController, label: 'Qty', keyboardType: TextInputType.number, isRequired: true)),
+                          const SizedBox(width: 12),
+                          Expanded(child: _buildFintechDropdown(label: 'Unit', value: _selectedConversionUnit, items: ['Bags', 'MT'], onChanged: (v) => setState(() => _selectedConversionUnit = v), isRequired: true)),
+                        ],
                       ),
                     ],
+
+                    // Technical Services
+                    _buildSectionHeader("TECHNICAL SERVICES"),
+                    _buildFintechSwitch(label: "Tech Service Given?", value: _isTechService, onChanged: (v) => setState(() => _isTechService = v)),
+                    if (_isTechService) ...[
+                      const SizedBox(height: 12),
+                      _buildFintechInput(controller: _serviceTypeController, label: 'Service Type', isRequired: true),
+                      const SizedBox(height: 16),
+                      _buildFintechInput(controller: _serviceDescController, label: 'Description', maxLines: 2, isRequired: false),
+                      const SizedBox(height: 16),
+                      //_buildFintechInput(controller: _dhalaiVerificationCodeController, label: 'Dhalai Code', isRequired: false),
+                      const SizedBox(height: 16),
+                      _buildFintechInput(controller: _isVerificationStatusController, label: 'Verification Status', isRequired: false),
+                    ],
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _qualityComplaintController, label: 'Quality Complaint', isRequired: false),
+
+                    // Mason/Influencer
+                    _buildSectionHeader("INFLUENCER / MASON"),
+                    InkWell(
+                      onTap: _openMasonSearch,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                        decoration: BoxDecoration(color: _inputFill, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
+                        child: Row(
+                          children: [
+                            Icon(Icons.person_search, color: _cardNavy),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(_selectedMason != null ? _selectedMason!.name : "Link Registered Mason (Optional)", style: TextStyle(color: _selectedMason != null ? _textDark : _textGrey, fontWeight: FontWeight.bold))),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _influencerTypeController, label: 'Influencer Type', hint: 'Mason, Contractor'),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _influencerNameController, label: 'Name', isRequired: false),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _influencerPhoneController, label: 'Phone', keyboardType: TextInputType.phone, isRequired: false),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _influencerProductivityController, label: 'Productivity', isRequired: false),
+                    const SizedBox(height: 16),
+                    _buildFintechSwitch(label: "Enrolled in Scheme?", value: _isSchemeEnrolled, onChanged: (v) => setState(() => _isSchemeEnrolled = v)),
+
+                    // Remarks
+                    _buildSectionHeader("REMARKS"),
+                    _buildFintechInput(controller: _clientsRemarksController, label: "Client's Remarks", maxLines: 2),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _salespersonRemarksController, label: 'Salesperson Remarks', maxLines: 2),
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _promotionalActivityController, label: 'Promotional Activity', isRequired: false),
+
+                    const SizedBox(height: 32),
+                    ElevatedButton(
+                      onPressed: _isSubmitting ? null : _submitTvr,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _accentGreen, foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: _isSubmitting 
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+                        : const Text('SUBMIT & CHECK-OUT', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// --- Internal Search Dialogs (Themed) ---
+
+class _ServerSiteSearchDialog extends StatefulWidget {
+  final ApiService api;
+  final int userId;
+  const _ServerSiteSearchDialog({required this.api, required this.userId});
+  @override
+  State<_ServerSiteSearchDialog> createState() => _ServerSiteSearchDialogState();
+}
+
+class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
+  List<TechnicalSite> _sites = [];
+  bool _isLoading = false;
+  Timer? _debounce;
+
+  // Theme constants matching main screen
+  static const Color _textDark = Color(0xFF111827);
+  static const Color _textGrey = Color(0xFF6B7280);
+  static const Color _inputFill = Color(0xFFF9FAFB);
+
+  void _search(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      setState(() => _isLoading = true);
+      try {
+        final res = await widget.api.fetchTechnicalSites(userId: widget.userId, search: query);
+        if (mounted) setState(() => _sites = res);
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _search(""); 
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        height: 400,
+        width: double.maxFinite,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Select Site", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 18)),
+            const SizedBox(height: 16),
+            TextField(
+              style: const TextStyle(color: _textDark),
+              decoration: const InputDecoration(
+                hintText: "Search site...",
+                hintStyle: TextStyle(color: _textGrey),
+                prefixIcon: Icon(Icons.search, color: _textGrey),
+                filled: true,
+                fillColor: _inputFill,
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)), borderSide: BorderSide.none),
+              ),
+              onChanged: _search,
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: _isLoading 
+                ? const Center(child: CircularProgressIndicator()) 
+                : _sites.isEmpty 
+                  ? const Center(child: Text("No sites found", style: TextStyle(color: _textGrey)))
+                  : ListView.separated(
+                      itemCount: _sites.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      itemBuilder: (ctx, i) => ListTile(
+                        title: Text(_sites[i].siteName, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600)),
+                        subtitle: Text("${_sites[i].address} • ${_sites[i].concernedPerson}", style: const TextStyle(color: _textGrey, fontSize: 12)),
+                        onTap: () => Navigator.pop(context, _sites[i]),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(onPressed: () => Navigator.pop(context, null), child: const Text("CANCEL", style: TextStyle(color: _textGrey))),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ServerMasonSearchDialog extends StatefulWidget {
+  final ApiService api;
+  const _ServerMasonSearchDialog({required this.api});
+  @override
+  State<_ServerMasonSearchDialog> createState() => _ServerMasonSearchDialogState();
+}
+
+class _ServerMasonSearchDialogState extends State<_ServerMasonSearchDialog> {
+  List<Mason> _masons = [];
+  bool _isLoading = false;
+  Timer? _debounce;
+
+  static const Color _textDark = Color(0xFF111827);
+  static const Color _textGrey = Color(0xFF6B7280);
+  static const Color _inputFill = Color(0xFFF9FAFB);
+
+  void _search(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      setState(() => _isLoading = true);
+      try {
+        final res = await widget.api.fetchMasons(search: query);
+        if (mounted) setState(() => _masons = res);
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _search("");
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        height: 400,
+        width: double.maxFinite,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Select Mason", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 18)),
+            const SizedBox(height: 16),
+            TextField(
+              style: const TextStyle(color: _textDark),
+              decoration: const InputDecoration(
+                hintText: "Search mason...",
+                hintStyle: TextStyle(color: _textGrey),
+                prefixIcon: Icon(Icons.search, color: _textGrey),
+                filled: true,
+                fillColor: _inputFill,
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)), borderSide: BorderSide.none),
+              ),
+              onChanged: _search,
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: _isLoading 
+                ? const Center(child: CircularProgressIndicator()) 
+                : _masons.isEmpty
+                  ? const Center(child: Text("No masons found", style: TextStyle(color: _textGrey)))
+                  : ListView.separated(
+                      itemCount: _masons.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      itemBuilder: (ctx, i) => ListTile(
+                        title: Text(_masons[i].name, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600)),
+                        subtitle: Text(_masons[i].phoneNumber, style: const TextStyle(color: _textGrey, fontSize: 12)),
+                        onTap: () => Navigator.pop(context, _masons[i]),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(onPressed: () => Navigator.pop(context, null), child: const Text("CANCEL", style: TextStyle(color: _textGrey))),
+            )
+          ],
         ),
       ),
     );

@@ -44,6 +44,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   final _bestPotentialController = TextEditingController(); 
   final _todayOrderMtController = TextEditingController();
   final _todayCollectionController = TextEditingController();
+  final _overdueAmountController = TextEditingController(); 
   final _feedbackController = TextEditingController();
   final _remarksController = TextEditingController();
   final _solutionController = TextEditingController();
@@ -54,7 +55,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   bool _isSubDealerVisit = false; 
   Dealer? _selectedDealer;
   Dealer? _selectedParentDealer; 
-  // List<Dealer> _parentDealers = []; // Removed local list, using search dialog now
   String? _visitType = 'PLANNED'; 
   
   // Check-In Data
@@ -75,7 +75,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   void initState() {
     super.initState();
     _initializeData();
-    // _fetchParentDealers(); // No longer needed, we search on demand
   }
 
   @override
@@ -87,6 +86,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     _bestPotentialController.dispose();
     _todayOrderMtController.dispose();
     _todayCollectionController.dispose();
+    _overdueAmountController.dispose(); 
     _feedbackController.dispose();
     _remarksController.dispose();
     _solutionController.dispose();
@@ -116,8 +116,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       
       if (dealer.parentDealerId != null) {
         _isSubDealerVisit = true;
-        // Ideally, you'd fetch the parent dealer info here if you have the ID
-        // But for now, we let the user select/confirm it if it's missing or just rely on the ID if we had it loaded.
       } else {
         _isSubDealerVisit = false;
         _selectedParentDealer = null;
@@ -145,13 +143,12 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     }
   }
 
-  // --- ✅ NEW: Open Search for Parent Dealer ---
   Future<void> _openParentDealerSearch() async {
     final result = await showDialog<Dealer>(
       context: context,
       builder: (context) => _ServerDealerSearchDialog(
         api: _apiService, 
-        userId: int.tryParse(widget.employee.id) // Optional: restrict to user's dealers if needed
+        userId: int.tryParse(widget.employee.id) 
       ),
     );
 
@@ -206,6 +203,31 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
        return;
     }
     
+    // --- 10 MINUTE CHECK LOGIC ---
+    final now = DateTime.now();
+    final difference = now.difference(_checkInTime!);
+    const minMinutes = 10;
+    //const minSeconds = 25;
+
+    if (difference.inMinutes < minMinutes) {
+      final remaining = minMinutes - difference.inMinutes;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Minimum 10 mins required at site. Please wait $remaining more minute(s)."),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 4),
+        )
+      );
+      return;
+    }
+    // -------------------------------
+
+    // --- Calculate Time Spent ---
+    final hours = difference.inHours;
+    final minutes = difference.inMinutes.remainder(60);
+    final String timeSpentStr = '${hours}h ${minutes}m';
+    // -------------------------------
+
     if (_selectedDealer?.id == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Selected Dealer has invalid ID.")));
        return;
@@ -238,7 +260,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
 
       if (_isSubDealerVisit) {
          finalSubDealerId = _selectedDealer!.id;
-         // Prioritize selected parent, fallback to dealer's existing parentId
          finalDealerId = _selectedParentDealer?.id ?? _selectedDealer!.parentDealerId;
          finalDealerType = 'Sub Dealer';
          if (finalDealerId == null) throw Exception("Parent Dealer ID missing for Sub-Dealer visit");
@@ -259,7 +280,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
         dealerId: finalDealerId, 
         subDealerId: finalSubDealerId,
         dealerType: finalDealerType,
-        // dealerName and subDealerName removed to satisfy strict backend
         location: locationStr,
         latitude: _checkInLocation?.latitude ?? _selectedDealer!.latitude ?? 0.0,
         longitude: _checkInLocation?.longitude ?? _selectedDealer!.longitude ?? 0.0,
@@ -271,11 +291,15 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
         contactPersonPhoneNo: _contactPhoneController.text.trim(),
         todayOrderMt: double.tryParse(_todayOrderMtController.text.trim()) ?? 0.0,
         todayCollectionRupees: double.tryParse(_todayCollectionController.text.trim()) ?? 0.0,
+        
+        overdueAmount: double.tryParse(_overdueAmountController.text.trim()),
+        timeSpentinLoc: timeSpentStr, // Auto calculated
+
         feedbacks: _feedbackController.text.trim(),
         solutionBySalesperson: _solutionController.text.isNotEmpty ? _solutionController.text.trim() : null,
         anyRemarks: _remarksController.text.isNotEmpty ? _remarksController.text.trim() : null,
         checkInTime: _checkInTime!,
-        checkOutTime: DateTime.now(),
+        checkOutTime: now,
         inTimeImageUrl: _inTimeImageUrl,
         outTimeImageUrl: outTimeUrl,
         pjpId: widget.pjp?.id,
@@ -456,7 +480,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                       Padding(
                         padding: const EdgeInsets.only(top: 8.0),
                         child: InkWell(
-                          onTap: _openParentDealerSearch, // ✅ Opens Search Dialog
+                          onTap: _openParentDealerSearch, 
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                             decoration: BoxDecoration(
@@ -496,7 +520,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                         value: t, child: Text(t)
                       )).toList(),
                       onChanged: (val) => setState(() => _visitType = val),
-                      decoration: InputDecoration( // Correctly using the helper inside the method now or defining inline
+                      decoration: InputDecoration(
                         filled: true,
                         fillColor: _inputFill,
                         labelText: "Visit Type",
@@ -584,6 +608,9 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                         Expanded(child: _buildFintechInput(controller: _todayCollectionController, label: "Collection (₹)", keyboardType: TextInputType.number)),
                       ],
                     ),
+                    const SizedBox(height: 12),
+
+                    _buildFintechInput(controller: _overdueAmountController, label: "Overdue Amount (₹)", keyboardType: TextInputType.number, isRequired: false),
 
                     _buildSectionHeader("QUALITATIVE DATA"),
                     _buildFintechInput(controller: _feedbackController, label: "Market Feedback / Issues", maxLines: 2),
@@ -660,7 +687,6 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
       final results = await widget.api.fetchDealers(
         search: query, 
         limit: 20, 
-        // userId: widget.userId // Uncomment to restrict to user's dealers
       );
       if (mounted) {
         setState(() { _dealers = results; _isLoading = false; });

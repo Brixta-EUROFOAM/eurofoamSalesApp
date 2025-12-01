@@ -34,6 +34,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
   bool _isCheckingIn = false;
   bool _isCheckingOut = false;
   bool _isCheckedIn = false; 
+  DateTime? _lastCheckInTime;
   String _greeting = 'Good Morning';
 
   // --- FINTECH THEME PALETTE ---
@@ -65,6 +66,25 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
       setState(() {
         _setGreeting();
       });
+      _checkAttendanceStatus(); 
+    }
+  }
+
+  // Fetch today's attendance to restore state and timer
+  Future<void> _checkAttendanceStatus() async {
+    try {
+      final att = await _apiService.fetchTodaysAttendance(int.parse(widget.employee.id));
+      if (mounted) {
+        setState(() {
+          // If checkOutTime is null, they are currently checked in
+          _isCheckedIn = att.checkOutTime == null;
+          // Store the check-in time for the 30-min logic
+          _lastCheckInTime = att.createdAt; 
+        });
+      }
+    } catch (e) {
+      // 404 or error means likely not checked in today
+      if (mounted) setState(() => _isCheckedIn = false);
     }
   }
 
@@ -134,9 +154,16 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
         'inTimeImageUrl': imageUrl,
         'inTimeImageCaptured': true,
       };
-      await _apiService.checkIn(checkInData);
       
-      if (mounted) setState(() => _isCheckedIn = true);
+      // Capture returned object to get official timestamp
+      final newAttendance = await _apiService.checkIn(checkInData);
+      
+      if (mounted) {
+        setState(() {
+          _isCheckedIn = true;
+          _lastCheckInTime = newAttendance.createdAt; // Set time for validation
+        });
+      }
 
       scaffoldMessenger.showSnackBar(
         const SnackBar(content: Text('Checked in successfully!'), backgroundColor: Colors.green),
@@ -152,6 +179,27 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
   
   Future<void> _handleCheckOut() async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    // --- 30 MINUTE CHECK LOGIC ---
+    if (_lastCheckInTime != null) {
+      final difference = DateTime.now().difference(_lastCheckInTime!);
+      const minMinutes = 30;
+      //const minSeconds = 10;
+
+      if (difference.inMinutes < minMinutes) {
+        final remaining = minMinutes - difference.inMinutes;
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text("Minimum 30 mins shift required. Wait $remaining more minute(s)."),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 4),
+          )
+        );
+        return; 
+      }
+    }
+    // -------------------------------
+
     setState(() => _isCheckingOut = true);
     try {
       final position = await _getCurrentPosition();
@@ -253,17 +301,6 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
                     _openDialog(CreateCompetitionFormScreen(employee: widget.employee));
                   },
                 ),
-                // _buildActionSheetItem(
-                //   icon: Icons.task_alt,
-                //   title: "Create Task",
-                //   subtitle: "Assign daily task",
-                //   iconBg: const Color(0xFFFAF5FF), // Light Purple
-                //   iconColor: Colors.purple,
-                //   onTap: () {
-                //     Navigator.pop(context);
-                //     _openDialog(CreateDailyTaskScreen(employee: widget.employee));
-                //   },
-                // ),
                 _buildActionSheetItem(
                   icon: Icons.account_box_sharp,
                   title: "Apply Leave",
@@ -445,7 +482,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
             // 3. SALES OPS CARD
             _buildFintechCard(
               title: "Salesman Ops",
-              subtitle: "Create DVR, Dealer, Tasks",
+              subtitle: "Create DVR, Add Dealer & more",
               icon: Icons.business_center_outlined,
               iconColor: Colors.blueAccent,
               iconBg: const Color(0xFFEFF6FF),

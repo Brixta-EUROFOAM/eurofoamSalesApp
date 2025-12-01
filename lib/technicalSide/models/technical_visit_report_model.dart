@@ -12,55 +12,55 @@ class TechnicalVisitReport {
     // --- Contact & Location ---
     final String siteNameConcernedPerson;
     final String phoneNo;
-    final String? whatsappNo; // NEW
+    final String? whatsappNo;
     final String? emailId;
-    final String? siteAddress; // NEW
-    final String? marketName; // NEW
-    final String? region; // NEW
-    final String? area; // NEW
-    final double? latitude; // NEW
-    final double? longitude; // NEW
+    final String? siteAddress;
+    final String? marketName;
+    final String? region;
+    final String? area;
+    final double? latitude;
+    final double? longitude;
 
     // --- Visit Specifics ---
     final String visitType;
-    final String? visitCategory; // NEW
-    final String? customerType; // NEW
-    final String? purposeOfVisit; // NEW
+    final String? visitCategory;
+    final String? customerType;
+    final String? purposeOfVisit;
     
     // --- Construction & Stock ---
     final String? siteVisitStage;
-    final int? constAreaSqFt; // NEW
+    final int? constAreaSqFt;
     final List<String> siteVisitBrandInUse;
-    final double? currentBrandPrice; // NEW
-    final double? siteStock; // NEW
-    final double? estRequirement; // NEW
+    final double? currentBrandPrice;
+    final double? siteStock;
+    final double? estRequirement;
 
     // --- Dealers ---
-    final String? supplyingDealerName; // NEW
-    final String? nearbyDealerName; // NEW
-    final String? associatedPartyName; // Legacy
-    final String? channelPartnerVisit; // Legacy
+    final String? supplyingDealerName;
+    final String? nearbyDealerName;
+    final String? associatedPartyName;
+    final String? channelPartnerVisit;
 
     // --- Conversion ---
-    final bool? isConverted; // NEW
-    final String? conversionType; // NEW
+    final bool? isConverted;
+    final String? conversionType;
     final String? conversionFromBrand;
     final double? conversionQuantityValue;
     final String? conversionQuantityUnit;
 
     // --- Technical Services ---
-    final bool? isTechService; // NEW
-    final String? serviceDesc; // NEW
+    final bool? isTechService;
+    final String? serviceDesc;
     final String? serviceType;
-    final String? dhalaiVerificationCode; // NEW
-    final String? isVerificationStatus; // NEW
+    final String? dhalaiVerificationCode;
+    final String? isVerificationStatus;
     final String? qualityComplaint;
 
     // --- Influencer / Mason ---
-    final String? influencerName; // NEW
-    final String? influencerPhone; // NEW
-    final bool? isSchemeEnrolled; // NEW
-    final String? influencerProductivity; // NEW
+    final String? influencerName;
+    final String? influencerPhone;
+    final bool? isSchemeEnrolled;
+    final String? influencerProductivity;
     final List<String> influencerType;
 
     // --- Remarks ---
@@ -71,29 +71,20 @@ class TechnicalVisitReport {
     // --- Time & Images ---
     final DateTime checkInTime;
     final DateTime? checkOutTime;
-    final String? timeSpentinLoc; // NEW
+    final String? timeSpentinLoc; 
     final String? inTimeImageUrl;
     final String? outTimeImageUrl;
-    final String? sitePhotoUrl; // NEW
+    final String? sitePhotoUrl;
 
     // --- Meta / IDs ---
     final String? siteVisitType;
     final String? meetingId;
-    final String? pjpId; // NEW
-    final String? masonId; // NEW
-    final String? siteId; // NEW
+    final String? pjpId;
+    final String? masonId; 
+    final String? siteId;  
     
     final DateTime? createdAt;
     final DateTime? updatedAt;
-    
-    // --- Counters ---
-    final int? siteVisitsCount;
-    final int? otherVisitsCount;
-    final int? totalVisitsCount;
-    final DateTime? firstVisitTime;
-    final DateTime? lastVisitTime;
-    final String? firstVisitDay;
-    final String? lastVisitDay;
 
     TechnicalVisitReport({
         this.id,
@@ -155,13 +146,6 @@ class TechnicalVisitReport {
         this.siteId,
         this.createdAt,
         this.updatedAt,
-        this.siteVisitsCount,
-        this.otherVisitsCount,
-        this.totalVisitsCount,
-        this.firstVisitTime,
-        this.lastVisitTime,
-        this.firstVisitDay,
-        this.lastVisitDay,
     });
 
     factory TechnicalVisitReport.fromJson(Map<String, dynamic> json) => TechnicalVisitReport(
@@ -169,80 +153,61 @@ class TechnicalVisitReport {
         userId: json["userId"],
         reportDate: DateTime.parse(json["reportDate"]),
         visitType: json["visitType"],
-        siteNameConcernedPerson: json["siteNameConcernedPerson"],
-        phoneNo: json["phoneNo"],
+        siteNameConcernedPerson: json["siteNameConcernedPerson"] ?? '',
+        phoneNo: json["phoneNo"] ?? '',
         whatsappNo: json["whatsappNo"],
         emailId: json["emailId"],
         siteAddress: json["siteAddress"],
         marketName: json["marketName"],
         region: json["region"],
         area: json["area"],
-        // Safe parsing for doubles
         latitude: json["latitude"] == null ? null : double.tryParse(json["latitude"].toString()),
         longitude: json["longitude"] == null ? null : double.tryParse(json["longitude"].toString()),
-        
         visitCategory: json["visitCategory"],
         customerType: json["customerType"],
         purposeOfVisit: json["purposeOfVisit"],
-        
         siteVisitStage: json["siteVisitStage"],
-        constAreaSqFt: json["constAreaSqFt"], // int
-        siteVisitBrandInUse: List<String>.from(json["siteVisitBrandInUse"].map((x) => x)),
+        constAreaSqFt: json["constAreaSqFt"],
+        siteVisitBrandInUse: List<String>.from(json["siteVisitBrandInUse"]?.map((x) => x) ?? []),
         currentBrandPrice: json["currentBrandPrice"] == null ? null : double.tryParse(json["currentBrandPrice"].toString()),
         siteStock: json["siteStock"] == null ? null : double.tryParse(json["siteStock"].toString()),
         estRequirement: json["estRequirement"] == null ? null : double.tryParse(json["estRequirement"].toString()),
-        
         supplyingDealerName: json["supplyingDealerName"],
         nearbyDealerName: json["nearbyDealerName"],
         associatedPartyName: json["associatedPartyName"],
         channelPartnerVisit: json["channelPartnerVisit"],
-        
-        isConverted: json["isConverted"], // bool
+        isConverted: json["isConverted"],
         conversionType: json["conversionType"],
         conversionFromBrand: json["conversionFromBrand"],
         conversionQuantityValue: json["conversionQuantityValue"] == null ? null : double.tryParse(json["conversionQuantityValue"].toString()),
         conversionQuantityUnit: json["conversionQuantityUnit"],
-        
-        isTechService: json["isTechService"], // bool
+        isTechService: json["isTechService"],
         serviceDesc: json["serviceDesc"],
         serviceType: json["serviceType"],
         dhalaiVerificationCode: json["dhalaiVerificationCode"],
         isVerificationStatus: json["isVerificationStatus"],
         qualityComplaint: json["qualityComplaint"],
-        
         influencerName: json["influencerName"],
         influencerPhone: json["influencerPhone"],
-        isSchemeEnrolled: json["isSchemeEnrolled"], // bool
+        isSchemeEnrolled: json["isSchemeEnrolled"],
         influencerProductivity: json["influencerProductivity"],
-        influencerType: List<String>.from(json["influencerType"].map((x) => x)),
-        
-        clientsRemarks: json["clientsRemarks"],
-        salespersonRemarks: json["salespersonRemarks"],
+        influencerType: List<String>.from(json["influencerType"]?.map((x) => x) ?? []),
+        clientsRemarks: json["clientsRemarks"] ?? '',
+        salespersonRemarks: json["salespersonRemarks"] ?? '',
         promotionalActivity: json["promotionalActivity"],
-        
         checkInTime: DateTime.parse(json["checkInTime"]),
         checkOutTime: json["checkOutTime"] == null ? null : DateTime.parse(json["checkOutTime"]),
         timeSpentinLoc: json["timeSpentinLoc"],
         inTimeImageUrl: json["inTimeImageUrl"],
         outTimeImageUrl: json["outTimeImageUrl"],
         sitePhotoUrl: json["sitePhotoUrl"],
-        
         siteVisitType: json["siteVisitType"],
         meetingId: json["meetingId"],
         pjpId: json["pjpId"],
         masonId: json["masonId"],
         siteId: json["siteId"],
-        
         createdAt: json["createdAt"] == null ? null : DateTime.parse(json["createdAt"]),
         updatedAt: json["updatedAt"] == null ? null : DateTime.parse(json["updatedAt"]),
-        
-        firstVisitTime: json["firstVisitTime"] == null ? null : DateTime.parse(json["firstVisitTime"]),
-        lastVisitTime: json["lastVisitTime"] == null ? null : DateTime.parse(json["lastVisitTime"]),
-        firstVisitDay: json["firstVisitDay"],
-        lastVisitDay: json["lastVisitDay"],
-        siteVisitsCount: json["siteVisitsCount"],
-        otherVisitsCount: json["otherVisitsCount"],
-        totalVisitsCount: json["totalVisitsCount"],
     );
 
     Map<String, dynamic> toJson() => {
@@ -257,64 +222,50 @@ class TechnicalVisitReport {
         "marketName": marketName,
         "region": region,
         "area": area,
-        "latitude": latitude?.toString(), // Send as string/number depending on backend expectation
-        "longitude": longitude?.toString(),
-        
+        "latitude": latitude,
+        "longitude": longitude,
         "visitCategory": visitCategory,
         "customerType": customerType,
         "purposeOfVisit": purposeOfVisit,
-        
         "siteVisitStage": siteVisitStage,
         "constAreaSqFt": constAreaSqFt,
-        "siteVisitBrandInUse": List<dynamic>.from(siteVisitBrandInUse.map((x) => x)),
-        "currentBrandPrice": currentBrandPrice?.toString(),
-        "siteStock": siteStock?.toString(),
-        "estRequirement": estRequirement?.toString(),
-        
+        "siteVisitBrandInUse": siteVisitBrandInUse,
+        "currentBrandPrice": currentBrandPrice,
+        "siteStock": siteStock,
+        "estRequirement": estRequirement,
         "supplyingDealerName": supplyingDealerName,
         "nearbyDealerName": nearbyDealerName,
         "associatedPartyName": associatedPartyName,
         "channelPartnerVisit": channelPartnerVisit,
-        
         "isConverted": isConverted,
         "conversionType": conversionType,
         "conversionFromBrand": conversionFromBrand,
-        "conversionQuantityValue": conversionQuantityValue?.toString(),
+        "conversionQuantityValue": conversionQuantityValue,
         "conversionQuantityUnit": conversionQuantityUnit,
-        
         "isTechService": isTechService,
         "serviceDesc": serviceDesc,
         "serviceType": serviceType,
         "dhalaiVerificationCode": dhalaiVerificationCode,
         "isVerificationStatus": isVerificationStatus,
         "qualityComplaint": qualityComplaint,
-        
         "influencerName": influencerName,
         "influencerPhone": influencerPhone,
         "isSchemeEnrolled": isSchemeEnrolled,
         "influencerProductivity": influencerProductivity,
-        "influencerType": List<dynamic>.from(influencerType.map((x) => x)),
-        
+        "influencerType": influencerType,
         "clientsRemarks": clientsRemarks,
         "salespersonRemarks": salespersonRemarks,
         "promotionalActivity": promotionalActivity,
-        
         "checkInTime": checkInTime.toIso8601String(),
         "checkOutTime": checkOutTime?.toIso8601String(),
         "timeSpentinLoc": timeSpentinLoc,
         "inTimeImageUrl": inTimeImageUrl,
         "outTimeImageUrl": outTimeImageUrl,
         "sitePhotoUrl": sitePhotoUrl,
-        
         "siteVisitType": siteVisitType,
         "meetingId": meetingId,
         "pjpId": pjpId,
         "masonId": masonId,
         "siteId": siteId,
-
-        // Optional: Include counters if you need to send them back, though usually read-only
-        "siteVisitsCount": siteVisitsCount,
-        "otherVisitsCount": otherVisitsCount,
-        "totalVisitsCount": totalVisitsCount,
     };
 }

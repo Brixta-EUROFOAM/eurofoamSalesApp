@@ -18,6 +18,9 @@ class DailyVisitReport {
   final String? dealerName;
   final String? subDealerName;
 
+  final double? overdueAmount; 
+  final String? timeSpentinLoc;
+
   final String location;
   final double latitude;
   final double longitude;
@@ -29,7 +32,6 @@ class DailyVisitReport {
   final String? contactPersonPhoneNo;
   final double todayOrderMt;
   final double todayCollectionRupees;
-  final double? overdueAmount;
   final String feedbacks;
   final String? solutionBySalesperson;
   final String? anyRemarks;
@@ -62,6 +64,7 @@ class DailyVisitReport {
     required this.todayOrderMt,
     required this.todayCollectionRupees,
     this.overdueAmount,
+    this.timeSpentinLoc,
     required this.feedbacks,
     this.solutionBySalesperson,
     this.anyRemarks,
@@ -111,6 +114,7 @@ class DailyVisitReport {
       todayOrderMt: double.tryParse(json['todayOrderMt']?.toString() ?? '0.0') ?? 0.0,
       todayCollectionRupees: double.tryParse(json['todayCollectionRupees']?.toString() ?? '0.0') ?? 0.0,
       overdueAmount: double.tryParse(json['overdueAmount']?.toString() ?? ''),
+      timeSpentinLoc: json['timeSpentinLoc']?.toString(),
       feedbacks: json['feedbacks'] ?? '',
       solutionBySalesperson: json['solutionBySalesperson'],
       anyRemarks: json['anyRemarks'],
@@ -143,6 +147,7 @@ class DailyVisitReport {
       'todayOrderMt': todayOrderMt,
       'todayCollectionRupees': todayCollectionRupees,
       'overdueAmount': overdueAmount,
+      'timeSpentinLoc': timeSpentinLoc,
       'feedbacks': feedbacks,
       'solutionBySalesperson': solutionBySalesperson,
       'anyRemarks': anyRemarks,
