@@ -225,12 +225,12 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         trailing: stats.monthlyReportCount.toString(),
                         onTap: () {},
                       ),
-                       _ActionListTile(
-                        icon: Icons.map_outlined,
-                        title: 'Brand Mapping',
-                        onTap: () {},
-                        hideBorder: true, 
-                      ),
+                      // _ActionListTile(
+                      //  icon: Icons.map_outlined,
+                      //  title: 'Brand Mapping',
+                      //  onTap: () {},
+                      //  hideBorder: true, 
+                    //  ),
                     ],
                   ),
                 ),
