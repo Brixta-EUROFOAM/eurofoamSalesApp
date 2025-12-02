@@ -589,9 +589,9 @@ class ApiService {
     throw Exception('Failed to fetch attendance.');
   }
 
-  Future<Attendance> fetchTodaysAttendance(int userId) {
+  Future<Attendance> fetchTodaysAttendance(int userId, {String role = 'SALES'}) { // Default to SALES
     return _get(
-      'attendance/user/$userId/today',
+      'attendance/user/$userId/today?role=$role',
       (json) => Attendance.fromJson(json),
     );
   }

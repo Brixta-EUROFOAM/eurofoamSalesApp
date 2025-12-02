@@ -73,7 +73,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
   // Fetch today's attendance to restore state and timer
   Future<void> _checkAttendanceStatus() async {
     try {
-      final att = await _apiService.fetchTodaysAttendance(int.parse(widget.employee.id));
+      final att = await _apiService.fetchTodaysAttendance(int.parse(widget.employee.id), role: 'SALES');
       if (mounted) {
         setState(() {
           // If checkOutTime is null, they are currently checked in
@@ -147,6 +147,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
       final imageUrl = await _apiService.uploadImageToR2(imageFile);
       final checkInData = {
         'userId': int.parse(widget.employee.id),
+        'role': 'SALES',
         'attendanceDate': DateTime.now().toIso8601String(),
         'locationName': 'Live Location',
         'inTimeLatitude': position.latitude,
@@ -216,6 +217,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen> with W
       final imageUrl = await _apiService.uploadImageToR2(imageFile);
       final checkOutData = {
         'userId': int.parse(widget.employee.id),
+        'role': 'SALES',
         'attendanceDate': DateTime.now().toIso8601String(),
         'outTimeImageUrl': imageUrl,
         'outTimeImageCaptured': true,

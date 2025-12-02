@@ -6,11 +6,6 @@ import 'package:salesmanapp/api/api_service.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'dart:developer' as dev;
 
-import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
-
-const _log = 'BulkPjpWizard';
-
 class BulkPjpWizardScreen extends StatefulWidget {
   final Employee employee;
   final VoidCallback onPjpCreated;
@@ -30,93 +25,47 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
   bool _isSubmitting = false;
   final ApiService _apiService = ApiService();
 
-  Set<DateTime> _selectedDates = {};
-  DateTime _focusedDay = DateTime.now().add(const Duration(days: 1));
+  final Set<DateTime> _selectedDates = {};
+  DateTime _focusedDay = DateTime.now();
 
   // Master pool of all selected dealers
   Set<Dealer> _selectedDealerPool = {};
 
-  // --- INITIALIZATION / LOCATION STATE ---
-  late Future<Map<String, List<Dealer>>> _dealersByRegionFuture;
-  Map<String, List<Dealer>> _loadedDealersByRegion = {};
-  String? _currentRegion; 
-  String _loadingMessage = "Loading..."; 
-  bool _isInitializing = true; 
+  late Future<List<Dealer>> _dealersFuture;
+  List<Dealer> _allDealers = [];
 
-  // --- 🎨 FINTECH THEME PALETTE ---
+  // --- FINTECH THEME PALETTE ---
   static const Color _bgLight       = Color(0xFFF3F4F6); 
   static const Color _surfaceWhite  = Colors.white;
   static const Color _cardNavy      = Color(0xFF0F172A); 
   static const Color _textDark      = Color(0xFF111827); 
   static const Color _textGrey      = Color(0xFF6B7280); 
   static const Color _accentGreen   = Color(0xFF10B981); 
-  static const Color _accentOrange  = Color(0xFFF59E0B);
+  static const Color _inputFill     = Color(0xFFF9FAFB);
 
   @override
   void initState() {
     super.initState();
-    _dealersByRegionFuture = _loadInitialData();
+    _dealersFuture = _loadDealers();
   }
 
-  Future<Map<String, List<Dealer>>> _loadInitialData() async {
+  Future<List<Dealer>> _loadDealers() async {
     try {
-      if (!mounted) return {};
-      setState(() {
-        _isInitializing = true;
-        _loadingMessage = "Getting your location...";
-      });
-
-      _currentRegion = await _getCurrentRegion();
-      dev.log('Current Region found: $_currentRegion', name: _log);
-
-      if (!mounted) return {};
-      setState(() => _loadingMessage = "Loading all dealers...");
-
-      final dealers = await _apiService.fetchDealers(userId: int.parse(widget.employee.id));
-      dev.log('BulkPjpWizard: Found ${dealers.length} dealers.', name: _log);
-
-      _loadedDealersByRegion = _groupDealersByRegion(dealers);
-
-      if (!mounted) return {};
-      setState(() => _isInitializing = false);
-      return _loadedDealersByRegion;
-    } catch (e, st) {
-      dev.log("Error loading initial data: $e", name: _log, error: e, stackTrace: st);
-      if (mounted) {
-        setState(() => _isInitializing = false);
-      }
-      throw Exception('Failed to load initial data: $e');
-    }
-  }
-
-  Future<String?> _getCurrentRegion() async {
-    try {
-      var status = await Permission.location.request();
-      if (status.isDenied || status.isPermanentlyDenied) {
-        dev.log('Location permission denied', name: _log);
-        return null;
-      }
-
-      Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.medium);
-      final geoData = await _apiService.reverseGeocodeWithRadar(
-        latitude: position.latitude,
-        longitude: position.longitude,
+      // Fetch plenty of dealers to perform local search/selection
+      final dealers = await _apiService.fetchDealers(
+        userId: int.parse(widget.employee.id),
+        limit: 500, 
       );
-
-      return geoData['region']; 
+      if (mounted) {
+        setState(() {
+          _allDealers = dealers;
+        });
+      }
+      return dealers;
     } catch (e) {
-      dev.log('Failed to get current region: $e', name: _log);
-      return null;
+      dev.log("Error loading dealers: $e");
+      return [];
     }
-  }
-
-  Map<String, List<Dealer>> _groupDealersByRegion(List<Dealer> dealers) {
-    final map = <String, List<Dealer>>{};
-    for (var dealer in dealers) {
-      final region = dealer.region.isNotEmpty ? dealer.region : 'Unknown Region';
-      (map[region] ??= []).add(dealer);
-    }
-    return map;
   }
 
   Future<void> _generateAndSubmitSmartPlan() async {
@@ -124,30 +73,40 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
 
+    // --- 1. VALIDATION ---
     const int minVisitsPerDay = 8;
 
     if (_selectedDates.isEmpty) {
-      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Please select at least one date.'), backgroundColor: Colors.orange));
+      scaffoldMessenger.showSnackBar(const SnackBar(
+        content: Text('Please select at least one date.'),
+        backgroundColor: Colors.orange,
+      ));
       if (mounted) setState(() => _isSubmitting = false);
       return;
     }
 
-    final List<Dealer> dealerPool = _selectedDealerPool.where((d) => d.id != null && d.id!.isNotEmpty).toList();
+    final List<Dealer> dealerPool = _selectedDealerPool.toList();
 
     if (dealerPool.length < minVisitsPerDay) {
-      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Please select at least $minVisitsPerDay unique dealers to create a plan.'), backgroundColor: Colors.orange));
+      scaffoldMessenger.showSnackBar(SnackBar(
+        content: Text('Please select at least $minVisitsPerDay unique dealers to create a plan.'),
+        backgroundColor: Colors.orange,
+      ));
       if (mounted) setState(() => _isSubmitting = false);
       return;
     }
 
-    dev.log('Running Smart Scheduler... Dates: ${_selectedDates.length}, Dealers: ${dealerPool.length}', name: _log);
-
+    // --- 2. THE SCHEDULING ALGORITHM ---
     final sortedDates = _selectedDates.toList()..sort();
     
-    // Track usage count
+    // Sort pool by area to group visits geographically (simple optimization)
+    dealerPool.sort((a, b) => (a.area).compareTo(b.area));
+
+    // Track usage count to distribute evenly
     final Map<String, int> dealerVisitCount = { for (var d in dealerPool) d.id!: 0 };
 
-    for (final date in sortedDates) {
+    for (var _ in sortedDates) {
+      // Pick dealers with least visits so far
       dealerPool.sort((a, b) => dealerVisitCount[a.id!]!.compareTo(dealerVisitCount[b.id!]!));
       final dealersForThisDay = dealerPool.take(minVisitsPerDay);
       for (var dealer in dealersForThisDay) {
@@ -155,15 +114,18 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
       }
     }
 
+    // --- 4. SUBMIT TO API ---
     try {
       final List<String> allDealerIds = dealerPool.map((d) => d.id!).toList();
       final DateTime baseDate = sortedDates.first;
-      const String planDescription = "Monthly PJP Plan";
+
+      const String planDescription = "Monthly Sales Visit Plan";
 
       final response = await _apiService.createBulkPjp(
         userId: int.parse(widget.employee.id),
         createdById: int.parse(widget.employee.id),
-        dealerIds: allDealerIds,
+        dealerIds: allDealerIds, // Pass Dealers
+        siteIds: null,           // No Sites
         baseDate: baseDate,
         batchSizePerDay: minVisitsPerDay,
         areaToBeVisited: planDescription,
@@ -172,14 +134,22 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
       );
 
       final createdCount = response['totalRowsCreated'] ?? 0;
-      final skippedCount = response['totalRowsSkipped'] ?? 0;
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text('Sales Plan submitted! $createdCount visits created.'),
+          backgroundColor: _accentGreen,
+        ),
+      );
 
-      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Smart Plan submitted! $createdCount created, $skippedCount skipped.'), backgroundColor: _accentGreen));
       widget.onPjpCreated();
       navigator.pop();
-    } catch (e, st) {
-      dev.log('Error submitting bulk plan: $e', name: _log, error: e, stackTrace: st);
-      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Error submitting bulk plan: $e'), backgroundColor: Colors.red));
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -187,48 +157,36 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isInitializing) {
-      return Scaffold(
-        backgroundColor: _bgLight,
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(color: _cardNavy),
-              const SizedBox(height: 24),
-              Text(_loadingMessage, style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16)),
-            ],
-          ),
-        ),
-      );
-    }
-
     return Scaffold(
       backgroundColor: _bgLight,
       appBar: AppBar(
         backgroundColor: _bgLight,
         elevation: 0,
+        centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          _currentStep == 0 ? 'Step 1: Select Dates' : 'Step 2: Assign Dealers',
-          style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 18),
+          _currentStep == 0 ? 'Select Dates' : 'Select Dealers',
+          style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16),
         ),
       ),
       body: Theme(
         data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(primary: _cardNavy), // Tint for stepper
+          colorScheme: const ColorScheme.light(primary: _cardNavy),
+          canvasColor: _bgLight,
         ),
         child: Stepper(
           type: StepperType.horizontal,
-          currentStep: _currentStep,
           elevation: 0,
+          currentStep: _currentStep,
           onStepContinue: () {
             if (_currentStep == 0) {
               if (_selectedDates.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select at least one date.'), backgroundColor: Colors.orange));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please select dates.'), backgroundColor: Colors.orange),
+                );
                 return;
               }
               setState(() => _currentStep = 1);
@@ -243,7 +201,7 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
           },
           controlsBuilder: (context, details) {
             return Padding(
-              padding: const EdgeInsets.only(top: 32.0),
+              padding: const EdgeInsets.only(top: 32.0, bottom: 20),
               child: _isSubmitting
                   ? const Center(child: CircularProgressIndicator(color: _cardNavy))
                   : Row(
@@ -256,10 +214,11 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              elevation: 0,
+                              elevation: 4,
+                              shadowColor: _cardNavy.withOpacity(0.4),
                             ),
                             child: Text(
-                              _currentStep == 0 ? 'NEXT STEP' : 'GENERATE PLAN', 
+                              _currentStep == 0 ? 'NEXT STEP' : 'GENERATE PLAN',
                               style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0)
                             ),
                           ),
@@ -276,59 +235,17 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
             );
           },
           steps: [
-            _buildStep1Calendar(),
-            _buildStep2DealerAssignment(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Step _buildStep1Calendar() {
-    return Step(
-      title: const Text('Dates', style: TextStyle(fontSize: 12)),
-      isActive: _currentStep == 0,
-      state: _currentStep > 0 ? StepState.complete : StepState.indexed,
-      content: Container(
-        decoration: BoxDecoration(
-          color: _surfaceWhite,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Column(
-          children: [
-            TableCalendar(
-              focusedDay: _focusedDay,
-              firstDay: DateTime.now(),
-              lastDay: DateTime.now().add(const Duration(days: 60)),
-              calendarFormat: CalendarFormat.month,
-              selectedDayPredicate: (day) => _selectedDates.contains(DateTime.utc(day.year, day.month, day.day)),
-              onDaySelected: (selectedDay, focusedDay) {
-                final selectedDayUtc = DateTime.utc(selectedDay.year, selectedDay.month, selectedDay.day);
-                setState(() {
-                  _focusedDay = focusedDay;
-                  if (_selectedDates.contains(selectedDayUtc)) {
-                    _selectedDates.remove(selectedDayUtc);
-                  } else {
-                    _selectedDates.add(selectedDayUtc);
-                  }
-                });
-              },
-              calendarStyle: CalendarStyle(
-                selectedDecoration: const BoxDecoration(color: _cardNavy, shape: BoxShape.circle),
-                todayDecoration: BoxDecoration(color: _cardNavy.withOpacity(0.4), shape: BoxShape.circle),
-                defaultTextStyle: const TextStyle(color: _textDark),
-                weekendTextStyle: const TextStyle(color: _textDark),
-              ),
-              headerStyle: const HeaderStyle(
-                titleCentered: true,
-                formatButtonVisible: false,
-                titleTextStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textDark),
-              ),
+            Step(
+              title: const Text('Schedule'),
+              isActive: _currentStep == 0,
+              state: _currentStep > 0 ? StepState.complete : StepState.indexed,
+              content: _buildCalendarStep(),
             ),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Text('${_selectedDates.length} days selected', style: const TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
+            Step(
+              title: const Text('Dealers'),
+              isActive: _currentStep == 1,
+              state: _currentStep > 1 ? StepState.complete : StepState.indexed,
+              content: _buildDealerSelectionStep(),
             ),
           ],
         ),
@@ -336,85 +253,159 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
     );
   }
 
-  Step _buildStep2DealerAssignment() {
+  Widget _buildCalendarStep() {
+    return Container(
+      decoration: BoxDecoration(
+        color: _surfaceWhite,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+      ),
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        children: [
+          TableCalendar(
+            focusedDay: _focusedDay,
+            firstDay: DateTime.now(),
+            lastDay: DateTime.now().add(const Duration(days: 60)),
+            calendarFormat: CalendarFormat.month,
+            selectedDayPredicate: (day) => _selectedDates.contains(
+              DateTime.utc(day.year, day.month, day.day),
+            ),
+            onDaySelected: (selectedDay, focusedDay) {
+              final selectedDayUtc = DateTime.utc(selectedDay.year, selectedDay.month, selectedDay.day);
+              setState(() {
+                _focusedDay = focusedDay;
+                if (_selectedDates.contains(selectedDayUtc)) {
+                  _selectedDates.remove(selectedDayUtc);
+                } else {
+                  _selectedDates.add(selectedDayUtc);
+                }
+              });
+            },
+            headerStyle: const HeaderStyle(
+              formatButtonVisible: false, 
+              titleCentered: true,
+              titleTextStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textDark),
+              leftChevronIcon: Icon(Icons.chevron_left, color: _textGrey),
+              rightChevronIcon: Icon(Icons.chevron_right, color: _textGrey),
+            ),
+            calendarStyle: CalendarStyle(
+              selectedDecoration: const BoxDecoration(color: _cardNavy, shape: BoxShape.circle),
+              todayDecoration: BoxDecoration(color: _cardNavy.withOpacity(0.4), shape: BoxShape.circle),
+              defaultTextStyle: const TextStyle(color: _textDark),
+              weekendTextStyle: const TextStyle(color: _textDark),
+              outsideTextStyle: const TextStyle(color: Color(0xFFD1D5DB)),
+            ),
+          ),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.calendar_today, size: 16, color: _textGrey),
+                const SizedBox(width: 8),
+                Text('${_selectedDates.length} days selected', style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDealerSelectionStep() {
     const int minVisits = 8;
     final int totalDealers = _selectedDealerPool.length;
     final bool hasError = totalDealers < minVisits;
 
-    return Step(
-      title: const Text('Dealers', style: TextStyle(fontSize: 12)),
-      isActive: _currentStep == 1,
-      content: FutureBuilder<Map<String, List<Dealer>>>(
-        future: _dealersByRegionFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: _cardNavy));
-          }
-
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}', style: const TextStyle(color: Colors.red)));
-          }
-
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Text('No dealers found.', style: TextStyle(color: _textGrey));
-          }
-
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Select the dealers for this plan. Our algorithm will auto-schedule them.',
-                style: TextStyle(color: _textGrey, fontSize: 14),
-              ),
-              const SizedBox(height: 24),
-              
-              // Summary Card
-              Container(
-                decoration: BoxDecoration(
-                  color: _surfaceWhite,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: hasError ? Colors.red.shade200 : Colors.transparent),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]
-                ),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                  title: const Text('Dealer Pool', style: TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
-                  subtitle: Text('$totalDealers dealers selected', style: TextStyle(color: hasError ? Colors.red : _textGrey)),
-                  trailing: Icon(Icons.edit_rounded, color: _cardNavy),
-                  onTap: () async {
-                    final updatedDealers = await showDialog<Set<Dealer>>(
-                      context: context,
-                      builder: (_) => _DealerSelectionDialog(
-                        dealersByRegion: _loadedDealersByRegion,
-                        initialSelection: _selectedDealerPool, 
-                        currentRegion: _currentRegion,
-                      ),
-                    );
-
-                    if (updatedDealers != null) {
-                      setState(() {
-                        _selectedDealerPool = updatedDealers; 
-                      });
-                    }
-                  },
-                ),
-              ),
-              
-              if (hasError)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12.0),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.info_outline, size: 16, color: Colors.red),
-                      const SizedBox(width: 8),
-                      Text('Select at least $minVisits dealers.', style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-            ],
+    return FutureBuilder<List<Dealer>>(
+      future: _dealersFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(40.0),
+            child: Center(child: CircularProgressIndicator(color: _cardNavy)),
           );
-        },
-      ),
+        }
+        if (_allDealers.isEmpty) {
+          return const Center(child: Text("No dealers found.", style: TextStyle(color: _textGrey)));
+        }
+        
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF), // Light Blue
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFDBEAFE)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Color(0xFF2563EB)),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      "Select at least 8 dealers. The system will distribute them evenly across your selected dates.",
+                      style: TextStyle(color: Color(0xFF1E40AF), fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Summary Card (Click to open dialog)
+            Container(
+              decoration: BoxDecoration(
+                color: _surfaceWhite,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: hasError ? Colors.red.shade200 : Colors.transparent),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                title: const Text('Dealer Pool', style: TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
+                subtitle: Text('$totalDealers dealers selected', style: TextStyle(color: hasError ? Colors.red : _textGrey)),
+                trailing: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: _bgLight, borderRadius: BorderRadius.circular(8)),
+                  child: const Icon(Icons.edit_rounded, color: _cardNavy, size: 20),
+                ),
+                onTap: () async {
+                  final updatedDealers = await showDialog<Set<Dealer>>(
+                    context: context,
+                    builder: (_) => _DealerSelectionDialog(
+                      dealers: _allDealers,
+                      initialSelection: _selectedDealerPool,
+                    ),
+                  );
+
+                  if (updatedDealers != null) {
+                    setState(() {
+                      _selectedDealerPool = updatedDealers;
+                    });
+                  }
+                },
+              ),
+            ),
+            
+            if (hasError)
+              Padding(
+                padding: const EdgeInsets.only(top: 12.0),
+                child: Row(
+                  children: [
+                    const Icon(Icons.info_outline, size: 16, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Text('Select at least $minVisits dealers.', style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -423,14 +414,12 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
 // Dealer Selection Dialog (Styled)
 // ================================
 class _DealerSelectionDialog extends StatefulWidget {
-  final Map<String, List<Dealer>> dealersByRegion;
+  final List<Dealer> dealers;
   final Set<Dealer> initialSelection;
-  final String? currentRegion;
 
   const _DealerSelectionDialog({
-    required this.dealersByRegion,
+    required this.dealers,
     required this.initialSelection,
-    this.currentRegion,
   });
 
   @override
@@ -449,22 +438,11 @@ class _DealerSelectionDialogState extends State<_DealerSelectionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final allRegions = widget.dealersByRegion.keys.toList();
-    final List<String> sortedRegions = [];
-
-    if (widget.currentRegion != null && allRegions.contains(widget.currentRegion)) {
-      sortedRegions.add(widget.currentRegion!);
-    }
-    final otherRegions = allRegions.where((r) => r != widget.currentRegion).toList()..sort();
-    sortedRegions.addAll(otherRegions);
-
-    final filteredRegions = sortedRegions.where((region) {
+    // Filter dealers based on search
+    final filteredDealers = widget.dealers.where((dealer) {
       if (_searchQuery.isEmpty) return true;
-      if (region.toLowerCase().contains(_searchQuery.toLowerCase())) return true;
-      return widget.dealersByRegion[region]!.any(
-        (dealer) => dealer.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            dealer.area.toLowerCase().contains(_searchQuery.toLowerCase()),
-      );
+      return dealer.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+          dealer.area.toLowerCase().contains(_searchQuery.toLowerCase());
     }).toList();
 
     return AlertDialog(
@@ -478,12 +456,13 @@ class _DealerSelectionDialogState extends State<_DealerSelectionDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
+              style: const TextStyle(color: _BulkPjpWizardScreenState._textDark, fontWeight: FontWeight.w500),
               decoration: InputDecoration(
-                hintText: 'Search dealer or region...',
+                hintText: 'Search dealers...',
                 hintStyle: const TextStyle(color: _BulkPjpWizardScreenState._textGrey),
                 prefixIcon: const Icon(Icons.search, color: _BulkPjpWizardScreenState._textGrey),
                 filled: true,
-                fillColor: _BulkPjpWizardScreenState._bgLight,
+                fillColor: _BulkPjpWizardScreenState._inputFill,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 contentPadding: const EdgeInsets.symmetric(vertical: 12),
               ),
@@ -493,49 +472,60 @@ class _DealerSelectionDialogState extends State<_DealerSelectionDialog> {
             Expanded(
               child: ListView.builder(
                 shrinkWrap: true,
-                itemCount: filteredRegions.length,
+                itemCount: filteredDealers.length,
                 itemBuilder: (context, index) {
-                  final region = filteredRegions[index];
-                  final isCurrentRegion = region == widget.currentRegion;
-                  final dealersInRegion = widget.dealersByRegion[region]!.where((dealer) {
-                    if (_searchQuery.isEmpty) return true;
-                    return dealer.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                        dealer.area.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-                        region.toLowerCase().contains(_searchQuery.toLowerCase());
-                  }).toList();
-
-                  if (dealersInRegion.isEmpty) return const SizedBox.shrink();
-
-                  return Theme(
-                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      title: Text(
-                        region,
-                        style: TextStyle(
-                          color: isCurrentRegion ? _BulkPjpWizardScreenState._cardNavy : _BulkPjpWizardScreenState._textDark,
-                          fontWeight: isCurrentRegion ? FontWeight.bold : FontWeight.normal,
+                  final dealer = filteredDealers[index];
+                  final isSelected = _selectedDealers.contains(dealer);
+                  
+                  return Material(
+                    color: isSelected ? _BulkPjpWizardScreenState._cardNavy.withOpacity(0.03) : Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (isSelected) _selectedDealers.remove(dealer);
+                          else _selectedDealers.add(dealer);
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        child: Row(
+                          children: [
+                            // Custom Checkbox
+                            Container(
+                              width: 24, height: 24,
+                              decoration: BoxDecoration(
+                                color: isSelected ? _BulkPjpWizardScreenState._cardNavy : Colors.white,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: isSelected ? _BulkPjpWizardScreenState._cardNavy : Colors.grey[300]!, width: 2),
+                              ),
+                              child: isSelected 
+                                ? const Icon(Icons.check, size: 16, color: Colors.white) 
+                                : null,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    dealer.name, 
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold, 
+                                      color: isSelected ? _BulkPjpWizardScreenState._cardNavy : _BulkPjpWizardScreenState._textDark,
+                                      fontSize: 14,
+                                    )
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    "${dealer.area} • ${dealer.region}", 
+                                    style: const TextStyle(color: _BulkPjpWizardScreenState._textGrey, fontSize: 12)
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      leading: Icon(
-                        isCurrentRegion ? Icons.my_location : Icons.location_city,
-                        color: isCurrentRegion ? _BulkPjpWizardScreenState._accentOrange : _BulkPjpWizardScreenState._textGrey,
-                      ),
-                      initiallyExpanded: isCurrentRegion && _searchQuery.isEmpty,
-                      children: dealersInRegion.map((dealer) {
-                        final isSelected = _selectedDealers.contains(dealer);
-                        return CheckboxListTile(
-                          activeColor: _BulkPjpWizardScreenState._cardNavy,
-                          title: Text(dealer.name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                          subtitle: Text(dealer.area, style: const TextStyle(fontSize: 12, color: _BulkPjpWizardScreenState._textGrey)),
-                          value: isSelected,
-                          onChanged: (bool? value) {
-                            setState(() {
-                              if (value == true) _selectedDealers.add(dealer);
-                              else _selectedDealers.remove(dealer);
-                            });
-                          },
-                        );
-                      }).toList(),
                     ),
                   );
                 },
@@ -547,7 +537,7 @@ class _DealerSelectionDialogState extends State<_DealerSelectionDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('CANCEL', style: TextStyle(color: _BulkPjpWizardScreenState._textGrey)),
+          child: const Text('CANCEL', style: TextStyle(color: _BulkPjpWizardScreenState._textGrey, fontWeight: FontWeight.bold)),
         ),
         ElevatedButton(
           onPressed: () => Navigator.of(context).pop(_selectedDealers),

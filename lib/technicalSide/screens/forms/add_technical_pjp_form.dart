@@ -1,4 +1,5 @@
 // lib/technicalSide/screens/forms/add_technical_pjp_form.dart
+import 'dart:async'; // for Timer
 import 'package:flutter/material.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
@@ -27,7 +28,6 @@ class _AddTechnicalPjpFormState extends State<AddTechnicalPjpForm> {
   TechnicalSite? _selectedSite;
   final _descriptionController = TextEditingController();
   bool _isSubmitting = false;
-  late Future<List<TechnicalSite>> _sitesFuture;
 
   // --- FINTECH THEME PALETTE (Technical) ---
   static const Color _surfaceWhite  = Colors.white;
@@ -38,19 +38,31 @@ class _AddTechnicalPjpFormState extends State<AddTechnicalPjpForm> {
   static const Color _accentGreen   = Color(0xFF10B981); 
 
   @override
-  void initState() {
-    super.initState();
-    _sitesFuture = _apiService.fetchTechnicalSites(userId: int.parse(widget.employee.id));
-  }
-
-  @override
   void dispose() {
     _descriptionController.dispose();
     super.dispose();
   }
 
+  // --- Search Logic ---
+  Future<void> _openSiteSearch() async {
+    final TechnicalSite? result = await showDialog(
+      context: context,
+      builder: (context) => _ServerSiteSearchDialog(
+        api: _apiService, 
+        userId: int.parse(widget.employee.id)
+      ),
+    );
+    if (result != null) {
+      setState(() {
+        _selectedSite = result;
+      });
+    }
+  }
+
   Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate() || _selectedSite == null) {
+    if (!_formKey.currentState!.validate()) return;
+    
+    if (_selectedSite == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('Please select a site.'), backgroundColor: Colors.orange));
       return;
@@ -84,7 +96,6 @@ class _AddTechnicalPjpFormState extends State<AddTechnicalPjpForm> {
         areaToBeVisited: visitData,
         description: _descriptionController.text.isNotEmpty ? _descriptionController.text : null,
         
-        // --- ✅ CRITICAL: Set Site ID, Leave Dealer ID Null ---
         siteId: _selectedSite!.id,
         siteName: _selectedSite!.siteName,
         dealerId: null, 
@@ -156,7 +167,7 @@ class _AddTechnicalPjpFormState extends State<AddTechnicalPjpForm> {
               ),
 
               const Text(
-                'New Technical Visit',
+                'Plan New Visit',
                 style: TextStyle(
                   color: _textDark, 
                   fontSize: 20, 
@@ -166,49 +177,38 @@ class _AddTechnicalPjpFormState extends State<AddTechnicalPjpForm> {
               ),
               const SizedBox(height: 24),
               
-              // Site Dropdown
-              FutureBuilder<List<TechnicalSite>>(
-                future: _sitesFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: LinearProgressIndicator(color: _cardNavy));
-                  }
-                  if (snapshot.hasError) {
-                    return Text('Error loading sites', style: TextStyle(color: Colors.red[400]));
-                  }
-                  
-                  final sites = snapshot.data ?? [];
-                  if (sites.isEmpty) {
-                    return Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(color: _inputFill, borderRadius: BorderRadius.circular(12)),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.info_outline, color: _textGrey),
-                          SizedBox(width: 12),
-                          Expanded(child: Text('No sites found. Please register a site first.', style: TextStyle(color: _textGrey))),
-                        ],
+              // --- SITE SELECTOR (InkWell) ---
+              InkWell(
+                onTap: _openSiteSearch,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: _inputFill,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.transparent),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.location_city, color: _textGrey, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          _selectedSite != null 
+                            ? "${_selectedSite!.siteName} (${_selectedSite!.area ?? 'Unknown'})" 
+                            : "Select Construction Site",
+                          style: TextStyle(
+                            color: _selectedSite != null ? _textDark : _textGrey,
+                            fontWeight: _selectedSite != null ? FontWeight.w600 : FontWeight.w500,
+                            fontSize: 16,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    );
-                  }
-                  
-                  return DropdownButtonFormField<TechnicalSite>(
-                    hint: const Text('Select Construction Site'),
-                    dropdownColor: Colors.white,
-                    style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 15),
-                    isExpanded: true,
-                    decoration: _inputDecoration("Select Site", Icons.location_city),
-                    items: sites.map((site) => DropdownMenuItem(
-                      value: site,
-                      child: Text(
-                        "${site.siteName} (${site.area ?? 'Unknown'})", 
-                        overflow: TextOverflow.ellipsis
-                      ),
-                    )).toList(),
-                    onChanged: (value) => setState(() => _selectedSite = value),
-                    validator: (value) => value == null ? 'Please select a site' : null,
-                  );
-                },
+                      const Icon(Icons.search, color: _textGrey),
+                    ],
+                  ),
+                ),
               ),
               
               const SizedBox(height: 16),
@@ -244,6 +244,104 @@ class _AddTechnicalPjpFormState extends State<AddTechnicalPjpForm> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// --- INTERNAL SEARCH DIALOG (Themed) ---
+class _ServerSiteSearchDialog extends StatefulWidget {
+  final ApiService api;
+  final int userId;
+  const _ServerSiteSearchDialog({required this.api, required this.userId});
+  @override
+  State<_ServerSiteSearchDialog> createState() => _ServerSiteSearchDialogState();
+}
+
+class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
+  List<TechnicalSite> _sites = [];
+  bool _isLoading = false;
+  Timer? _debounce;
+
+  static const Color _textDark = Color(0xFF111827);
+  static const Color _textGrey = Color(0xFF6B7280);
+  static const Color _inputFill = Color(0xFFF9FAFB);
+
+  void _search(String query) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () async {
+      setState(() => _isLoading = true);
+      try {
+        final res = await widget.api.fetchTechnicalSites(userId: widget.userId, search: query);
+        if (mounted) setState(() => _sites = res);
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _search(""); 
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        height: 400,
+        width: double.maxFinite,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Select Site", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 18)),
+            const SizedBox(height: 16),
+            TextField(
+              autofocus: true,
+              style: const TextStyle(color: _textDark),
+              decoration: const InputDecoration(
+                hintText: "Search site...",
+                hintStyle: TextStyle(color: _textGrey),
+                prefixIcon: Icon(Icons.search, color: _textGrey),
+                filled: true,
+                fillColor: _inputFill,
+                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)), borderSide: BorderSide.none),
+              ),
+              onChanged: _search,
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: _isLoading 
+                ? const Center(child: CircularProgressIndicator()) 
+                : _sites.isEmpty 
+                  ? const Center(child: Text("No sites found", style: TextStyle(color: _textGrey)))
+                  : ListView.separated(
+                      itemCount: _sites.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      itemBuilder: (ctx, i) => ListTile(
+                        title: Text(_sites[i].siteName, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600)),
+                        subtitle: Text("${_sites[i].address} • ${_sites[i].concernedPerson}", style: const TextStyle(color: _textGrey, fontSize: 12)),
+                        onTap: () => Navigator.pop(context, _sites[i]),
+                      ),
+                    ),
+            ),
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(onPressed: () => Navigator.pop(context, null), child: const Text("CANCEL", style: TextStyle(color: _textGrey))),
+            )
+          ],
         ),
       ),
     );
