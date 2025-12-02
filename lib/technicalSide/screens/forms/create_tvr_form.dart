@@ -683,7 +683,6 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                     _buildFintechInput(controller: _influencerProductivityController, label: 'Productivity', isRequired: false),
                     const SizedBox(height: 16),
                     _buildFintechSwitch(label: "Enrolled in Scheme?", value: _isSchemeEnrolled, onChanged: (v) => setState(() => _isSchemeEnrolled = v)),
-
                     // Remarks
                     _buildSectionHeader("REMARKS"),
                     _buildFintechInput(controller: _clientsRemarksController, label: "Client's Remarks", maxLines: 2),

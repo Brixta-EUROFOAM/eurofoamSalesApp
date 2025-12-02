@@ -8,6 +8,7 @@ import 'package:salesmanapp/api/auth_service.dart';
 import 'package:intl/intl.dart'; 
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/widgets/theme_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class _ProfileStats {
   final int monthlyReportCount;
@@ -71,6 +72,22 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   String _capitalize(String? s) {
     if (s == null || s.isEmpty) return '';
     return s[0].toUpperCase() + s.substring(1);
+  }
+
+  // ✅ New method to launch Google Form
+  Future<void> _launchDeleteAccountUrl() async {
+    final Uri url = Uri.parse('https://docs.google.com/forms/d/e/1FAIpQLSdq-4YaYoEckyD7H_fYl_L-ordLQIdC7RSiqmQd9w054G2Zkg/viewform?usp=publish-editor');
+    try {
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        throw Exception('Could not launch url');
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open the form. Please contact support.')),
+        );
+      }
+    }
   }
 
   Future<_ProfileStats> _fetchProfileStats() async {
@@ -291,7 +308,49 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                   ),
                 ),
                 
-                // --- 4. Logout ---
+                const SizedBox(height: 32),
+
+                // --- 4. ✅ Account Management (Privacy & Security) ---
+                Text(
+                  "Account Management",
+                  style: TextStyle(color: _textDark, fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+
+                Container(
+                  decoration: BoxDecoration(
+                    color: _surfaceWhite,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                       BoxShadow(color: Colors.grey.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 5))
+                    ],
+                  ),
+                  child: Theme(
+                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                    child: ExpansionTile(
+                      leading: Icon(Icons.shield_outlined, color: _cardNavy),
+                      title: Text(
+                        'Privacy & Security', 
+                        style: TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 15)
+                      ),
+                      childrenPadding: const EdgeInsets.only(bottom: 12),
+                      children: [
+                        ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 0),
+                          leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                          title: const Text(
+                            "Request Account Deletion",
+                            style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600, fontSize: 14),
+                          ),
+                          trailing: const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
+                          onTap: _launchDeleteAccountUrl,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // --- 5. Logout ---
                 const SizedBox(height: 32),
                 _LogoutButton(color: _dangerRed),
               ],
