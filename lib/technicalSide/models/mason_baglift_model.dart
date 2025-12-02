@@ -13,6 +13,8 @@ class MasonBagLift {
   final String? siteKeyPersonPhone;
   final String? verificationSiteImageUrl;
   final String? verificationProofImageUrl;
+  final DateTime approvedAt;
+  final String? approvedBy;
 
   MasonBagLift({
     required this.id,
@@ -27,6 +29,8 @@ class MasonBagLift {
     this.siteKeyPersonPhone,
     this.verificationSiteImageUrl,
     this.verificationProofImageUrl,
+    required this.approvedAt,
+    this.approvedBy,
     required this.createdAt,
   });
 
@@ -45,6 +49,8 @@ class MasonBagLift {
       siteKeyPersonPhone: json['siteKeyPersonPhone'],
       verificationSiteImageUrl: json['verificationSiteImageUrl'],
       verificationProofImageUrl: json['verificationProofImageUrl'],
+      approvedAt: DateTime.tryParse(json['approvedAt'] ?? '') ?? DateTime.now(),
+      approvedBy: json['approvedBy'],
       createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
     );
   }

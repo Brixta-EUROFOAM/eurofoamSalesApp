@@ -8,7 +8,7 @@ import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/technicalSide/models/mason_baglift_model.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/technicalSide/models/sites_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart'; // Required for Dealer
+import 'package:salesmanapp/models/dealer_model.dart';
 
 class ApproveMasonBagLift extends StatefulWidget {
   final Employee employee;
@@ -108,6 +108,8 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   // --- 📸 Verification Dialog ---
   void _showVerificationDialog(MasonBagLift item) {
     final bagCountController = TextEditingController(text: item.bagCount.toString());
+    
+    // Controllers for Manual Entry Fields
     final personNameController = TextEditingController();
     final personPhoneController = TextEditingController();
     final memoController = TextEditingController();
@@ -212,6 +214,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                       if (result != null) {
                         setStateDialog(() {
                           selectedSite = result;
+                          // AUTO-FILL Logic: If site has data, fill the manual fields
                           personNameController.text = result.concernedPerson;
                           personPhoneController.text = result.phoneNo;
                         });
@@ -243,14 +246,27 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                   ),
                   const SizedBox(height: 16),
 
-                  // 4. Key Person Details
+                  // 4. Key Person Details (Editable)
                   _buildLabel("Site Key Person Details"),
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Expanded(child: TextField(controller: personNameController, style: const TextStyle(color: _textDark), decoration: _inputDecoration("Name"))),
+                      Expanded(
+                        child: TextField(
+                          controller: personNameController, 
+                          style: const TextStyle(color: _textDark), 
+                          decoration: _inputDecoration("Name")
+                        )
+                      ),
                       const SizedBox(width: 8),
-                      Expanded(child: TextField(controller: personPhoneController, style: const TextStyle(color: _textDark), decoration: _inputDecoration("Phone"), keyboardType: TextInputType.phone)),
+                      Expanded(
+                        child: TextField(
+                          controller: personPhoneController, 
+                          style: const TextStyle(color: _textDark), 
+                          decoration: _inputDecoration("Phone"), 
+                          keyboardType: TextInputType.phone
+                        )
+                      ),
                     ],
                   ),
                   const SizedBox(height: 16),
@@ -323,6 +339,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                     item.id, 
                     'rejected', 
                     memo: memoController.text,
+                    approvedBy: widget.employee.id, // Track rejection too
                   );
                 },
                 child: const Text("REJECT", style: TextStyle(color: _dangerRed, fontWeight: FontWeight.bold)),
@@ -334,7 +351,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
                 ),
                 onPressed: _isUploadingImage ? null : () {
-                  // VALIDATION: MANDATORY FIELDS
+                  // VALIDATION
                   if (selectedSite == null || selectedDealer == null) {
                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                       content: Text("Error: Site and Dealer are mandatory."),
@@ -344,16 +361,19 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                   }
 
                   Navigator.pop(context);
+                  
+                  // CALL API WITH ALL NEW FIELDS
                   _updateStatus(
                     item.id, 
                     'approved', 
                     bagCount: int.tryParse(bagCountController.text),
                     siteId: selectedSite?.id,
-                    dealerId: selectedDealer?.id, // 🟢 Passed here
+                    dealerId: selectedDealer?.id,
                     keyPersonName: personNameController.text,
                     keyPersonPhone: personPhoneController.text,
                     memo: memoController.text,
-                    verificationSiteImageUrl: _uploadedSiteImageUrl, 
+                    verificationSiteImageUrl: _uploadedSiteImageUrl,
+                    approvedBy: widget.employee.id, // IMPORTANT: Send TSO ID
                   );
                 },
                 child: const Text("VERIFY & APPROVE", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -370,11 +390,12 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     String status, {
     int? bagCount, 
     String? siteId,
-    String? dealerId, // 🟢
+    String? dealerId,
     String? keyPersonName, 
     String? keyPersonPhone,
     String? memo,
     String? verificationSiteImageUrl,
+    required String approvedBy, // Made required
   }) async {
     setState(() => _isProcessing = true);
     try {
@@ -388,6 +409,8 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
         siteKeyPersonPhone: keyPersonPhone,
         memo: memo,
         verificationSiteImageUrl: verificationSiteImageUrl,
+        approvedBy: approvedBy,
+        approvedAt: DateTime.now().toIso8601String(), // Send Current Time
       );
       
       if (mounted) {
@@ -585,8 +608,6 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   }
 }
 
-// --- SERVER SIDE SEARCH DIALOGS ---
-
 class _ServerSiteSearchDialog extends StatefulWidget {
   final ApiService api;
   const _ServerSiteSearchDialog({required this.api});
@@ -643,7 +664,7 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
     return AlertDialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text("Select Site", style: TextStyle(color: _ApproveMasonBagLiftState._textDark, fontWeight: FontWeight.bold)),
+      title: const Text("Select Site", style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold)),
       content: SizedBox(
         width: double.maxFinite,
         height: 400,
@@ -651,13 +672,13 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
           children: [
             TextField(
               autofocus: true,
-              style: const TextStyle(color: _ApproveMasonBagLiftState._textDark),
+              style: const TextStyle(color: Color(0xFF111827)),
               decoration: InputDecoration(
                 hintText: "Search site...",
-                hintStyle: const TextStyle(color: _ApproveMasonBagLiftState._textGrey),
-                prefixIcon: const Icon(Icons.search, color: _ApproveMasonBagLiftState._textGrey),
+                hintStyle: const TextStyle(color: Color(0xFF6B7280)),
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
                 filled: true,
-                fillColor: _ApproveMasonBagLiftState._inputFill,
+                fillColor: Color(0xFFF9FAFB),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               ),
@@ -668,7 +689,7 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
               child: _isLoading 
                 ? const Center(child: CircularProgressIndicator())
                 : _sites.isEmpty
-                    ? const Center(child: Text("No sites found", style: TextStyle(color: _ApproveMasonBagLiftState._textGrey)))
+                    ? const Center(child: Text("No sites found", style: TextStyle(color: Color(0xFF6B7280))))
                     : ListView.separated(
                         itemCount: _sites.length,
                         separatorBuilder: (ctx, i) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
@@ -676,8 +697,8 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
                           final site = _sites[index];
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
-                            title: Text(site.siteName, style: const TextStyle(color: _ApproveMasonBagLiftState._textDark, fontWeight: FontWeight.w600)),
-                            subtitle: Text(site.address, style: const TextStyle(color: _ApproveMasonBagLiftState._textGrey, fontSize: 12)),
+                            title: Text(site.siteName, style: const TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.w600)),
+                            subtitle: Text(site.address, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
                             onTap: () => Navigator.pop(context, site),
                           );
                         },
@@ -749,7 +770,7 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
     return AlertDialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text("Select Dealer", style: TextStyle(color: _ApproveMasonBagLiftState._textDark, fontWeight: FontWeight.bold)),
+      title: const Text("Select Dealer", style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold)),
       content: SizedBox(
         width: double.maxFinite,
         height: 400,
@@ -757,13 +778,13 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
           children: [
             TextField(
               autofocus: true,
-              style: const TextStyle(color: _ApproveMasonBagLiftState._textDark),
+              style: const TextStyle(color: Color(0xFF111827)),
               decoration: InputDecoration(
                 hintText: "Search dealer...",
-                hintStyle: const TextStyle(color: _ApproveMasonBagLiftState._textGrey),
-                prefixIcon: const Icon(Icons.search, color: _ApproveMasonBagLiftState._textGrey),
+                hintStyle: const TextStyle(color: Color(0xFF6B7280)),
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
                 filled: true,
-                fillColor: _ApproveMasonBagLiftState._inputFill,
+                fillColor: Color(0xFFF9FAFB),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               ),
@@ -774,7 +795,7 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
               child: _isLoading 
                 ? const Center(child: CircularProgressIndicator())
                 : _dealers.isEmpty
-                    ? const Center(child: Text("No dealers found", style: TextStyle(color: _ApproveMasonBagLiftState._textGrey)))
+                    ? const Center(child: Text("No dealers found", style: TextStyle(color: Color(0xFF6B7280))))
                     : ListView.separated(
                         itemCount: _dealers.length,
                         separatorBuilder: (ctx, i) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
@@ -782,8 +803,8 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
                           final dealer = _dealers[index];
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
-                            title: Text(dealer.name, style: const TextStyle(color: _ApproveMasonBagLiftState._textDark, fontWeight: FontWeight.w600)),
-                            subtitle: Text(dealer.area, style: const TextStyle(color: _ApproveMasonBagLiftState._textGrey, fontSize: 12)),
+                            title: Text(dealer.name, style: const TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.w600)),
+                            subtitle: Text(dealer.area, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
                             onTap: () => Navigator.pop(context, dealer),
                           );
                         },

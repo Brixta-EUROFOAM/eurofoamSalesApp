@@ -267,16 +267,19 @@ class ApiService {
 
   Future<String?> sendGeoTrackingPoint(GeoTrackingPoint point) async {
     final body = point.toJson();
-    
+
     // 2. POST to /api/geotracking
     final response = await _post(
-      'geotracking', 
-      body, 
+      'geotracking',
+      body,
       (json) => json, // We just want the raw JSON response to extract the ID
     );
 
-    dev.log('GeoTracking point sent successfully: ${point.locationType}', name: 'ApiService');
-    
+    dev.log(
+      'GeoTracking point sent successfully: ${point.locationType}',
+      name: 'ApiService',
+    );
+
     // 3. Extract and return the ID (useful if you need to PATCH this point later)
     if (response is Map<String, dynamic> && response['id'] != null) {
       return response['id'].toString();
@@ -284,12 +287,11 @@ class ApiService {
     return null;
   }
 
-  Future<void> updateGeoTrackingPoint(String id, Map<String, dynamic> updateData) async {
-    await _patch(
-      'geotracking/$id', 
-      updateData, 
-      (json) => json,
-    );
+  Future<void> updateGeoTrackingPoint(
+    String id,
+    Map<String, dynamic> updateData,
+  ) async {
+    await _patch('geotracking/$id', updateData, (json) => json);
     dev.log('GeoTracking point $id updated successfully', name: 'ApiService');
   }
 
@@ -303,7 +305,8 @@ class ApiService {
     }
 
     final url = Uri.parse(
-        'https://api.radar.io/v1/geocode/reverse?coordinates=$latitude,$longitude');
+      'https://api.radar.io/v1/geocode/reverse?coordinates=$latitude,$longitude',
+    );
 
     try {
       final response = await http.get(
@@ -313,9 +316,10 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['addresses'] != null && (data['addresses'] as List).isNotEmpty) {
+        if (data['addresses'] != null &&
+            (data['addresses'] as List).isNotEmpty) {
           final address = data['addresses'][0];
-          
+
           // Radar returns components. We try to map them to your fields.
           // Note: Radar fields vary by country. Adjust based on India/Your region.
           return {
@@ -335,7 +339,8 @@ class ApiService {
         }
       } else {
         throw Exception(
-            'Radar API Error: ${response.statusCode} - ${response.body}');
+          'Radar API Error: ${response.statusCode} - ${response.body}',
+        );
       }
     } catch (e) {
       throw Exception('Failed to reverse geocode: $e');
@@ -379,10 +384,7 @@ class ApiService {
 
   Future<Dealer> fetchDealerById(String dealerId) async {
     // Calls GET /api/dealers/:id
-    return _get(
-      'dealers/$dealerId',
-      (json) => Dealer.fromJson(json),
-    );
+    return _get('dealers/$dealerId', (json) => Dealer.fromJson(json));
   }
 
   Future<List<Dealer>> fetchDealersByUserId(int userId) async {
@@ -526,7 +528,7 @@ class ApiService {
     required int userId,
     required int createdById,
     List<String>? dealerIds,
-    List<String>? siteIds,  
+    List<String>? siteIds,
     required DateTime baseDate,
     required int batchSizePerDay,
     required String areaToBeVisited,
@@ -589,7 +591,11 @@ class ApiService {
     throw Exception('Failed to fetch attendance.');
   }
 
-  Future<Attendance> fetchTodaysAttendance(int userId, {String role = 'SALES'}) { // Default to SALES
+  Future<Attendance> fetchTodaysAttendance(
+    int userId, {
+    String role = 'SALES',
+  }) {
+    // Default to SALES
     return _get(
       'attendance/user/$userId/today?role=$role',
       (json) => Attendance.fromJson(json),
@@ -812,6 +818,8 @@ class ApiService {
     String? memo,
     String? verificationSiteImageUrl,
     String? verificationProofImageUrl,
+    String? approvedAt,
+    String? approvedBy,
   }) async {
     final body = {
       'status': status,
@@ -826,6 +834,8 @@ class ApiService {
         'verificationSiteImageUrl': verificationSiteImageUrl,
       if (verificationProofImageUrl != null)
         'verificationProofImageUrl': verificationProofImageUrl,
+      
+      if (approvedBy != null) 'approvedBy': int.tryParse(approvedBy),
     };
     await _patch('bag-lifts/$id', body, (json) => null);
   }
