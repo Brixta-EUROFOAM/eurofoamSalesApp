@@ -42,7 +42,9 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   // --- CONTROLLERS ---
   final _siteNameConcernedPersonController = TextEditingController();
   final _phoneNoController = TextEditingController();
-  final _emailIdController = TextEditingController();
+  final _whatsappNoController = TextEditingController(); // ✅ Added to UI
+  final _emailIdController = TextEditingController();    // ✅ Added to UI
+  
   final _clientsRemarksController = TextEditingController();
   final _salespersonRemarksController = TextEditingController();
   final _siteVisitBrandInUseController = TextEditingController();
@@ -54,9 +56,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   final _serviceTypeController = TextEditingController();
   final _qualityComplaintController = TextEditingController();
   final _promotionalActivityController = TextEditingController();
-  final _channelPartnerVisitController = TextEditingController();
+  final _channelPartnerVisitController = TextEditingController(); // ✅ Added to UI
 
-  final _whatsappNoController = TextEditingController();
   final _siteAddressController = TextEditingController();
   final _marketNameController = TextEditingController();
   final _purposeOfVisitController = TextEditingController();
@@ -67,7 +68,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   final _supplyingDealerNameController = TextEditingController();
   final _nearbyDealerNameController = TextEditingController();
   final _serviceDescController = TextEditingController();
-  final _dhalaiVerificationCodeController = TextEditingController();
+  final _dhalaiVerificationCodeController = TextEditingController(); // ✅ Added to UI
   final _isVerificationStatusController = TextEditingController();
   final _influencerNameController = TextEditingController();
   final _influencerPhoneController = TextEditingController();
@@ -88,17 +89,21 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   String? _selectedConversionType;
   String? _selectedConversionUnit;
   String? _selectedStage;
+  String? _selectedSiteVisitType;
 
   // Booleans
   bool _isConverted = false;
   bool _isTechService = false;
   bool _isSchemeEnrolled = false;
 
-  // Check-In Data
+  // Check-In Data & Images
   DateTime? _checkInTime;
   File? _inTimeImageFile;
   String? _inTimeImageUrl;
   Position? _capturedLocation;
+  
+  // Site Photo (Progress/Evidence)
+  File? _sitePhotoFile; 
 
   // --- THEME ---
   static const Color _surfaceWhite  = Colors.white;
@@ -112,7 +117,6 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   @override
   void initState() {
     super.initState();
-    // Handle passed data
     if (widget.site != null) {
       _onSiteSelected(widget.site!);
     }
@@ -126,6 +130,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     _siteNameConcernedPersonController.dispose();
     _phoneNoController.dispose();
     _emailIdController.dispose();
+    _whatsappNoController.dispose();
     _clientsRemarksController.dispose();
     _salespersonRemarksController.dispose();
     _siteVisitBrandInUseController.dispose();
@@ -137,7 +142,6 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     _qualityComplaintController.dispose();
     _promotionalActivityController.dispose();
     _channelPartnerVisitController.dispose();
-    _whatsappNoController.dispose();
     _siteAddressController.dispose();
     _marketNameController.dispose();
     _purposeOfVisitController.dispose();
@@ -204,7 +208,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     setState(() => _isUploadingImage = true);
     try {
       final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      final pickedFile = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 70);
+      final pickedFile = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 60);
       
       if (pickedFile == null) {
          if(mounted) setState(() => _isUploadingImage = false);
@@ -233,8 +237,16 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     }
   }
 
+  Future<void> _pickSitePhoto() async {
+    final pickedFile = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 60);
+    if (pickedFile != null) {
+      setState(() {
+        _sitePhotoFile = File(pickedFile.path);
+      });
+    }
+  }
+
   Future<void> _submitTvr() async {
-    // --- 1. Validation Feedback ---
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Please fill all required fields (marked in Red).'),
@@ -248,7 +260,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       return;
     }
 
-    // --- 2. 10 Minute Limit Logic ---
+    // --- 10 min Time Check Logic ---
     final now = DateTime.now();
     final difference = now.difference(_checkInTime!);
     const minMinutes = 10; 
@@ -265,7 +277,6 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       return;
     }
 
-    // --- 3. Calculate Time Spent ---
     final hours = difference.inHours;
     final minutes = difference.inMinutes.remainder(60);
     final String timeSpentStr = '${hours}h ${minutes}m';
@@ -274,13 +285,20 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     try {
-      final pickedFile = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 70);
+      // 1. Upload Out Time Image
+      final pickedOutFile = await _imagePicker.pickImage(source: ImageSource.camera, imageQuality: 60);
       String? outTimeImageUrl;
-      
-      if (pickedFile != null) {
-        outTimeImageUrl = await _apiService.uploadImageToR2(File(pickedFile.path));
+      if (pickedOutFile != null) {
+        outTimeImageUrl = await _apiService.uploadImageToR2(File(pickedOutFile.path));
       }
 
+      // 2. Upload Site Photo (If selected)
+      String? sitePhotoUrl;
+      if (_sitePhotoFile != null) {
+        sitePhotoUrl = await _apiService.uploadImageToR2(_sitePhotoFile!);
+      }
+
+      // 3. Create Model
       final tvrReport = TechnicalVisitReport(
         userId: int.parse(widget.employee.id),
         reportDate: DateTime.now(),
@@ -307,6 +325,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         visitCategory: _selectedVisitCategory,
         customerType: _selectedCustomerType,
         purposeOfVisit: _purposeOfVisitController.text.isNotEmpty ? _purposeOfVisitController.text : null,
+        siteVisitType: _selectedSiteVisitType, 
 
         // Construction
         siteVisitStage: _selectedStage,
@@ -355,6 +374,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         timeSpentinLoc: timeSpentStr, 
         inTimeImageUrl: _inTimeImageUrl,
         outTimeImageUrl: outTimeImageUrl,
+        sitePhotoUrl: sitePhotoUrl, // ✅ Mapped here
       );
 
       await _apiService.createTvr(tvrReport);
@@ -569,11 +589,14 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                     // Visit Info
                     _buildFintechDropdown(label: 'Visit Type', value: _selectedVisitType, items: ['Site Visit', 'Service', 'Complaint', 'Influencer Meet'], onChanged: (v) => setState(() => _selectedVisitType = v)),
                     const SizedBox(height: 16),
+                    _buildFintechDropdown(label: 'Site Visit Type', value: _selectedSiteVisitType, items: ['Planned', 'Unplanned'], onChanged: (v) => setState(() => _selectedSiteVisitType = v), isRequired: false),
+                    const SizedBox(height: 16),
+                    
                     Row(
                       children: [
-                        Expanded(child: _buildFintechDropdown(label: 'Visit Category', value: _selectedVisitCategory, items: ['New', 'Follow Up', 'Complaint'], onChanged: (v) => setState(() => _selectedVisitCategory = v), isRequired: false)),
+                        Expanded(child: _buildFintechDropdown(label: 'Visit Category', value: _selectedVisitCategory, items: ['New', 'Follow Up'], onChanged: (v) => setState(() => _selectedVisitCategory = v), isRequired: false)),
                         const SizedBox(width: 12),
-                        Expanded(child: _buildFintechDropdown(label: 'Customer Type', value: _selectedCustomerType, items: ['IHB', 'Contractor', 'Builder', 'Government'], onChanged: (v) => setState(() => _selectedCustomerType = v), isRequired: false)),
+                        Expanded(child: _buildFintechDropdown(label: 'Customer Type', value: _selectedCustomerType, items: ['IHB', 'Contractor', 'Builder', 'Engineer', 'Architect'], onChanged: (v) => setState(() => _selectedCustomerType = v), isRequired: false)),
                       ],
                     ),
                     const SizedBox(height: 16),
@@ -593,6 +616,24 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                     const SizedBox(height: 16),
                     _buildFintechInput(controller: _siteAddressController, label: 'Site Address', maxLines: 2, isRequired: false),
                     const SizedBox(height: 16),
+                    
+                    InkWell(
+                      onTap: _pickSitePhoto,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        decoration: BoxDecoration(color: _inputFill, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.grey.shade300)),
+                        child: Row(
+                          children: [
+                            Icon(Icons.camera_enhance, color: _textGrey),
+                            const SizedBox(width: 12),
+                            Expanded(child: Text(_sitePhotoFile != null ? "Site Photo Selected" : "Capture Site Progress Photo", style: TextStyle(color: _sitePhotoFile != null ? _textDark : _textGrey))),
+                            if (_sitePhotoFile != null) const Icon(Icons.check_circle, color: _accentGreen),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
                     Row(
                       children: [
                         Expanded(child: _buildFintechInput(controller: _constAreaSqFtController, label: 'Area (SqFt)', keyboardType: TextInputType.number, isRequired: false)),
@@ -617,11 +658,11 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                     _buildSectionHeader("DEALER INFO"),
                     _buildFintechInput(controller: _supplyingDealerNameController, label: 'Supplying Dealer', isRequired: false),
                     const SizedBox(height: 16),
-                    _buildFintechInput(controller: _nearbyDealerNameController, label: 'Nearby Dealer', isRequired: false),
+                    _buildFintechInput(controller: _nearbyDealerNameController, label: 'Nearby Dealer (Best)', isRequired: false),
                     const SizedBox(height: 16),
-                    _buildFintechInput(controller: _associatedPartyNameController, label: 'Associated Party', isRequired: false),
+                    _buildFintechInput(controller: _associatedPartyNameController, label: 'Associated Party Name', isRequired: false),
                     const SizedBox(height: 16),
-                    //_buildFintechInput(controller: _channelPartnerVisitController, label: 'Partner Visit Details', isRequired: false),
+                    _buildFintechInput(controller: _channelPartnerVisitController, label: 'Channel Partner Visit', isRequired: false),
 
                     // Conversion
                     _buildSectionHeader("CONVERSION"),
@@ -674,17 +715,22 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    _buildFintechInput(controller: _influencerTypeController, label: 'Influencer Type', hint: 'Mason, Contractor'),
+                    _buildFintechInput(controller: _influencerTypeController, label: 'Influencer Type', hint: 'Mason, Contractor, Engineer'),
                     const SizedBox(height: 16),
                     _buildFintechInput(controller: _influencerNameController, label: 'Name', isRequired: false),
                     const SizedBox(height: 16),
                     _buildFintechInput(controller: _influencerPhoneController, label: 'Phone', keyboardType: TextInputType.phone, isRequired: false),
                     const SizedBox(height: 16),
-                    _buildFintechInput(controller: _influencerProductivityController, label: 'Productivity', isRequired: false),
+                    _buildFintechInput(controller: _influencerProductivityController, label: 'Influencer Productivity', isRequired: false),
                     const SizedBox(height: 16),
                     _buildFintechSwitch(label: "Enrolled in Scheme?", value: _isSchemeEnrolled, onChanged: (v) => setState(() => _isSchemeEnrolled = v)),
-                    // Remarks
-                    _buildSectionHeader("REMARKS"),
+                    
+                    // Remarks & Extra Contact Info
+                    _buildSectionHeader("REMARKS & EXTRAS"),
+                    _buildFintechInput(controller: _whatsappNoController, label: 'Phone/WhatsApp No.', keyboardType: TextInputType.phone, isRequired: false), 
+                    const SizedBox(height: 16),
+                    _buildFintechInput(controller: _emailIdController, label: 'Email ID', keyboardType: TextInputType.emailAddress, isRequired: false), 
+                    const SizedBox(height: 16),
                     _buildFintechInput(controller: _clientsRemarksController, label: "Client's Remarks", maxLines: 2),
                     const SizedBox(height: 16),
                     _buildFintechInput(controller: _salespersonRemarksController, label: 'Salesperson Remarks', maxLines: 2),
@@ -714,8 +760,6 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 }
 
-// --- Internal Search Dialogs (Themed) ---
-
 class _ServerSiteSearchDialog extends StatefulWidget {
   final ApiService api;
   final int userId;
@@ -729,7 +773,6 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
   bool _isLoading = false;
   Timer? _debounce;
 
-  // Theme constants matching main screen
   static const Color _textDark = Color(0xFF111827);
   static const Color _textGrey = Color(0xFF6B7280);
   static const Color _inputFill = Color(0xFFF9FAFB);

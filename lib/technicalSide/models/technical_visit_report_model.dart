@@ -76,6 +76,14 @@ class TechnicalVisitReport {
     final String? outTimeImageUrl;
     final String? sitePhotoUrl;
 
+    final DateTime? firstVisitTime;
+    final DateTime? lastVisitTime;
+    final String? firstVisitDay;
+    final String? lastVisitDay;
+    final int? siteVisitsCount;
+    final int? otherVisitsCount;
+    final int? totalVisitsCount;
+
     // --- Meta / IDs ---
     final String? siteVisitType;
     final String? meetingId;
@@ -139,6 +147,15 @@ class TechnicalVisitReport {
         this.inTimeImageUrl,
         this.outTimeImageUrl,
         this.sitePhotoUrl,
+        
+        this.firstVisitTime,
+        this.lastVisitTime,
+        this.firstVisitDay,
+        this.lastVisitDay,
+        this.siteVisitsCount,
+        this.otherVisitsCount,
+        this.totalVisitsCount,
+
         this.siteVisitType,
         this.meetingId,
         this.pjpId,
@@ -201,6 +218,15 @@ class TechnicalVisitReport {
         inTimeImageUrl: json["inTimeImageUrl"],
         outTimeImageUrl: json["outTimeImageUrl"],
         sitePhotoUrl: json["sitePhotoUrl"],
+        
+        firstVisitTime: json["firstVisitTime"] == null ? null : DateTime.parse(json["firstVisitTime"]),
+        lastVisitTime: json["lastVisitTime"] == null ? null : DateTime.parse(json["lastVisitTime"]),
+        firstVisitDay: json["firstVisitDay"],
+        lastVisitDay: json["lastVisitDay"],
+        siteVisitsCount: json["siteVisitsCount"],
+        otherVisitsCount: json["otherVisitsCount"],
+        totalVisitsCount: json["totalVisitsCount"],
+
         siteVisitType: json["siteVisitType"],
         meetingId: json["meetingId"],
         pjpId: json["pjpId"],
@@ -262,6 +288,15 @@ class TechnicalVisitReport {
         "inTimeImageUrl": inTimeImageUrl,
         "outTimeImageUrl": outTimeImageUrl,
         "sitePhotoUrl": sitePhotoUrl,
+        
+        "firstVisitTime": firstVisitTime?.toIso8601String(),
+        "lastVisitTime": lastVisitTime?.toIso8601String(),
+        "firstVisitDay": firstVisitDay,
+        "lastVisitDay": lastVisitDay,
+        "siteVisitsCount": siteVisitsCount,
+        "otherVisitsCount": otherVisitsCount,
+        "totalVisitsCount": totalVisitsCount,
+
         "siteVisitType": siteVisitType,
         "meetingId": meetingId,
         "pjpId": pjpId,
