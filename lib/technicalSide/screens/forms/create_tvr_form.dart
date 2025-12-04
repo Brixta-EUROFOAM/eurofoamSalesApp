@@ -255,7 +255,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       return;
     }
     
-    if (_checkInTime == null) {
+    if (_checkInTime == null || _capturedLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Check-in is required.')));
       return;
     }
@@ -275,6 +275,30 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         )
       );
       return;
+    }
+
+    // --- GEOFENCE CHECK (50 Meters) ---
+    if (_selectedSite != null) {
+        if (_selectedSite!.latitude != 0.0 && _selectedSite!.longitude != 0.0) {
+           
+           double distanceInMeters = Geolocator.distanceBetween(
+              _capturedLocation!.latitude, // From Check-in
+              _capturedLocation!.longitude,
+              _selectedSite!.latitude,
+              _selectedSite!.longitude,
+           );
+
+           if (distanceInMeters > 50) {
+             ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text("Geofence Error: You are ${distanceInMeters.toStringAsFixed(0)}m away from the Site. You must be within 50m."),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 5),
+                )
+              );
+              return; // BLOCK SUBMISSION
+           }
+        }
     }
 
     final hours = difference.inHours;

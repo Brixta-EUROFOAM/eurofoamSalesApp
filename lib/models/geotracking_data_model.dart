@@ -28,6 +28,7 @@ class GeoTrackingPoint {
   final String? siteName;
   final String? activityType;
   final String? siteId;
+  final String? dealerId;
 
   GeoTrackingPoint({
     required this.userId,
@@ -52,6 +53,7 @@ class GeoTrackingPoint {
     this.siteName,
     this.activityType,
     this.siteId,
+    this.dealerId,
   });
 
   Map<String, dynamic> toJson() {
@@ -78,6 +80,7 @@ class GeoTrackingPoint {
       'siteName': siteName,
       'activityType': activityType,
       'siteId': siteId,
+      'dealerId': dealerId,
     };
     // This allows the backend to use its default values (like defaultNow() for dates)
     data.removeWhere((key, value) => value == null);

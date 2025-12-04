@@ -1,9 +1,9 @@
 // lib/technicalSide/screens/technical_nav_screen.dart
-// lib/technicalSide/screens/technical_nav_screen.dart
 import 'package:flutter/material.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
-import 'package:salesmanapp/technicalSide/models/sites_model.dart';
+//import 'package:salesmanapp/technicalSide/models/sites_model.dart';
+//import 'package:salesmanapp/models/dealer_model.dart';
 
 // --- Screens ---
 import 'package:salesmanapp/technicalSide/screens/technical_dashboard_screen.dart';
@@ -56,10 +56,10 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
     });
   }
 
-  void _onJourneyCompleted(Pjp pjp, TechnicalSite site, DateTime checkInTime) {
+  void _onJourneyCompleted(Pjp pjp, dynamic locationEntity, bool isSite, DateTime checkInTime) {
     _clearJourneyData();
     
-    // --- ✅ FIX: Force PJP Screen to refresh data from API ---
+    // --- Force PJP Screen to refresh data from API ---
     // This ensures the completed PJP disappears from the list immediately.
     _pjpKey.currentState?.refreshPjpList();
     

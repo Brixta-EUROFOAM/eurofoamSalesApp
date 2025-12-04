@@ -55,7 +55,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   double _totalDistanceTravelled = 0.0;
   Position? _lastRecordedPosition;
   String? _currentJourneyId;
-  String? _currentGeoTrackingDbId; // ✅ Stores the DB ID for Patching
+  String? _currentGeoTrackingDbId; 
 
   // Data Holding State
   Pjp? _currentPjp;
@@ -124,8 +124,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _destinationController.dispose();
     _positionStreamSubscription?.cancel();
     _radarArrivalCheckTimer?.cancel();
-    // If active, we don't auto-stop to prevent accidental data loss, 
-    // but in production you might want to save state or force stop.
     super.dispose();
   }
 
@@ -208,8 +206,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         longitude: initialPosition.longitude,
         destLat: _destinationLocation?.latitude,
         destLng: _destinationLocation?.longitude,
-        // No siteId here, but we could add dealerId if the backend supported it.
-        // For now, we rely on PJP linking in the backend.
+        
+        // --- ✅ DEALER ID CHECK ADDED HERE ---
+        dealerId: _currentDealer?.id, 
+        siteId: null, // Explicitly null as this is the Dealer screen
+        
         isActive: true,
         locationType: 'JOURNEY_START',
       );
@@ -245,7 +246,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       try {
         final updateData = {
           'isActive': false,
-          'totalDistanceTravelled': _totalDistanceTravelled,
+          'totalDistanceTravelled': (_totalDistanceTravelled / 1000.0).toStringAsFixed(3),
           'latitude': _lastRecordedPosition!.latitude,
           'longitude': _lastRecordedPosition!.longitude,
           'locationType': 'JOURNEY_END',

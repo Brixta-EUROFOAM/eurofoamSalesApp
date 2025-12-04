@@ -198,7 +198,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
 
   Future<void> _submitDvr() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_checkInTime == null) {
+    if (_checkInTime == null || _checkInLocation == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Check-in is required!")));
        return;
     }
@@ -220,13 +220,38 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       );
       return;
     }
-    // -------------------------------
+
+    // --- GEOFENCE CHECK (50 Meters) ---
+    if (_selectedDealer != null && 
+        _selectedDealer!.latitude != null && 
+        _selectedDealer!.longitude != null) {
+        
+        // Calculate distance in Meters
+        double distanceInMeters = Geolocator.distanceBetween(
+          _checkInLocation!.latitude,
+          _checkInLocation!.longitude,
+          _selectedDealer!.latitude!,
+          _selectedDealer!.longitude!,
+        );
+
+        if (distanceInMeters > 50) {
+           ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Geofence Error: You are ${distanceInMeters.toStringAsFixed(0)}m away from the Dealer. You must be within 50m."),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 5),
+            )
+          );
+          return; // BLOCK SUBMISSION
+        }
+    } else {
+       debugPrint("Skipping Geofence: Dealer has no lat/long");
+    }
 
     // --- Calculate Time Spent ---
     final hours = difference.inHours;
     final minutes = difference.inMinutes.remainder(60);
     final String timeSpentStr = '${hours}h ${minutes}m';
-    // -------------------------------
 
     if (_selectedDealer?.id == null) {
        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Selected Dealer has invalid ID.")));

@@ -32,7 +32,6 @@ class EmployeePJPScreen extends StatefulWidget {
 class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   final ApiService _apiService = ApiService();
   
-  // --- ✅ FIX: Initialize with empty future to prevent LateInitializationError ---
   late Future<List<Pjp>> _pjpFuture;
 
   DateTime _selectedDate = DateTime.now();
@@ -49,9 +48,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   @override
   void initState() {
     super.initState();
-    // 1. Safety init
     _pjpFuture = Future.value([]);
-    // 2. Fetch real data
     refreshPjpList();
   }
 
@@ -66,7 +63,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
 
     if (mounted) {
       setState(() {
-        // Fetch EVERYTHING for this date. We will bucket them in the UI.
         _pjpFuture = _apiService.fetchPjpsForUser(
           uid,
           startDate: dateString,
@@ -171,6 +167,23 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
 
   Future<void> _startJourneyForPjp(Pjp pjp) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+
+    // --- ✅ 1. BLOCK PENDING PLANS ---
+    final isVerified = (pjp.verificationStatus ?? 'PENDING').toUpperCase() == 'APPROVED' || 
+                       (pjp.verificationStatus ?? 'PENDING').toUpperCase() == 'VERIFIED';
+    
+    if (!isVerified) {
+       scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('Cannot start. This plan is waiting for approval.'), 
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        )
+      );
+      return;
+    }
+    // ----------------------------------
+
     if (pjp.dealerId == null || pjp.dealerId!.isEmpty) {
       scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Error: This PJP is not linked to a dealer.'), backgroundColor: Colors.red));
       return;
@@ -295,7 +308,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
 
                   final allPjps = snapshot.data ?? [];
                   
-                  // --- ✅ FILTERING LOGIC ---
+                  // Filter Active
                   final activePjps = allPjps.where((p) => p.status != 'COMPLETED').toList();
 
                   // Pending Approval
@@ -304,7 +317,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                     return vStatus == 'PENDING';
                   }).toList();
 
-                  // Verified / Approved (Ready to Start)
+                  // Verified / Approved
                   final verifiedPjps = activePjps.where((p) {
                      final vStatus = (p.verificationStatus ?? 'PENDING').toUpperCase();
                      return vStatus == 'APPROVED' || vStatus == 'VERIFIED';
@@ -339,9 +352,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       ),
     );
   }
-
-  // ... (Keep existing _buildDateSelector, _buildSectionHeader, _buildFintechVisitCard, _buildEmptyState from previous valid response)
-  // I'll include them for completeness below to prevent copy-paste errors.
 
   Widget _buildDateSelector() {
     return Container(
@@ -420,25 +430,61 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
     );
   }
 
+  // --- ✅ NEW: Updated Logic to match TechnicalPjpScreen ---
   Widget _buildFintechVisitCard(Pjp pjp, {required bool isVerified}) {
+    // 1. Status Logic
     final bool isInProgress = pjp.status.toUpperCase() == 'IN_PROGRESS' || pjp.status.toUpperCase() == 'STARTED';
+    
     final Color statusColor = isVerified 
         ? (isInProgress ? Colors.blue : _accentGreen)
         : _pendingOrange;
+        
     final String statusText = isVerified 
         ? (isInProgress ? "IN PROGRESS" : "APPROVED")
         : "WAITING APPROVAL";
     
-    final String title = (pjp.dealerName != null && pjp.dealerName!.isNotEmpty)
-        ? pjp.dealerName!
-        : (pjp.description ?? "Planned Visit");
-        
-    final String subtitle = pjp.areaToBeVisited.split('|').first.trim();
+    // 2. Name Resolution Logic
+    String displayName = "Unknown Visit";
+    String displayType = "General Visit";
+
+    if (pjp.dealerName != null && pjp.dealerName!.isNotEmpty) {
+      displayName = pjp.dealerName!;
+      displayType = "Dealer Visit";
+    } else if (pjp.siteName != null && pjp.siteName!.isNotEmpty) {
+      displayName = pjp.siteName!;
+      displayType = "Site Visit";
+    } else if (pjp.description != null && pjp.description!.isNotEmpty) {
+      displayName = pjp.description!;
+      displayType = "Remark";
+    } else {
+      // ✅ Fallback: Extract from "Name, Address|Lat|Lng"
+      try {
+        final rawInfo = pjp.areaToBeVisited.split('|').first; 
+        if (rawInfo.isNotEmpty) {
+          // Heuristic: Text before first comma is likely the Name
+          if (rawInfo.contains(',')) {
+            displayName = rawInfo.split(',').first.trim();
+          } else {
+            displayName = rawInfo;
+          }
+          displayType = "Scheduled Visit";
+        }
+      } catch (e) {
+        // Keep defaults
+      }
+    }
+
+    // 3. Address Resolution
+    String displayAddress = "";
+    try {
+      displayAddress = pjp.areaToBeVisited.split('|').first;
+    } catch (_) {}
+
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16.0),
       child: Slidable(
-        enabled: isVerified,
+        enabled: isVerified, // Disable swipe if pending
         startActionPane: ActionPane(
           motion: const StretchMotion(),
           children: [
@@ -467,7 +513,8 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
           child: Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: isVerified ? () => _startJourneyForPjp(pjp) : null,
+              // Block tap if pending
+              onTap: () => _startJourneyForPjp(pjp),
               borderRadius: BorderRadius.circular(20),
               child: Padding(
                 padding: const EdgeInsets.all(16),
@@ -505,8 +552,10 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                             ],
                           ),
                           const SizedBox(height: 4),
+                          
+                          // ✅ Bold Title
                           Text(
-                            title, 
+                            displayName, 
                             style: TextStyle(
                               color: _textDark, 
                               fontWeight: FontWeight.bold,
@@ -515,25 +564,54 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 4),
+                          
+                          // ✅ Subtitle Type (Grey)
                           Text(
-                            subtitle, 
-                            style: TextStyle(color: _textGrey, fontSize: 13),
+                            displayType, 
+                            style: TextStyle(color: _textGrey, fontSize: 12, fontWeight: FontWeight.w500),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
+                          ),
+                          
+                          const SizedBox(height: 4),
+                          
+                          // Address
+                          Row(
+                            children: [
+                              Icon(Icons.location_on_outlined, color: _textGrey, size: 14),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  displayAddress,
+                                  style: TextStyle(color: _textGrey, fontSize: 13),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
-                    if (isVerified)
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: _bgLight)
-                        ),
-                        child: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: _textGrey),
+                    
+                    // --- ✅ START BUTTON (Grey if Pending) ---
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isVerified 
+                            ? _accentGreen.withOpacity(0.1) // Green BG
+                            : Colors.grey.withOpacity(0.15), // Grey BG
+                        borderRadius: BorderRadius.circular(20),
                       ),
+                      child: Text(
+                        isVerified ? "START" : "WAIT",
+                        style: TextStyle(
+                          color: isVerified ? _accentGreen : Colors.grey,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
