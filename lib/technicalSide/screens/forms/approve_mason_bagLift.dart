@@ -21,20 +21,20 @@ class ApproveMasonBagLift extends StatefulWidget {
 class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   final ApiService _api = ApiService();
   final ImagePicker _picker = ImagePicker();
-  
+
   late Future<List<MasonBagLift>> _futureLifts;
   bool _isProcessing = false;
 
   // --- FINTECH THEME PALETTE ---
-  static const Color _bgLight       = Color(0xFFF3F4F6); 
-  static const Color _surfaceWhite  = Colors.white;
-  static const Color _textDark      = Color(0xFF111827); 
-  static const Color _textGrey      = Color(0xFF6B7280); 
-  static const Color _cardNavy      = Color(0xFF0F172A); 
-  static const Color _accentGreen   = Color(0xFF10B981); 
-  static const Color _dangerRed     = Color(0xFFEF4444);
-  static const Color _infoBlue      = Color(0xFF3B82F6);
-  static const Color _inputFill     = Color(0xFFF9FAFB); 
+  static const Color _bgLight = Color(0xFFF3F4F6);
+  static const Color _surfaceWhite = Colors.white;
+  static const Color _textDark = Color(0xFF111827);
+  static const Color _textGrey = Color(0xFF6B7280);
+  static const Color _cardNavy = Color(0xFF0F172A);
+  static const Color _accentGreen = Color(0xFF10B981);
+  static const Color _dangerRed = Color(0xFFEF4444);
+  static const Color _infoBlue = Color(0xFF3B82F6);
+  static const Color _inputFill = Color(0xFFF9FAFB);
 
   @override
   void initState() {
@@ -50,10 +50,13 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
       if (userId != null) {
         _futureLifts = _api.fetchPendingBagLifts(userId: userId);
       } else {
-        _futureLifts = Future.value([]); 
+        _futureLifts = Future.value([]);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Error: Invalid User ID configuration"), backgroundColor: _dangerRed)
+            const SnackBar(
+              content: Text("Error: Invalid User ID configuration"),
+              backgroundColor: _dangerRed,
+            ),
           );
         }
       }
@@ -68,8 +71,14 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
       hintText: hint,
       hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide.none,
+      ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: _cardNavy, width: 1),
@@ -82,10 +91,18 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     return RichText(
       text: TextSpan(
         text: text,
-        style: const TextStyle(fontSize: 12, color: _textDark, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+          fontSize: 12,
+          color: _textDark,
+          fontWeight: FontWeight.w600,
+        ),
         children: [
-          if (isMandatory) const TextSpan(text: " *", style: TextStyle(color: _dangerRed))
-        ]
+          if (isMandatory)
+            const TextSpan(
+              text: " *",
+              style: TextStyle(color: _dangerRed),
+            ),
+        ],
       ),
     );
   }
@@ -107,29 +124,36 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
 
   // --- 📸 Verification Dialog ---
   void _showVerificationDialog(MasonBagLift item) {
-    final bagCountController = TextEditingController(text: item.bagCount.toString());
-    
+    final bagCountController = TextEditingController(
+      text: item.bagCount.toString(),
+    );
+
     // Controllers for Manual Entry Fields
     final personNameController = TextEditingController();
     final personPhoneController = TextEditingController();
     final memoController = TextEditingController();
-    
+
     TechnicalSite? selectedSite;
     Dealer? selectedDealer;
-    
+
     File? _siteImageFile;
     String? _uploadedSiteImageUrl;
     bool _isUploadingImage = false;
+
+    // We attempt to parse the string ID to an int here.
+    final int? validApproverId = int.tryParse(widget.employee.id);
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) {
-          
           Future<void> _pickAndUploadImage() async {
             try {
-              final XFile? picked = await _picker.pickImage(source: ImageSource.camera, imageQuality: 60);
+              final XFile? picked = await _picker.pickImage(
+                source: ImageSource.camera,
+                imageQuality: 60,
+              );
               if (picked == null) return;
 
               setStateDialog(() {
@@ -138,7 +162,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
               });
 
               final url = await _api.uploadImageToR2(_siteImageFile!);
-              
+
               setStateDialog(() {
                 _uploadedSiteImageUrl = url;
                 _isUploadingImage = false;
@@ -151,8 +175,13 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
 
           return AlertDialog(
             backgroundColor: _surfaceWhite,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text("Review & Verify", style: TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text(
+              "Review & Verify",
+              style: TextStyle(fontWeight: FontWeight.bold, color: _textDark),
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -180,11 +209,18 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                       }
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 16,
+                      ),
                       decoration: BoxDecoration(
                         color: _inputFill,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: selectedDealer == null ? Colors.transparent : _cardNavy.withOpacity(0.5)),
+                        border: Border.all(
+                          color: selectedDealer == null
+                              ? Colors.transparent
+                              : _cardNavy.withOpacity(0.5),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -192,8 +228,12 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                             child: Text(
                               selectedDealer?.name ?? "Tap to Search Dealer...",
                               style: TextStyle(
-                                color: selectedDealer != null ? _textDark : Colors.grey,
-                                fontWeight: selectedDealer != null ? FontWeight.w600 : FontWeight.normal,
+                                color: selectedDealer != null
+                                    ? _textDark
+                                    : Colors.grey,
+                                fontWeight: selectedDealer != null
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -221,11 +261,18 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                       }
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 16,
+                      ),
                       decoration: BoxDecoration(
                         color: _inputFill,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: selectedSite == null ? Colors.transparent : _cardNavy.withOpacity(0.5)),
+                        border: Border.all(
+                          color: selectedSite == null
+                              ? Colors.transparent
+                              : _cardNavy.withOpacity(0.5),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -233,8 +280,12 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                             child: Text(
                               selectedSite?.siteName ?? "Tap to Search Site...",
                               style: TextStyle(
-                                color: selectedSite != null ? _textDark : Colors.grey,
-                                fontWeight: selectedSite != null ? FontWeight.w600 : FontWeight.normal,
+                                color: selectedSite != null
+                                    ? _textDark
+                                    : Colors.grey,
+                                fontWeight: selectedSite != null
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -253,19 +304,19 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                     children: [
                       Expanded(
                         child: TextField(
-                          controller: personNameController, 
-                          style: const TextStyle(color: _textDark), 
-                          decoration: _inputDecoration("Name")
-                        )
+                          controller: personNameController,
+                          style: const TextStyle(color: _textDark),
+                          decoration: _inputDecoration("Name"),
+                        ),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: TextField(
-                          controller: personPhoneController, 
-                          style: const TextStyle(color: _textDark), 
-                          decoration: _inputDecoration("Phone"), 
-                          keyboardType: TextInputType.phone
-                        )
+                          controller: personPhoneController,
+                          style: const TextStyle(color: _textDark),
+                          decoration: _inputDecoration("Phone"),
+                          keyboardType: TextInputType.phone,
+                        ),
                       ),
                     ],
                   ),
@@ -284,22 +335,39 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                         color: _inputFill,
                         border: Border.all(color: Colors.grey.shade300),
                         borderRadius: BorderRadius.circular(12),
-                        image: _siteImageFile != null 
-                          ? DecorationImage(image: FileImage(_siteImageFile!), fit: BoxFit.cover)
-                          : null
-                      ),
-                      child: _isUploadingImage 
-                        ? const Center(child: CircularProgressIndicator(color: _cardNavy))
-                        : _siteImageFile == null 
-                            ? Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: const [
-                                  Icon(Icons.camera_alt_rounded, color: _textGrey, size: 32),
-                                  SizedBox(height: 8),
-                                  Text("Tap to Take Photo", style: TextStyle(color: _textGrey, fontSize: 12))
-                                ],
+                        image: _siteImageFile != null
+                            ? DecorationImage(
+                                image: FileImage(_siteImageFile!),
+                                fit: BoxFit.cover,
                               )
                             : null,
+                      ),
+                      child: _isUploadingImage
+                          ? const Center(
+                              child: CircularProgressIndicator(
+                                color: _cardNavy,
+                              ),
+                            )
+                          : _siteImageFile == null
+                          ? Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: const [
+                                Icon(
+                                  Icons.camera_alt_rounded,
+                                  color: _textGrey,
+                                  size: 32,
+                                ),
+                                SizedBox(height: 8),
+                                Text(
+                                  "Tap to Take Photo",
+                                  style: TextStyle(
+                                    color: _textGrey,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            )
+                          : null,
                     ),
                   ),
                   if (_uploadedSiteImageUrl != null)
@@ -307,9 +375,20 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                       padding: const EdgeInsets.only(top: 6.0),
                       child: Row(
                         children: const [
-                          Icon(Icons.check_circle, size: 14, color: _accentGreen),
+                          Icon(
+                            Icons.check_circle,
+                            size: 14,
+                            color: _accentGreen,
+                          ),
                           SizedBox(width: 4),
-                          Text("Photo Uploaded", style: TextStyle(fontSize: 11, color: _accentGreen, fontWeight: FontWeight.bold)),
+                          Text(
+                            "Photo Uploaded",
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _accentGreen,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -330,77 +409,128 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text("CANCEL", style: TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  "CANCEL",
+                  style: TextStyle(
+                    color: _textGrey,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
               TextButton(
                 onPressed: () {
-                  Navigator.pop(context);
-                  _updateStatus(
-                    item.id, 
-                    'rejected', 
-                    memo: memoController.text,
-                    approvedBy: widget.employee.id, // Track rejection too
-                  );
-                },
-                child: const Text("REJECT", style: TextStyle(color: _dangerRed, fontWeight: FontWeight.bold)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _accentGreen, 
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
-                ),
-                onPressed: _isUploadingImage ? null : () {
-                  // VALIDATION
-                  if (selectedSite == null || selectedDealer == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text("Error: Site and Dealer are mandatory."),
-                      backgroundColor: Colors.red,
-                    ));
+                  // 1. Validate ID before rejecting
+                  if (validApproverId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          "Error: Invalid User ID ('${widget.employee.id}'). Cannot reject.",
+                        ),
+                        backgroundColor: _dangerRed,
+                      ),
+                    );
                     return;
                   }
 
                   Navigator.pop(context);
-                  
-                  // CALL API WITH ALL NEW FIELDS
+
                   _updateStatus(
-                    item.id, 
-                    'approved', 
-                    bagCount: int.tryParse(bagCountController.text),
-                    siteId: selectedSite?.id,
-                    dealerId: selectedDealer?.id,
-                    keyPersonName: personNameController.text,
-                    keyPersonPhone: personPhoneController.text,
+                    item.id,
+                    'rejected',
                     memo: memoController.text,
-                    verificationSiteImageUrl: _uploadedSiteImageUrl,
-                    approvedBy: widget.employee.id, // IMPORTANT: Send TSO ID
+                    approvedBy: validApproverId,
                   );
                 },
-                child: const Text("VERIFY & APPROVE", style: TextStyle(fontWeight: FontWeight.bold)),
-              )
+                child: const Text(
+                  "REJECT",
+                  style: TextStyle(
+                    color: _dangerRed,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accentGreen,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                onPressed: _isUploadingImage
+                    ? null
+                    : () {
+                        // VALIDATION
+                        if (selectedSite == null || selectedDealer == null) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                "Error: Site and Dealer are mandatory.",
+                              ),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                          return;
+                        }
+
+                        if (validApproverId == null) {
+                          // STOP HERE if ID is invalid
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                "Error: Your User ID ('${widget.employee.id}') is not a valid number. Cannot approve.",
+                              ),
+                              backgroundColor: _dangerRed,
+                              duration: const Duration(seconds: 4),
+                            ),
+                          );
+                          return;
+                        }
+
+                        Navigator.pop(context);
+
+                        // CALL API WITH ALL NEW FIELDS
+                        _updateStatus(
+                          item.id,
+                          'approved',
+                          bagCount: int.tryParse(bagCountController.text),
+                          siteId: selectedSite?.id,
+                          dealerId: selectedDealer?.id,
+                          keyPersonName: personNameController.text,
+                          keyPersonPhone: personPhoneController.text,
+                          memo: memoController.text,
+                          verificationSiteImageUrl: _uploadedSiteImageUrl,
+                          approvedBy: validApproverId,
+                        );
+                      },
+                child: const Text(
+                  "VERIFY & APPROVE",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
             ],
           );
-        }
+        },
       ),
     );
   }
 
   Future<void> _updateStatus(
-    String id, 
+    String id,
     String status, {
-    int? bagCount, 
+    int? bagCount,
     String? siteId,
     String? dealerId,
-    String? keyPersonName, 
+    String? keyPersonName,
     String? keyPersonPhone,
     String? memo,
     String? verificationSiteImageUrl,
-    required String approvedBy, // Made required
+    required int approvedBy, // Made required
   }) async {
     setState(() => _isProcessing = true);
     try {
       await _api.updateBagLiftStatus(
-        id, 
+        id,
         status,
         bagCount: bagCount,
         siteId: siteId,
@@ -412,7 +542,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
         approvedBy: approvedBy,
         approvedAt: DateTime.now().toIso8601String(), // Send Current Time
       );
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -421,7 +551,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-        _loadData(); 
+        _loadData();
       }
     } catch (e) {
       if (mounted) {
@@ -443,25 +573,44 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: _textGrey,
+            size: 20,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           "Pending Bag Lifts",
-          style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5),
+          style: TextStyle(
+            color: _textDark,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            letterSpacing: 0.5,
+          ),
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.refresh, color: _textDark), onPressed: _loadData)
+          IconButton(
+            icon: const Icon(Icons.refresh, color: _textDark),
+            onPressed: _loadData,
+          ),
         ],
       ),
       body: FutureBuilder<List<MasonBagLift>>(
         future: _futureLifts,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: _cardNavy));
+            return const Center(
+              child: CircularProgressIndicator(color: _cardNavy),
+            );
           }
           if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: _dangerRed)));
+            return Center(
+              child: Text(
+                "Error: ${snapshot.error}",
+                style: const TextStyle(color: _dangerRed),
+              ),
+            );
           }
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return Center(
@@ -471,16 +620,36 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white, 
+                      color: Colors.white,
                       shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))]
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          blurRadius: 10,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
                     ),
-                    child: const Icon(Icons.shopping_bag_outlined, size: 40, color: _textGrey),
+                    child: const Icon(
+                      Icons.shopping_bag_outlined,
+                      size: 40,
+                      color: _textGrey,
+                    ),
                   ),
                   const SizedBox(height: 16),
-                  const Text("No pending bag lifts", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Text(
+                    "No pending bag lifts",
+                    style: TextStyle(
+                      color: _textDark,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  const Text("You're all caught up!", style: TextStyle(color: _textGrey)),
+                  const Text(
+                    "You're all caught up!",
+                    style: TextStyle(color: _textGrey),
+                  ),
                 ],
               ),
             );
@@ -501,17 +670,17 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
 
   Widget _buildBagLiftCard(MasonBagLift item) {
     final dateStr = item.createdAt.toLocal().toString().split('.')[0];
-    
+
     return Container(
       decoration: BoxDecoration(
         color: _surfaceWhite,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05), 
-            blurRadius: 15, 
-            offset: const Offset(0, 5)
-          )
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
         ],
       ),
       child: Column(
@@ -529,16 +698,39 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(item.masonName ?? "Unknown Mason", style: const TextStyle(fontWeight: FontWeight.bold, color: _textDark, fontSize: 16)),
+                      Text(
+                        item.masonName ?? "Unknown Mason",
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: _textDark,
+                          fontSize: 16,
+                        ),
+                      ),
                       const SizedBox(height: 4),
-                      Text(dateStr, style: const TextStyle(color: _textGrey, fontSize: 12)),
+                      Text(
+                        dateStr,
+                        style: const TextStyle(color: _textGrey, fontSize: 12),
+                      ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(20)),
-                  child: Text("${item.bagCount} Bags", style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _infoBlue)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    "${item.bagCount} Bags",
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: _infoBlue,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -555,24 +747,37 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: Colors.grey[100],
-                  image: DecorationImage(image: NetworkImage(item.imageUrl!), fit: BoxFit.cover),
+                  image: DecorationImage(
+                    image: NetworkImage(item.imageUrl!),
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
             ),
-            
+
           Padding(
             padding: const EdgeInsets.all(16),
             child: SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.edit_note, color: Colors.white),
-                label: const Text("REVIEW & VERIFY", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                label: const Text(
+                  "REVIEW & VERIFY",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _cardNavy,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-                onPressed: _isProcessing ? null : () => _showVerificationDialog(item),
+                onPressed: _isProcessing
+                    ? null
+                    : () => _showVerificationDialog(item),
               ),
             ),
           ),
@@ -593,7 +798,10 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
               alignment: Alignment.topRight,
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
                 child: const CloseButton(),
               ),
             ),
@@ -613,7 +821,8 @@ class _ServerSiteSearchDialog extends StatefulWidget {
   const _ServerSiteSearchDialog({required this.api});
 
   @override
-  State<_ServerSiteSearchDialog> createState() => _ServerSiteSearchDialogState();
+  State<_ServerSiteSearchDialog> createState() =>
+      _ServerSiteSearchDialogState();
 }
 
 class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
@@ -647,7 +856,10 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
     setState(() => _isLoading = true);
     _lastQuery = query;
     try {
-      final results = await widget.api.fetchTechnicalSites(search: query, limit: 20);
+      final results = await widget.api.fetchTechnicalSites(
+        search: query,
+        limit: 20,
+      );
       if (mounted) {
         setState(() {
           _sites = results;
@@ -664,7 +876,10 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
     return AlertDialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text("Select Site", style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold)),
+      title: const Text(
+        "Select Site",
+        style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold),
+      ),
       content: SizedBox(
         width: double.maxFinite,
         height: 400,
@@ -679,36 +894,63 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
                 prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
                 filled: true,
                 fillColor: Color(0xFFF9FAFB),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
               ),
               onChanged: _onSearchChanged,
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: _isLoading 
-                ? const Center(child: CircularProgressIndicator())
-                : _sites.isEmpty
-                    ? const Center(child: Text("No sites found", style: TextStyle(color: Color(0xFF6B7280))))
-                    : ListView.separated(
-                        itemCount: _sites.length,
-                        separatorBuilder: (ctx, i) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                        itemBuilder: (context, index) {
-                          final site = _sites[index];
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(site.siteName, style: const TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.w600)),
-                            subtitle: Text(site.address, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
-                            onTap: () => Navigator.pop(context, site),
-                          );
-                        },
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _sites.isEmpty
+                  ? const Center(
+                      child: Text(
+                        "No sites found",
+                        style: TextStyle(color: Color(0xFF6B7280)),
                       ),
+                    )
+                  : ListView.separated(
+                      itemCount: _sites.length,
+                      separatorBuilder: (ctx, i) =>
+                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      itemBuilder: (context, index) {
+                        final site = _sites[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            site.siteName,
+                            style: const TextStyle(
+                              color: Color(0xFF111827),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            site.address,
+                            style: const TextStyle(
+                              color: Color(0xFF6B7280),
+                              fontSize: 12,
+                            ),
+                          ),
+                          onTap: () => Navigator.pop(context, site),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context, null), child: const Text("CANCEL"))
+        TextButton(
+          onPressed: () => Navigator.pop(context, null),
+          child: const Text("CANCEL"),
+        ),
       ],
     );
   }
@@ -719,7 +961,8 @@ class _ServerDealerSearchDialog extends StatefulWidget {
   const _ServerDealerSearchDialog({required this.api});
 
   @override
-  State<_ServerDealerSearchDialog> createState() => _ServerDealerSearchDialogState();
+  State<_ServerDealerSearchDialog> createState() =>
+      _ServerDealerSearchDialogState();
 }
 
 class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
@@ -770,7 +1013,10 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
     return AlertDialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text("Select Dealer", style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold)),
+      title: const Text(
+        "Select Dealer",
+        style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold),
+      ),
       content: SizedBox(
         width: double.maxFinite,
         height: 400,
@@ -785,36 +1031,63 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
                 prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
                 filled: true,
                 fillColor: Color(0xFFF9FAFB),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
               ),
               onChanged: _onSearchChanged,
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: _isLoading 
-                ? const Center(child: CircularProgressIndicator())
-                : _dealers.isEmpty
-                    ? const Center(child: Text("No dealers found", style: TextStyle(color: Color(0xFF6B7280))))
-                    : ListView.separated(
-                        itemCount: _dealers.length,
-                        separatorBuilder: (ctx, i) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                        itemBuilder: (context, index) {
-                          final dealer = _dealers[index];
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(dealer.name, style: const TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.w600)),
-                            subtitle: Text(dealer.area, style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12)),
-                            onTap: () => Navigator.pop(context, dealer),
-                          );
-                        },
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _dealers.isEmpty
+                  ? const Center(
+                      child: Text(
+                        "No dealers found",
+                        style: TextStyle(color: Color(0xFF6B7280)),
                       ),
+                    )
+                  : ListView.separated(
+                      itemCount: _dealers.length,
+                      separatorBuilder: (ctx, i) =>
+                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      itemBuilder: (context, index) {
+                        final dealer = _dealers[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            dealer.name,
+                            style: const TextStyle(
+                              color: Color(0xFF111827),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            dealer.area,
+                            style: const TextStyle(
+                              color: Color(0xFF6B7280),
+                              fontSize: 12,
+                            ),
+                          ),
+                          onTap: () => Navigator.pop(context, dealer),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context, null), child: const Text("CANCEL"))
+        TextButton(
+          onPressed: () => Navigator.pop(context, null),
+          child: const Text("CANCEL"),
+        ),
       ],
     );
   }
