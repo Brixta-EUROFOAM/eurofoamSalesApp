@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/dealer_model.dart';
 import '../models/pjp_model.dart';
@@ -779,8 +780,27 @@ class ApiService {
     ); // Adjust endpoint if different
   }
 
-  // Fetch pending lifts (TSO view)
-  // inside ApiService class
+  // Fetch bag lifts (TSO view)
+
+  // 1. Fetch ALL approved lifts for TSO (For the Total Count on Card)
+  Future<List<MasonBagLift>> fetchAllApprovedBagLiftsForTso(
+    String userId,
+  ) async {
+    final queryString = 'userId=$userId&status=approved&limit=1000';
+    //final queryString = 'userId=$userId';
+    return _get('bag-lifts?$queryString', (json) {
+      return (json as List).map((e) => MasonBagLift.fromJson(e)).toList();
+    });
+  }
+
+  // 2. Fetch History for Specific Mason (For the Popup)
+  Future<List<MasonBagLift>> fetchMasonBagLiftHistory(String masonId) async {
+    return _get('bag-lifts?masonId=$masonId&limit=100', (json) {
+      debugPrint('Mapper json type: ${json.runtimeType}');
+      //debugPrint('Mapper json value: $json');
+      return (json as List).map((e) => MasonBagLift.fromJson(e)).toList();
+    });
+  }
 
   Future<List<MasonBagLift>> fetchPendingBagLifts({int? userId}) async {
     // 1. Build Query Parameters safely
@@ -834,15 +854,19 @@ class ApiService {
         'verificationSiteImageUrl': verificationSiteImageUrl,
       if (verificationProofImageUrl != null)
         'verificationProofImageUrl': verificationProofImageUrl,
-      
+
       if (approvedBy != null) 'approvedBy': approvedBy,
     };
     await _patch('bag-lifts/$id', body, (json) => null);
   }
 
-  Future<List<MasonRedemption>> fetchPendingRedemptions({int? userId}) async {
+  Future<List<MasonRedemption>> fetchPendingRedemptions({
+    int? userId,
+    String status = 'placed',
+  }) async {
     final queryParams = <String, String>{
-      'status': 'placed', // 'placed' is usually the pending status for rewards
+      'status':
+          status, // 'placed' is usually the pending status for rewards then 'approved' for approved but not delivered rewards
     };
 
     // Filter by TSO if provided

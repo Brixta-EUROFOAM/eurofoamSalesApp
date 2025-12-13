@@ -15,6 +15,7 @@ import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_bagLift.da
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_kyc.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_rewards.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/add_site_form.dart'; 
+import 'package:salesmanapp/technicalSide/screens/all_masons_screen.dart';
 
 class TechnicalDashboardScreen extends StatefulWidget {
   final Employee employee;
@@ -217,7 +218,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     Navigator.push(context, MaterialPageRoute(builder: (context) => page));
   }
 
-  // ... [Action Sheet Methods remain exactly the same as your code] ...
   void _showMasonActions(BuildContext context) {
     // (Existing Code Hidden for Brevity)
     showModalBottomSheet(
@@ -262,7 +262,18 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
               iconColor: Colors.purple,
               onTap: () {
                 Navigator.pop(context);
-                _openFullScreen(const ApproveMasonRewardsScreen());
+                _openFullScreen(ApproveMasonRewardsScreen(employee: widget.employee));
+              },
+            ),
+            _buildActionSheetItem(
+              icon: Icons.groups_rounded,
+              title: "My Masons List",
+              subtitle: "View all linked masons & history",
+              iconBg: const Color(0xFFF0FDF4), // Light Green bg
+              iconColor: Colors.teal,
+              onTap: () {
+                Navigator.pop(context);
+                _openFullScreen(AllMasonsScreen(employee: widget.employee));
               },
             ),
           ],
@@ -505,11 +516,11 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
             // Mason Operations
             _buildFintechCard(
               title: "Mason Management",
-              subtitle: "Rewards, KYC, Bag Lifts",
+              subtitle: "Masons, KYC, Bag Lifts",
               icon: Icons.handyman_outlined,
               iconColor: Colors.orange,
               iconBg: const Color(0xFFFFF7ED),
-              actionText: "3 Actions",
+              actionText: "4 Actions",
               onTap: () => _showMasonActions(context),
             ),
 
@@ -578,7 +589,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
     );
   }
 
-  // ... [Other Widgets remain unchanged] ...
   Widget _buildFintechCard({
     required String title,
     required String subtitle,
