@@ -26,9 +26,8 @@ class _AddSiteFormState extends State<AddSiteForm> {
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
   
-  // --- ✅ NEW: Controllers for Schema Fields ---
   final _areaController = TextEditingController();
-  final _regionController = TextEditingController();
+  String? _selectedRegion;
   
   String? _selectedStage;
   String? _selectedType;
@@ -43,6 +42,10 @@ class _AddSiteFormState extends State<AddSiteForm> {
 
   final List<String> _stages = ['Foundation', 'Plinth', 'Lintel', 'Roofing', 'Finishing'];
   final List<String> _types = ['Residential', 'Commercial', 'Government', 'Industrial'];
+  final List<String> _regionOptions = [
+    "All Region", "Kamrup", "Upper Assam", "Lower Assam", "Central Assam", 
+    "Barak Valley", "North Bank", "Meghalaya", "Mizoram", "Nagaland", "Tripura", 
+  ];
 
   // --- 🎨 FINTECH THEME PALETTE ---
   static const Color _bgLight       = Color(0xFFF3F4F6); 
@@ -56,9 +59,12 @@ class _AddSiteFormState extends State<AddSiteForm> {
   @override
   void initState() {
     super.initState();
-    // Optional: Pre-fill with employee defaults if you want
     _areaController.text = widget.employee.area ?? '';
-    _regionController.text = widget.employee.region ?? '';
+    
+    // Auto-select region if it matches one of the options
+    if (widget.employee.region != null && _regionOptions.contains(widget.employee.region)) {
+      _selectedRegion = widget.employee.region;
+    }
   }
 
   @override
@@ -68,7 +74,6 @@ class _AddSiteFormState extends State<AddSiteForm> {
     _phoneController.dispose();
     _addressController.dispose();
     _areaController.dispose();
-    _regionController.dispose();
     super.dispose();
   }
 
@@ -108,9 +113,7 @@ class _AddSiteFormState extends State<AddSiteForm> {
           if (addressDetails['area']?.isNotEmpty == true) {
             _areaController.text = addressDetails['area']!;
           }
-          if (addressDetails['region']?.isNotEmpty == true) {
-            _regionController.text = addressDetails['region']!;
-          }
+          
         });
       }
     } catch (e) {
@@ -171,7 +174,7 @@ class _AddSiteFormState extends State<AddSiteForm> {
         // --- ✅ Mapped Fields ---
         address: _addressController.text,
         area: _areaController.text,     // From Controller
-        region: _regionController.text, // From Controller
+        region: _selectedRegion!,
         
         latitude: _currentPosition!.latitude,
         longitude: _currentPosition!.longitude,
@@ -355,11 +358,11 @@ class _AddSiteFormState extends State<AddSiteForm> {
                     Row(
                       children: [
                         Expanded(
-                          child: _buildFintechInput(
-                            controller: _regionController,
+                          child: _buildFintechDropdown(
+                            value: _selectedRegion,
                             label: "Region",
-                            hint: "State/Region",
-                            icon: Icons.public,
+                            items: _regionOptions,
+                            onChanged: (v) => setState(() => _selectedRegion = v),
                           ),
                         ),
                         const SizedBox(width: 16),
