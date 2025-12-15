@@ -125,7 +125,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     'Plaster Work',
   ];
   final List<String> _customerTypeOptions = [
-    'IHB',
+    'IHB/Site',
     'Engineer/Architect',
     'Contractor/Head Mason',
     'Channel Partner(Dealer/Sub-Dealer)',
@@ -483,7 +483,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       return;
     }
 
-    if (_selectedCustomerType == 'IHB' && _selectedSite == null) {
+    if (_selectedCustomerType == 'IHB/Site' && _selectedSite == null) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Please select a Site.')));
@@ -505,7 +505,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       final remaining = minMinutes - difference.inMinutes;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Minimum 10 mins required. Wait $remaining minute(s)."),
+          content: Text("Minimum $minMinutes mins required. Wait $remaining minute(s)."),
           backgroundColor: Colors.orange,
           duration: const Duration(seconds: 4),
         ),
@@ -513,8 +513,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       return;
     }
 
-    // --- Geofence (Only for Site visits - IHB) ---
-    if (_selectedCustomerType == 'IHB' &&
+    // --- Geofence (for IHB/Site visits) ---
+    if (_selectedCustomerType == 'IHB/Site' &&
         _selectedSite != null &&
         _selectedSite!.latitude != 0.0 &&
         _selectedSite!.longitude != 0.0) {
@@ -524,11 +524,38 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         _selectedSite!.latitude,
         _selectedSite!.longitude,
       );
+      double distanceInKm = distanceInMeters / 1000;
       if (distanceInMeters > 50) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              "Geofence Error: You are ${distanceInMeters.toStringAsFixed(0)}m away.",
+              "Geofence Error: You are ${distanceInKm.toStringAsFixed(2)}km away.",
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
+    // --- Geofence (For Dealer) ---
+    if (_selectedCustomerType != null &&
+        _selectedCustomerType!.contains("Dealer") &&
+        _selectedDealer != null &&
+        (_selectedDealer!.latitude != 0.0 || _selectedDealer!.longitude != 0.0)) {
+      
+      double distanceInMeters = Geolocator.distanceBetween(
+        _capturedLocation!.latitude,
+        _capturedLocation!.longitude,
+        _selectedDealer!.latitude ?? 0.0,
+        _selectedDealer!.longitude ?? 0.0,
+      );
+      double distanceInKm = distanceInMeters / 1000;
+      if (distanceInMeters > 50) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Geofence Error (Dealer): You are ${distanceInKm.toStringAsFixed(2)}km away.",
             ),
             backgroundColor: Colors.red,
           ),
@@ -867,7 +894,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                     const SizedBox(height: 24),
 
                     // --- FORM SWITCHER ---
-                    if (_selectedCustomerType == 'IHB')
+                    if (_selectedCustomerType == 'IHB/Site')
                       _buildIHBForm()
                     else if (_selectedCustomerType != null &&
                         _selectedCustomerType!.contains("Dealer"))

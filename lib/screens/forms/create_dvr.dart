@@ -207,13 +207,12 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     final now = DateTime.now();
     final difference = now.difference(_checkInTime!);
     const minMinutes = 10;
-    //const minSeconds = 25;
 
     if (difference.inMinutes < minMinutes) {
       final remaining = minMinutes - difference.inMinutes;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Minimum 10 mins required at site. Please wait $remaining more minute(s)."),
+          content: Text("Minimum $minMinutes mins required at site. Please wait $remaining more minute(s)."),
           backgroundColor: Colors.orange,
           duration: const Duration(seconds: 4),
         )
