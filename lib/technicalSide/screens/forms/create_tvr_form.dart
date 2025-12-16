@@ -115,6 +115,15 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   File? _sitePhotoFile;
 
   // --- DROPDOWN DATA LISTS ---
+  // form options 
+  final List<String> _customerTypeOptions = [
+    'IHB/Site',
+    'Engineer/Architect',
+    'Contractor/Head Mason',
+    'Channel Partner(Dealer/Sub-Dealer)',
+    'Competitor Channel Partner (Dealer/Sub-Dealer)',
+  ];
+  //--------------
   final List<String> _stageOptions = [
     'Foundation',
     'Plinth Level',
@@ -123,13 +132,6 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     'Lintel Work',
     'Slab Work',
     'Plaster Work',
-  ];
-  final List<String> _customerTypeOptions = [
-    'IHB/Site',
-    'Engineer/Architect',
-    'Contractor/Head Mason',
-    'Channel Partner(Dealer/Sub-Dealer)',
-    'Competitor Channel Partner (Dealer/Sub-Dealer)',
   ];
   final List<String> _brandOptions = [
     'Best',
@@ -151,10 +153,9 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     'Good Construction Practices',
   ];
   final List<String> _techActivityOptions = [
-    'Mason Meet',
-    'Contractor Meet',
-    'Site Meet',
+    'Site Visit',
     'IHB Meet',
+    'Contractor/Mason Meet',
     'Consumer Awareness Camp',
   ];
   final List<String> _influencerTypeOptions = [
@@ -1666,29 +1667,29 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           onChanged: (v) => setState(() => _isSchemeEnrolled = v),
         ),
 
-        _buildSectionHeader("TECHNICAL (Optional)"),
-        _buildFintechSwitch(
-          label: "Tech Service Given?",
-          value: _isTechService,
-          onChanged: (v) => setState(() => _isTechService = v),
-        ),
-        if (_isTechService) ...[
-          const SizedBox(height: 12),
-          _buildFintechDropdown(
-            label: 'Service Type',
-            value: _selectedServiceType,
-            items: _serviceTypeOptions,
-            onChanged: (v) => setState(() => _selectedServiceType = v),
-            isRequired: true,
-          ),
-          const SizedBox(height: 16),
-          _buildFintechInput(
-            controller: _serviceDescController,
-            label: 'Description',
-            maxLines: 2,
-            isRequired: true,
-          ),
-        ],
+        // _buildSectionHeader("TECHNICAL (Optional)"),
+        // _buildFintechSwitch(
+        //   label: "Tech Service Given?",
+        //   value: _isTechService,
+        //   onChanged: (v) => setState(() => _isTechService = v),
+        // ),
+        // if (_isTechService) ...[
+        //   const SizedBox(height: 12),
+        //   _buildFintechDropdown(
+        //     label: 'Service Type',
+        //     value: _selectedServiceType,
+        //     items: _serviceTypeOptions,
+        //     onChanged: (v) => setState(() => _selectedServiceType = v),
+        //     isRequired: true,
+        //   ),
+        //   const SizedBox(height: 16),
+        //   _buildFintechInput(
+        //     controller: _serviceDescController,
+        //     label: 'Description',
+        //     maxLines: 2,
+        //     isRequired: true,
+        //   ),
+        // ],
 
         _buildSectionHeader("REMARKS"),
         _buildFintechInput(
