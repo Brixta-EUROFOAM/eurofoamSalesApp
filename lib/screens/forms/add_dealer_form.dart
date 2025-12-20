@@ -16,6 +16,19 @@ class AddDealerForm extends StatefulWidget {
 }
 
 class _AddDealerFormState extends State<AddDealerForm> {
+  final List<String> _zones = [
+    "All Zone",
+    "Kamrup",
+    "Upper Assam",
+    "Lower Assam",
+    "Central Assam",
+    "Barak Valley",
+    "North Bank",
+    "Meghalaya",
+    "Mizoram",
+    "Nagaland",
+    "Tripura",
+  ];
   // --- Form and State Management ---
   final _formKey = GlobalKey<FormState>();
   final _apiService = ApiService();
@@ -28,9 +41,10 @@ class _AddDealerFormState extends State<AddDealerForm> {
   // Data for Dropdowns and Switches
   String? _selectedType;
   bool _isSubDealer = false;
-  
+  String? _selectedRegion;
+
   // Parent Dealer Selection
-  String? _selectedParentDealerId; 
+  String? _selectedParentDealerId;
   final _parentDealerDisplayController = TextEditingController();
 
   // --- Controllers ---
@@ -47,13 +61,13 @@ class _AddDealerFormState extends State<AddDealerForm> {
   final _remarksController = TextEditingController();
 
   // --- 🎨 FINTECH THEME PALETTE ---
-  static const Color _bgLight       = Color(0xFFF3F4F6); 
-  static const Color _surfaceWhite  = Colors.white;
-  static const Color _cardNavy      = Color(0xFF0F172A); 
-  static const Color _textDark      = Color(0xFF111827); 
-  static const Color _textGrey      = Color(0xFF6B7280); 
-  static const Color _inputFill     = Color(0xFFF9FAFB); 
-  static const Color _accentGreen   = Color(0xFF10B981); 
+  static const Color _bgLight = Color(0xFFF3F4F6);
+  static const Color _surfaceWhite = Colors.white;
+  static const Color _cardNavy = Color(0xFF0F172A);
+  static const Color _textDark = Color(0xFF111827);
+  static const Color _textGrey = Color(0xFF6B7280);
+  static const Color _inputFill = Color(0xFFF9FAFB);
+  static const Color _accentGreen = Color(0xFF10B981);
 
   @override
   void dispose() {
@@ -82,7 +96,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
       if (status == 'DENIED' || status == 'NOT_DETERMINED') {
         status = await Radar.requestPermissions(true);
       }
-      
+
       // 2. Geolocator Service Check
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
@@ -105,16 +119,23 @@ class _AddDealerFormState extends State<AddDealerForm> {
         setState(() {
           _currentPosition = bestPosition;
           _addressController.text = addressDetails['address'] ?? '';
-          _regionController.text = addressDetails['region'] ?? '';
           _areaController.text = addressDetails['area'] ?? '';
           _pinCodeController.text = addressDetails['pinCode'] ?? '';
+          // Auto-match logic: If the fetched region matches one of our options, select it
+          //final fetchedRegion = addressDetails['region'] ?? '';
+          // if (_zones.contains(fetchedRegion)) {
+          //   _selectedRegion = fetchedRegion;
+          // } else {
+          //   // Optional: Reset if no match found to force manual selection
+          //   _selectedRegion = null;
+          // }
         });
       }
     } catch (e) {
       if (mounted) {
         scaffoldMessenger.showSnackBar(
           SnackBar(
-            content: Text('Location Error: $e'), 
+            content: Text('Location Error: $e'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 4),
           ),
@@ -124,17 +145,27 @@ class _AddDealerFormState extends State<AddDealerForm> {
       if (mounted) setState(() => _isFetchingLocation = false);
     }
   }
-  
+
   Future<void> _submitForm() async {
     if (_currentPosition == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please get location first.'), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please get location first.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
       return;
     }
-    
+
     if (!_formKey.currentState!.validate()) return;
 
     if (_isSubDealer && _selectedParentDealerId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select a parent dealer.'), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a parent dealer.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
       return;
     }
 
@@ -148,7 +179,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
         type: _selectedType!,
         parentDealerId: _isSubDealer ? _selectedParentDealerId : null,
         name: _nameController.text,
-        region: _regionController.text,
+        region: _selectedRegion!,
         area: _areaController.text,
         phoneNo: _phoneNoController.text,
         address: _addressController.text,
@@ -157,7 +188,11 @@ class _AddDealerFormState extends State<AddDealerForm> {
         longitude: _currentPosition!.longitude,
         totalPotential: _double(_totalPotentialController) ?? 0.0,
         bestPotential: _double(_bestPotentialController) ?? 0.0,
-        brandSelling: _brandSellingController.text.split(',').map((e) => e.trim()).where((s) => s.isNotEmpty).toList(),
+        brandSelling: _brandSellingController.text
+            .split(',')
+            .map((e) => e.trim())
+            .where((s) => s.isNotEmpty)
+            .toList(),
         feedbacks: _feedbacksController.text,
         remarks: _text(_remarksController),
         verificationStatus: 'PENDING',
@@ -168,18 +203,26 @@ class _AddDealerFormState extends State<AddDealerForm> {
 
       await _apiService.createDealer(newDealer, radius: radius);
 
-      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Dealer created successfully!'), backgroundColor: Colors.green));
+      scaffoldMessenger.showSnackBar(
+        const SnackBar(
+          content: Text('Dealer created successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
       navigator.pop();
     } catch (e) {
       if (mounted) {
-        scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red));
+        scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
-  String? _text(TextEditingController c) => c.text.trim().isEmpty ? null : c.text.trim();
+  String? _text(TextEditingController c) =>
+      c.text.trim().isEmpty ? null : c.text.trim();
   double? _double(TextEditingController c) => double.tryParse(c.text.trim());
 
   // --- UI Helpers ---
@@ -209,7 +252,14 @@ class _AddDealerFormState extends State<AddDealerForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 13)),
+        Text(
+          label,
+          style: const TextStyle(
+            color: _textDark,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
+        ),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -224,9 +274,18 @@ class _AddDealerFormState extends State<AddDealerForm> {
             hintText: hint,
             hintStyle: const TextStyle(color: _textGrey, fontSize: 14),
             prefixIcon: Icon(icon, color: _textGrey, size: 20),
-            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 14,
+              horizontal: 16,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: _cardNavy, width: 1.5),
@@ -251,22 +310,43 @@ class _AddDealerFormState extends State<AddDealerForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 13)),
+        Text(
+          label,
+          style: const TextStyle(
+            color: _textDark,
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+          ),
+        ),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: value,
           dropdownColor: _surfaceWhite,
-          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500, fontSize: 14),
+          style: const TextStyle(
+            color: _textDark,
+            fontWeight: FontWeight.w500,
+            fontSize: 14,
+          ),
           items: items,
           onChanged: onChanged,
-          validator: (val) => (validatorMsg != null && val == null) ? validatorMsg : null,
+          validator: (val) =>
+              (validatorMsg != null && val == null) ? validatorMsg : null,
           icon: const Icon(Icons.keyboard_arrow_down_rounded, color: _textGrey),
           decoration: InputDecoration(
             filled: true,
             fillColor: _inputFill,
-            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 14,
+              horizontal: 16,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: _cardNavy, width: 1.5),
@@ -290,10 +370,21 @@ class _AddDealerFormState extends State<AddDealerForm> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: _textGrey,
+            size: 20,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text("Add New Dealer", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16)),
+        title: const Text(
+          "Add New Dealer",
+          style: TextStyle(
+            color: _textDark,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -309,7 +400,13 @@ class _AddDealerFormState extends State<AddDealerForm> {
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
                     borderRadius: BorderRadius.circular(24),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
                   ),
                   child: Column(
                     children: [
@@ -320,25 +417,49 @@ class _AddDealerFormState extends State<AddDealerForm> {
                             children: [
                               Container(
                                 padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
-                                child: const Icon(Icons.location_on, color: Colors.blueAccent, size: 20),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.location_on,
+                                  color: Colors.blueAccent,
+                                  size: 20,
+                                ),
                               ),
                               const SizedBox(width: 12),
-                              const Text("Geo-Tagging", style: TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
+                              const Text(
+                                "Geo-Tagging",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: _textDark,
+                                ),
+                              ),
                             ],
                           ),
                           if (_isFetchingLocation)
-                            const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _cardNavy))
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: _cardNavy,
+                              ),
+                            )
                           else
                             ElevatedButton.icon(
                               onPressed: _fetchLocationAndAddress,
                               icon: const Icon(Icons.my_location, size: 16),
-                              label: Text(_currentPosition == null ? "Fetch" : "Update"),
+                              label: Text(
+                                _currentPosition == null ? "Fetch" : "Update",
+                              ),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _cardNavy,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
                               ),
                             ),
                         ],
@@ -356,11 +477,19 @@ class _AddDealerFormState extends State<AddDealerForm> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(Icons.check_circle, color: _accentGreen, size: 16),
+                              const Icon(
+                                Icons.check_circle,
+                                color: _accentGreen,
+                                size: 16,
+                              ),
                               const SizedBox(width: 8),
                               Text(
                                 "Captured: ${_currentPosition!.latitude.toStringAsFixed(4)}, ${_currentPosition!.longitude.toStringAsFixed(4)}",
-                                style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.bold, fontSize: 12),
+                                style: const TextStyle(
+                                  color: Color(0xFF15803D),
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
                               ),
                             ],
                           ),
@@ -376,10 +505,41 @@ class _AddDealerFormState extends State<AddDealerForm> {
                       ),
                       const SizedBox(height: 16),
                       Row(
+                        crossAxisAlignment: CrossAxisAlignment
+                            .start, // Align for validation errors
                         children: [
-                          Expanded(child: _buildFintechInput(controller: _regionController, label: "Region", hint: "Region", icon: Icons.public, readOnly: false)),
+                          // --- UPDATED REGION/ZONE DROPDOWN ---
+                          Expanded(
+                            child: _buildFintechDropdown(
+                              value: _selectedRegion,
+                              label: "Region/Zone",
+                              // Providing a specific validation message makes it mandatory
+                              validatorMsg: "Zone is required",
+                              items: _zones.map((zone) {
+                                return DropdownMenuItem(
+                                  value: zone,
+                                  child: Text(
+                                    zone,
+                                    style: const TextStyle(fontSize: 13),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                );
+                              }).toList(),
+                              onChanged: (val) {
+                                setState(() => _selectedRegion = val);
+                              },
+                            ),
+                          ),
                           const SizedBox(width: 16),
-                          Expanded(child: _buildFintechInput(controller: _areaController, label: "Area", hint: "Area", icon: Icons.share_location, readOnly: false)),
+                          Expanded(
+                            child: _buildFintechInput(
+                              controller: _areaController,
+                              label: "Area",
+                              hint: "Area",
+                              icon: Icons.share_location,
+                              readOnly: false,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -402,20 +562,39 @@ class _AddDealerFormState extends State<AddDealerForm> {
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
                     borderRadius: BorderRadius.circular(24),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildSectionHeader("Dealer Info"),
                       const SizedBox(height: 16),
-                      
+
                       // --- SUB DEALER TOGGLE ---
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(color: _bgLight, borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _bgLight,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         child: SwitchListTile(
-                          title: const Text('Is this a Sub-dealer?', style: TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 14)),
+                          title: const Text(
+                            'Is this a Sub-dealer?',
+                            style: TextStyle(
+                              color: _textDark,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
                           value: _isSubDealer,
                           onChanged: (bool value) {
                             setState(() {
@@ -430,20 +609,22 @@ class _AddDealerFormState extends State<AddDealerForm> {
                           contentPadding: EdgeInsets.zero,
                         ),
                       ),
-                      
+
                       if (_isSubDealer) ...[
                         const SizedBox(height: 16),
                         InkWell(
                           onTap: () async {
                             final Dealer? result = await showDialog(
                               context: context,
-                              builder: (context) => _ServerDealerSearchDialog(api: _apiService),
+                              builder: (context) =>
+                                  _ServerDealerSearchDialog(api: _apiService),
                             );
 
                             if (result != null) {
                               setState(() {
                                 _selectedParentDealerId = result.id;
-                                _parentDealerDisplayController.text = result.name;
+                                _parentDealerDisplayController.text =
+                                    result.name;
                               });
                             }
                           },
@@ -453,7 +634,9 @@ class _AddDealerFormState extends State<AddDealerForm> {
                               label: "Parent Dealer",
                               hint: "Tap to search...",
                               icon: Icons.search,
-                              validator: (v) => _selectedParentDealerId == null ? "Please select a parent dealer" : null,
+                              validator: (v) => _selectedParentDealerId == null
+                                  ? "Please select a parent dealer"
+                                  : null,
                             ),
                           ),
                         ),
@@ -466,14 +649,25 @@ class _AddDealerFormState extends State<AddDealerForm> {
                         hint: "e.g. A.K. Enterprises",
                         icon: Icons.store,
                       ),
-                      
+
                       const SizedBox(height: 16),
                       _buildFintechDropdown(
                         value: _selectedType,
                         label: "Dealer Type",
-                        items: ['Dealer Best', 'Dealer Non Best', 'Sub Dealer Best', 'Sub Dealer Non Best']
-                            .map((type) => DropdownMenuItem(value: type, child: Text(type)))
-                            .toList(),
+                        items:
+                            [
+                                  'Dealer Best',
+                                  'Dealer Non Best',
+                                  'Sub Dealer Best',
+                                  'Sub Dealer Non Best',
+                                ]
+                                .map(
+                                  (type) => DropdownMenuItem(
+                                    value: type,
+                                    child: Text(type),
+                                  ),
+                                )
+                                .toList(),
                         onChanged: (val) => setState(() => _selectedType = val),
                         validatorMsg: 'Please select a type',
                       ),
@@ -498,7 +692,13 @@ class _AddDealerFormState extends State<AddDealerForm> {
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
                     borderRadius: BorderRadius.circular(24),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -507,9 +707,25 @@ class _AddDealerFormState extends State<AddDealerForm> {
                       const SizedBox(height: 16),
                       Row(
                         children: [
-                          Expanded(child: _buildFintechInput(controller: _totalPotentialController, label: "Total Potential", hint: "0.0", icon: Icons.trending_up, keyboardType: TextInputType.number)),
+                          Expanded(
+                            child: _buildFintechInput(
+                              controller: _totalPotentialController,
+                              label: "Total Potential",
+                              hint: "0.0",
+                              icon: Icons.trending_up,
+                              keyboardType: TextInputType.number,
+                            ),
+                          ),
                           const SizedBox(width: 16),
-                          Expanded(child: _buildFintechInput(controller: _bestPotentialController, label: "Best Potential", hint: "0.0", icon: Icons.star_border, keyboardType: TextInputType.number)),
+                          Expanded(
+                            child: _buildFintechInput(
+                              controller: _bestPotentialController,
+                              label: "Best Potential",
+                              hint: "0.0",
+                              icon: Icons.star_border,
+                              keyboardType: TextInputType.number,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 16),
@@ -539,24 +755,42 @@ class _AddDealerFormState extends State<AddDealerForm> {
                 ),
 
                 const SizedBox(height: 32),
-                
+
                 // --- Submit Button ---
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _isSubmitting || _currentPosition == null ? null : _submitForm,
+                    onPressed: _isSubmitting || _currentPosition == null
+                        ? null
+                        : _submitForm,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _cardNavy,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 18),
                       elevation: 4,
                       shadowColor: _cardNavy.withOpacity(0.4),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                       disabledBackgroundColor: Colors.grey[300],
                     ),
                     child: _isSubmitting
-                        ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                        : const Text('SUBMIT DEALER', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.0)),
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text(
+                            'SUBMIT DEALER',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(height: 40),
@@ -578,7 +812,8 @@ class _ServerDealerSearchDialog extends StatefulWidget {
   const _ServerDealerSearchDialog({required this.api});
 
   @override
-  State<_ServerDealerSearchDialog> createState() => _ServerDealerSearchDialogState();
+  State<_ServerDealerSearchDialog> createState() =>
+      _ServerDealerSearchDialogState();
 }
 
 class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
@@ -595,7 +830,7 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   @override
   void initState() {
     super.initState();
-    _performSearch(""); 
+    _performSearch("");
   }
 
   @override
@@ -618,7 +853,9 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
     _lastQuery = query;
     try {
       final results = await widget.api.fetchDealers(search: query, limit: 20);
-      final parentsOnly = results.where((d) => d.parentDealerId == null).toList();
+      final parentsOnly = results
+          .where((d) => d.parentDealerId == null)
+          .toList();
 
       if (mounted) {
         setState(() {
@@ -636,7 +873,10 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
     return AlertDialog(
       backgroundColor: Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text("Select Parent Dealer", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold)),
+      title: const Text(
+        "Select Parent Dealer",
+        style: TextStyle(color: _textDark, fontWeight: FontWeight.bold),
+      ),
       content: SizedBox(
         width: double.maxFinite,
         height: 400,
@@ -651,36 +891,63 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
                 prefixIcon: const Icon(Icons.search, color: _textGrey),
                 filled: true,
                 fillColor: _inputFill,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
               ),
               onChanged: _onSearchChanged,
             ),
             const SizedBox(height: 12),
             Expanded(
-              child: _isLoading 
-                ? const Center(child: CircularProgressIndicator())
-                : _dealers.isEmpty
-                    ? const Center(child: Text("No parent dealers found", style: TextStyle(color: _textGrey)))
-                    : ListView.separated(
-                        itemCount: _dealers.length,
-                        separatorBuilder: (ctx, i) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                        itemBuilder: (context, index) {
-                          final dealer = _dealers[index];
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(dealer.name, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600)),
-                            subtitle: Text("${dealer.region}, ${dealer.area}", style: const TextStyle(color: _textGrey, fontSize: 12)),
-                            onTap: () => Navigator.pop(context, dealer),
-                          );
-                        },
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _dealers.isEmpty
+                  ? const Center(
+                      child: Text(
+                        "No parent dealers found",
+                        style: TextStyle(color: _textGrey),
                       ),
+                    )
+                  : ListView.separated(
+                      itemCount: _dealers.length,
+                      separatorBuilder: (ctx, i) =>
+                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      itemBuilder: (context, index) {
+                        final dealer = _dealers[index];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            dealer.name,
+                            style: const TextStyle(
+                              color: _textDark,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          subtitle: Text(
+                            "${dealer.region}, ${dealer.area}",
+                            style: const TextStyle(
+                              color: _textGrey,
+                              fontSize: 12,
+                            ),
+                          ),
+                          onTap: () => Navigator.pop(context, dealer),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context, null), child: const Text("CANCEL"))
+        TextButton(
+          onPressed: () => Navigator.pop(context, null),
+          child: const Text("CANCEL"),
+        ),
       ],
     );
   }
