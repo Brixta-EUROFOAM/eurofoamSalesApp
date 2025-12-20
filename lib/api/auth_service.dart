@@ -156,4 +156,38 @@ class AuthService {
       return null;
     }
   }
+  Future<void> syncDeviceToken(dynamic userId, String fcmToken, String deviceId) async {
+    final url = Uri.parse('$_baseUrl/api/users/device');
+    
+    // Get the token we just saved
+    final authToken = await _getToken(); 
+    
+    if (authToken == null) {
+        dev.log("⚠️ Cannot sync device: No Auth Token found.", name: 'AuthService');
+        return;
+    }
+
+    try {
+      final response = await http.put(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $authToken', // Secure the request
+        },
+        body: json.encode({
+          'userId': userId,
+          'fcmToken': fcmToken,
+          'deviceId': deviceId,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        dev.log("✅ Device Token Synced Successfully", name: 'AuthService');
+      } else {
+        dev.log("⚠️ Failed to sync device: ${response.body}", name: 'AuthService');
+      }
+    } catch (e) {
+      dev.log("❌ Error syncing device: $e", name: 'AuthService');
+    }
+  }
 }

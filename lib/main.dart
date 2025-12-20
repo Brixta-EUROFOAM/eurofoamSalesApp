@@ -9,11 +9,19 @@ import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/screens/auth/login_screen.dart';
 import 'package:salesmanapp/screens/nav_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/technical_nav_screen.dart';
+//NOTIFICATION STUFF ye ye
+import 'package:firebase_core/firebase_core.dart';
+import 'package:salesmanapp/services/notification_service.dart'; 
 import 'package:salesmanapp/screens/app_selector_screen.dart'; // NEW SELECTOR
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
   debugPrint("Firebase Initialized Successfully.");
+
+  await NotificationService().init();
+  debugPrint("NOTIFICATIONS INITIALISE KORA hol dei..");
+
   await dotenv.load(fileName: ".env");
   await Hive.initFlutter();
   final radarPublishableKey = dotenv.env['RADAR_API_KEY'];

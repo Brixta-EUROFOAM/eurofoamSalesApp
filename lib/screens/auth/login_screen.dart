@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:developer' as dev;
 import 'package:device_info_plus/device_info_plus.dart';
+//notification nigga
+import 'package:salesmanapp/services/notification_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -104,6 +106,18 @@ class _LoginScreenState extends State<LoginScreen> {
         password,
         deviceId,
       );
+      try {
+        // 1. Get the "Address" (FCM Token) from Firebase
+        String? fcmToken = await NotificationService().getFcmToken();
+        
+        if (fcmToken != null) {
+           // 2. Send to Backend to link with this User ID
+           await AuthService().syncDeviceToken(employee.id, fcmToken, deviceId);
+        }
+      } catch (e) {
+        // Don't block login if notification sync fails, just log it
+        dev.log("⚠️ Notification Sync Warning: $e");
+      }
 
       if (!mounted) return;
 
