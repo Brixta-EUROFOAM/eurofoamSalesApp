@@ -15,6 +15,7 @@ class Employee {
   final String? role;
   final bool isTechnicalRole;
   final String? techLoginId;
+  final String? deviceId;
 
   String get displayName {
     if (firstName != null && lastName != null && firstName!.isNotEmpty && lastName!.isNotEmpty) {
@@ -35,6 +36,7 @@ class Employee {
     this.role,
     this.isTechnicalRole = false,
     this.techLoginId,
+    this.deviceId,
   });
 
   // HIGHLIGHT: THE fromJson FACTORY IS NOW SMARTER
@@ -62,6 +64,7 @@ class Employee {
       // Backend sends 'isTechnicalRole' (bool) and 'techLoginId' (string)
       isTechnicalRole: json["isTechnicalRole"] == true,
       techLoginId: json["techLoginId"] as String?,
+      deviceId: json["deviceId"] as String?,
     );
   }
 
@@ -78,6 +81,7 @@ class Employee {
     String? role,
     bool? isTechnicalRole,
     String? techLoginId,
+    String? deviceId,
   }) {
     return Employee(
       id: id ?? this.id,
@@ -91,6 +95,7 @@ class Employee {
       role: role ?? this.role,
       isTechnicalRole: isTechnicalRole ?? this.isTechnicalRole,
       techLoginId: techLoginId ?? this.techLoginId,
+      deviceId: deviceId ?? this.deviceId,
     );
   }
 
@@ -107,5 +112,6 @@ class Employee {
         "role": role,
         "isTechnicalRole": isTechnicalRole,
         "techLoginId": techLoginId,
+        "deviceId": deviceId,
       };
 }

@@ -1,9 +1,11 @@
-import 'dart:ui';
+// lib/screens/auth/logn_screen.dart
+import 'dart:io';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/api/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:developer' as dev;
+import 'package:device_info_plus/device_info_plus.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,25 +22,30 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _errorMessage;
 
   // Flag to track which door they entered from
-  bool _isTechnicalLogin = false; 
+  bool _isTechnicalLogin = false;
   bool _isInit = false;
 
   // --- FINTECH THEME PALETTE ---
-  static const Color _bgLight     = Color(0xFFF3F4F6); // Corporate Grey
+  static const Color _bgLight = Color(0xFFF3F4F6); // Corporate Grey
   static const Color _surfaceWhite = Colors.white;
-  static const Color _textDark    = Color(0xFF111827); // Navy/Black
-  static const Color _textGrey    = Color(0xFF6B7280); // Subtitle Grey
-  
+  static const Color _textDark = Color(0xFF111827); // Navy/Black
+  static const Color _textGrey = Color(0xFF6B7280); // Subtitle Grey
+
   // Dynamic Colors based on role
-  Color get _activeColor => _isTechnicalLogin ? const Color(0xFF0F766E) : const Color(0xFF0F172A); // Teal vs Navy
-  Color get _activeBg    => _isTechnicalLogin ? const Color(0xFFF0FDF4) : const Color(0xFFF1F5F9); // Light Teal vs Light Blue
+  Color get _activeColor => _isTechnicalLogin
+      ? const Color(0xFF0F766E)
+      : const Color(0xFF0F172A); // Teal vs Navy
+  Color get _activeBg => _isTechnicalLogin
+      ? const Color(0xFFF0FDF4)
+      : const Color(0xFFF1F5F9); // Light Teal vs Light Blue
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (!_isInit) {
       // Read the arguments passed from AppSelectorScreen
-      final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+      final args =
+          ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
       if (args != null && args.containsKey('isTechnical')) {
         _isTechnicalLogin = args['isTechnical'];
       }
@@ -46,11 +53,24 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<String> _getUniqueDeviceId() async {
+    var deviceInfo = DeviceInfoPlugin();
+    if (Platform.isAndroid) {
+      var androidInfo = await deviceInfo.androidInfo;
+      return androidInfo.id; // unique ID on Android
+    } else if (Platform.isIOS) {
+      var iosInfo = await deviceInfo.iosInfo;
+      return iosInfo.identifierForVendor ??
+          "unknown_ios_id"; // unique ID on iOS
+    }
+    return "unknown_device";
+  }
+
   Future<void> _handleLogin() async {
     FocusScope.of(context).unfocus();
 
     // 1. Normalize Input (Uppercase for prefix check)
-    final enteredLoginId = _loginIdController.text.trim().toUpperCase(); 
+    final enteredLoginId = _loginIdController.text.trim().toUpperCase();
     final password = _passwordController.text;
 
     if (enteredLoginId.isEmpty || password.isEmpty) {
@@ -77,29 +97,35 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
+      final String deviceId = await _getUniqueDeviceId();
       // 3. Authenticate with Backend
-      final Employee employee = await AuthService().login(enteredLoginId, password);
-      
+      final Employee employee = await AuthService().login(
+        enteredLoginId,
+        password,
+        deviceId,
+      );
+
       if (!mounted) return;
 
       // 4. ROLE VALIDATION (Security Check)
       if (_isTechnicalLogin) {
         // User entered via "Technical" door, but is their role actually technical?
         if (!employee.isTechnicalRole) {
-           throw Exception("Access Denied: This account is not authorized for Technical Access.");
+          throw Exception(
+            "Access Denied: This account is not authorized for Technical Access.",
+          );
         }
-        
+
         // Save preference for auto-login
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('is_technical_mode', true);
 
         // Go to Tech App
         Navigator.of(context).pushNamedAndRemoveUntil(
-          '/technical_home', 
+          '/technical_home',
           (route) => false,
           arguments: employee,
         );
-
       } else {
         // User entered via "Sales" door.
         final prefs = await SharedPreferences.getInstance();
@@ -112,11 +138,12 @@ class _LoginScreenState extends State<LoginScreen> {
           arguments: employee,
         );
       }
-
     } catch (e) {
       dev.log('Login failed: $e');
       if (!mounted) return;
-      setState(() => _errorMessage = e.toString().replaceFirst('Exception: ', ''));
+      setState(
+        () => _errorMessage = e.toString().replaceFirst('Exception: ', ''),
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -130,7 +157,11 @@ class _LoginScreenState extends State<LoginScreen> {
         backgroundColor: _bgLight,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
+          icon: Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: _textGrey,
+            size: 20,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -140,7 +171,6 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              
               // --- 1. Header Icon ---
               Container(
                 padding: const EdgeInsets.all(20),
@@ -149,26 +179,28 @@ class _LoginScreenState extends State<LoginScreen> {
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  _isTechnicalLogin ? Icons.engineering : Icons.business_center, 
-                  size: 40, 
-                  color: _activeColor
+                  _isTechnicalLogin ? Icons.engineering : Icons.business_center,
+                  size: 40,
+                  color: _activeColor,
                 ),
               ),
               const SizedBox(height: 24),
 
               // --- 2. Title Texts ---
               Text(
-                _isTechnicalLogin ? 'Technical Portal' : 'Sales Portal', 
+                _isTechnicalLogin ? 'Technical Portal' : 'Sales Portal',
                 style: TextStyle(
-                  fontSize: 24, 
-                  fontWeight: FontWeight.bold, 
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
                   color: _textDark,
                   letterSpacing: -0.5,
-                )
+                ),
               ),
               const SizedBox(height: 8),
               Text(
-                _isTechnicalLogin ? 'Please enter your TSE credentials' : 'Please enter your EMP credentials', 
+                _isTechnicalLogin
+                    ? 'Please enter your TSE credentials'
+                    : 'Please enter your EMP credentials',
                 style: const TextStyle(color: _textGrey, fontSize: 14),
                 textAlign: TextAlign.center,
               ),
@@ -185,7 +217,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       color: Colors.black.withOpacity(0.05),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
-                    )
+                    ),
                   ],
                   border: Border.all(color: Colors.white),
                 ),
@@ -199,7 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       icon: Icons.badge_outlined,
                     ),
                     const SizedBox(height: 16),
-                    
+
                     // Password Field
                     _buildFintechInput(
                       controller: _passwordController,
@@ -208,9 +240,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       icon: Icons.lock_outline_rounded,
                       isPassword: true,
                     ),
-                    
+
                     const SizedBox(height: 24),
-                    
+
                     if (_errorMessage != null)
                       Container(
                         width: double.infinity,
@@ -223,18 +255,26 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.error_outline, color: Colors.red, size: 20),
+                            const Icon(
+                              Icons.error_outline,
+                              color: Colors.red,
+                              size: 20,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                _errorMessage!, 
-                                style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w500)
+                                _errorMessage!,
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      
+
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -244,22 +284,34 @@ class _LoginScreenState extends State<LoginScreen> {
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                        child: _isLoading 
-                          ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : const Text(
-                              'SECURE LOGIN',
-                              style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0),
-                            ),
+                        child: _isLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Text(
+                                'SECURE LOGIN',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
                       ),
-                    ), 
+                    ),
                   ],
                 ),
               ),
 
               const SizedBox(height: 32),
-              
+
               // --- 4. Footer ---
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -268,10 +320,14 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(width: 6),
                   Text(
                     "End-to-End Encrypted",
-                    style: TextStyle(color: _textGrey.withOpacity(0.8), fontSize: 12, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                      color: _textGrey.withOpacity(0.8),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
-              )
+              ),
             ],
           ),
         ),

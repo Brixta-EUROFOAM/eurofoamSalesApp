@@ -5,11 +5,11 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
-import '../models/employee_model.dart'; // Make sure this path is correct for your project
+import '../models/employee_model.dart';
 
 class AuthService {
-  static const String _baseUrl = 'http://13.203.79.51'; //aws
-  //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  //static const String _baseUrl = 'http://13.203.79.51'; //aws
+  static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
   final _storage = const FlutterSecureStorage();
 
   /// Saves the JWT to the device's secure storage.
@@ -31,21 +31,32 @@ class AuthService {
 
   /// Main login function.
   /// It now gets a JWT, saves it, and then fetches the user's profile.
-  Future<Employee> login(String loginId, String password) async {
+  Future<Employee> login(
+    String loginId,
+    String password,
+    String deviceId,
+  ) async {
     final url = Uri.parse('$_baseUrl/api/auth/login');
     final requestBody = jsonEncode({
       'loginId': loginId.trim(),
-      'password': password
+      'password': password,
+      'deviceId': deviceId,
     });
 
-    dev.log('--- Sending Login Request ---', name: 'AuthService');
+    //dev.log('--- Sending Login Request ---', name: 'AuthService');
     try {
       final response = await http
-          .post(url, headers: {'Content-Type': 'application/json'}, body: requestBody)
+          .post(
+            url,
+            headers: {'Content-Type': 'application/json'},
+            body: requestBody,
+          )
           .timeout(const Duration(seconds: 45));
 
-      dev.log('--- Received Login Response ---', name: 'AuthService');
-      dev.log('Status Code: ${response.statusCode}', name: 'AuthService');
+      //dev.log('--- Received Login Response ---', name: 'AuthService');
+      //dev.log('Status Code: ${response.statusCode}', name: 'AuthService');
+
+      final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -61,9 +72,12 @@ class AuthService {
         } else {
           throw Exception('Login response is missing token or userId.');
         }
+      } else if (response.statusCode == 403) {
+        // Handle specific Device Lock error from backend
+        throw Exception(data['error'] ?? "Device unauthorized");
       } else {
-        final errorData = jsonDecode(response.body);
-        throw Exception(errorData['error'] ?? 'An unknown server error occurred.');
+        // Handle all other errors (401, 400, 500, etc.)
+        throw Exception(data['error'] ?? "Login failed");
       }
     } on TimeoutException {
       throw Exception('Server is taking too long to respond.');
@@ -79,14 +93,16 @@ class AuthService {
     final url = Uri.parse('$_baseUrl/api/users/$userId');
     dev.log('--- Fetching User Profile with Token ---', name: 'AuthService');
     try {
-      final response = await http.get(
-        url,
-        // This Authorization header is what authenticates the request
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: 30));
+      final response = await http
+          .get(
+            url,
+            // This Authorization header is what authenticates the request
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 30));
 
       dev.log('--- Received Profile Response ---', name: 'AuthService');
       dev.log('Status Code: ${response.statusCode}', name: 'AuthService');
@@ -124,7 +140,7 @@ class AuthService {
     try {
       // Decode the user ID directly from the token payload to be efficient
       final payload = json.decode(
-        ascii.decode(base64.decode(base64.normalize(token.split('.')[1])))
+        ascii.decode(base64.decode(base64.normalize(token.split('.')[1]))),
       );
       final String userId = payload['id'].toString();
 
@@ -132,7 +148,6 @@ class AuthService {
       final employee = await _fetchUserProfile(userId, token);
       dev.log('Auto-login successful!', name: 'AuthService');
       return employee;
-
     } catch (e) {
       // If the token is expired or invalid, it will fail.
       // Clear the bad token and return null.

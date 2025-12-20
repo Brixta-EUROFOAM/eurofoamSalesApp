@@ -42,8 +42,8 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  static const String _baseUrl = 'http://13.203.79.51'; //aws
-  //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  //static const String _baseUrl = 'http://13.203.79.51'; //aws
+  static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
 
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
