@@ -8,8 +8,8 @@ import 'package:http/http.dart' as http;
 import '../models/employee_model.dart';
 
 class AuthService {
-  //static const String _baseUrl = 'http://13.203.79.51'; //aws
-  static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  static const String _baseUrl = 'http://13.203.79.51'; //aws
+  //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
   final _storage = const FlutterSecureStorage();
 
   /// Saves the JWT to the device's secure storage.
