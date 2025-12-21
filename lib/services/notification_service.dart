@@ -1,7 +1,10 @@
-import 'dart:convert'; // ✅ Added for jsonEncode/Decode
+import 'dart:convert';
+import 'dart:async'; // Required for Timer/Future.delayed
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/material.dart'; // ✅ Added for GlobalKey & Navigator
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+// ✅ IMPORT THE SHARED KEY (Crucial for reliable navigation)
+import 'package:salesmanapp/navigation_key.dart';
 
 class NotificationService {
   // Singleton Pattern
@@ -12,18 +15,15 @@ class NotificationService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
   
-  // ✅ 1. Add a variable to hold the Navigator Key
-  GlobalKey<NavigatorState>? _navigatorKey;
+  // ❌ REMOVED local _navigatorKey. We use the imported 'navigatorKey' directly.
 
-  // ✅ 2. Update init to accept the key
-  Future<void> init(GlobalKey<NavigatorState> navigatorKey) async {
-    _navigatorKey = navigatorKey; // Store it for later
+  // ✅ UPDATED INIT: No arguments needed anymore
+  Future<void> init() async {
+    print("🔔 [NotificationService] Initializing with Shared Key...");
 
     // Request Permission
     NotificationSettings settings = await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
+      alert: true, badge: true, sound: true,
     );
     print('🔔 Permission Status: ${settings.authorizationStatus}');
 
@@ -35,82 +35,115 @@ class NotificationService {
 
     await _localNotifications.initialize(initSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) {
-        // ✅ 3. Handle Foreground Tap (Local Notification)
-        if (response.payload != null) {
+        // 🪤 TRAP 1: FOREGROUND TAP DETECTED
+        print("🪤 [Trap 1] Foreground Notification Tapped!");
+        print("   -> Raw Payload: ${response.payload}");
+
+        if (response.payload != null && response.payload!.isNotEmpty) {
           try {
-            // We encoded the whole data map as JSON, now we decode it
             final Map<String, dynamic> data = jsonDecode(response.payload!);
             _handleNavigation(data);
           } catch (e) {
-            print("❌ Error parsing notification payload: $e");
+            print("❌ [Trap 1 Error] JSON Decode Failed: $e");
           }
+        } else {
+           print("⚠️ [Trap 1 Warning] Payload was null or empty.");
         }
       },
     );
 
     await _createChannel();
 
-    // ✅ 4. Listen to Foreground Messages
+    // 📩 Listen to Foreground Messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('📩 Foreground Message: ${message.notification?.title}');
-      // We pass the whole message so we can encode the 'data' into the payload
+      print('📩 Foreground Message Received: ${message.notification?.title}');
+      
+      // 🪤 TRAP 2: INSPECT DATA BEFORE SHOWING
+      print("🪤 [Trap 2] Foreground Data Content: ${message.data}");
+      
+      if (message.data.isEmpty) {
+        print("⚠️ [Trap 2 Warning] Data is EMPTY! Backend is likely failing to send the 'data' block.");
+      }
+
       _showForegroundNotification(message);
     });
     
-    // ✅ 5. Listen to Background/Terminated Taps
+    // 🚀 Listen to Background Taps
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print('🚀 App Opened from Background: ${message.data}');
+      print("🪤 [Trap 3] Background/Minimised Tap Detected!");
+      print("   -> Data: ${message.data}");
       _handleNavigation(message.data);
     });
     
-    // ✅ 6. Check if App was opened from "Terminated" state
+    // 🚀 Check Terminated State Launch (Cold Start Fix)
     RemoteMessage? initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) {
-      print('🚀 App Launched from Terminated: ${initialMessage.data}');
-      _handleNavigation(initialMessage.data);
+      print("❄️ App Launched from TERMINATED state. Data: ${initialMessage.data}");
+      // Wait 2 seconds for app to build, then navigate
+      Future.delayed(const Duration(seconds: 2), () {
+        _handleNavigation(initialMessage.data);
+      });
     }
   }
 
-  // --- 🧠 THE BRAIN: CENTRAL NAVIGATION LOGIC ---
+  // --- 🧠 CENTRAL NAVIGATION LOGIC ---
   void _handleNavigation(Map<String, dynamic> data) {
-    // Check if the payload contains our specific type
-    final String? type = data['type']; // e.g., "BAG_LIFT"
-    final String? id = data['referenceId']; // e.g., UUID
+    print("--------------------------------------------------");
+    print("🪤 [Trap 5] Handling Navigation Logic...");
+    
+    // Log all keys
+    data.forEach((key, value) => print("   -> Key: '$key', Value: '$value'"));
+
+    final String? type = data['type'];
+    final String? id = data['referenceId'] ?? data['id'] ?? data['bagLiftId'] ?? data['data'];
+
+    print("   -> Extracted Type: '$type'");
+    print("   -> Extracted ID:   '$id'");
+
+    // ✅ USE THE IMPORTED KEY DIRECTLY
+    if (navigatorKey.currentState == null) {
+      print("🔥 [Trap 5 Critical] Navigator Key State is NULL! Retrying in 1s...");
+      
+      // 🔄 AUTO-RETRY LOGIC
+      Future.delayed(const Duration(seconds: 1), () {
+         if (navigatorKey.currentState != null) {
+           print("🔄 Retry Success! Navigating now...");
+           _handleNavigation(data);
+         } else {
+           print("❌ Retry Failed. Navigation aborted.");
+         }
+      });
+      return;
+    }
 
     if (type == 'BAG_LIFT' && id != null) {
-      print("🔀 Navigating to Bag Lift Details: $id");
+      print("🔀 [Trap 5 Success] Valid Match! Pushing Route: /approve_mason_bagLift");
       
-      // Use the GlobalKey to navigate without context!
-      _navigatorKey?.currentState?.pushNamed(
-        '/bag_lift_details', // You must define this route in main.dart
+      // ✅ USE THE IMPORTED KEY
+      navigatorKey.currentState?.pushNamed(
+        '/approve_mason_bagLift', 
         arguments: id,
       );
-    } 
-    // Add other types here (e.g. "NEW_PJP", "ORDER_APPROVED")
+    } else {
+      print("⚠️ [Trap 5 Fail] Conditions not met.");
+      print("   -> Check: Does Type == 'BAG_LIFT'? ${type == 'BAG_LIFT'}");
+      print("   -> Check: Is ID not null? ${id != null}");
+    }
+    print("--------------------------------------------------");
   }
-Future<String?> getFcmToken() async {
+
+  Future<String?> getFcmToken() async {
     print("🔍 DEBUG: Starting FCM Token generation request...");
-    
     try {
-      // 1. Request the token
       String? token = await _messaging.getToken();
-      
-      // 2. Analyze the result
       if (token == null) {
-        print("❌ DEBUG: Google replied, but the Token is NULL.");
-        print("   -> Check: Does your emulator have Google Play Store installed?");
-        print("   -> Check: Is google-services.json present in android/app/?");
+        print("❌ DEBUG: Token is NULL.");
       } else {
-        print("✅ DEBUG: FCM Token GENERATED successfully!");
-        print("   -> Token: ${token.substring(0, 20)}..."); // Print first 20 chars
+        print("✅ DEBUG: FCM Token: ${token.substring(0, 20)}...");
       }
-      
       return token;
-      
     } catch (e) {
-      // 3. Catch crashes (Network issues, Config issues)
-      print("🔥 DEBUG: FCM Token Generation CRASHED.");
-      print("   -> Error: $e");
+      print("🔥 DEBUG: Token Gen Error: $e");
       return null;
     }
   }
@@ -132,6 +165,9 @@ Future<String?> getFcmToken() async {
     AndroidNotification? android = message.notification?.android;
 
     if (notification != null && android != null) {
+      // 🪤 TRAP 6: Creating Local Notification
+      String payloadData = jsonEncode(message.data);
+      
       _localNotifications.show(
         notification.hashCode,
         notification.title,
@@ -145,8 +181,7 @@ Future<String?> getFcmToken() async {
             priority: Priority.high,
           ),
         ),
-        // ✅ IMPORTANT: Encode the DATA into the payload string
-        payload: jsonEncode(message.data), 
+        payload: payloadData, 
       );
     }
   }

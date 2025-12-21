@@ -12,7 +12,8 @@ import 'package:salesmanapp/models/dealer_model.dart';
 
 class ApproveMasonBagLift extends StatefulWidget {
   final Employee employee;
-  const ApproveMasonBagLift({super.key, required this.employee});
+  final String? highlightedId;
+  const ApproveMasonBagLift({super.key, required this.employee, this.highlightedId,});
 
   @override
   State<ApproveMasonBagLift> createState() => _ApproveMasonBagLiftState();
@@ -42,25 +43,72 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     _loadData();
   }
 
-  void _loadData() {
+// 1. Change 'void' to 'Future<void>' or just 'void' marked 'async'
+// Inside _ApproveMasonBagLiftState class...
+
+  void _loadData() async { 
     final rawId = widget.employee.id.trim();
     final userId = int.tryParse(rawId);
 
-    setState(() {
-      if (userId != null) {
+    if (userId != null) {
+      // 1. Start loading the list
+      setState(() {
         _futureLifts = _api.fetchPendingBagLifts(userId: userId);
-      } else {
-        _futureLifts = Future.value([]);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Error: Invalid User ID configuration"),
-              backgroundColor: _dangerRed,
-            ),
+      });
+
+      // 2. CHECK IF WE HAVE A NOTIFICATION ID
+      if (widget.highlightedId != null) {
+        print("🪤 [Auto-Open] Notification ID received: '${widget.highlightedId}'");
+
+        try {
+          // A. Wait for the API List
+          final list = await _futureLifts;
+          print("🪤 [Auto-Open] List loaded. Items count: ${list.length}");
+
+          // B. Debug: Print all IDs in the list to check for matches
+          for (var item in list) {
+            print("   -> List Item ID: '${item.id}'"); 
+          }
+
+          // C. Try to find the match
+          final targetItem = list.firstWhere(
+            (item) => item.id == widget.highlightedId,
+            orElse: () => throw Exception("ID matches nothing in the list"),
           );
+
+          print("🪤 [Auto-Open] ✅ MATCH FOUND! Opening dialog...");
+
+          // D. Wait for UI to be ready
+          if (!mounted) return;
+          
+          // E. OPEN THE DIALOG
+          // We wrap it in a microtask to ensure the BuildContext is stable
+          Future.microtask(() {
+             _showVerificationDialog(targetItem);
+          });
+
+        } catch (e) {
+          print("🪤 [Auto-Open] ❌ FAILURE: $e");
+          
+          // Show a visual error so you know it failed
+          if(mounted) {
+             ScaffoldMessenger.of(context).showSnackBar(
+               SnackBar(content: Text("Could not open Notification Item: $e"), backgroundColor: Colors.red),
+             );
+          }
         }
       }
-    });
+    } else {
+      // Error handling for invalid User ID
+      setState(() {
+        _futureLifts = Future.value([]);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Error: Invalid User ID"), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   // --- Helper for Input Styling ---
