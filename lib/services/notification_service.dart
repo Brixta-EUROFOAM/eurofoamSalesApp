@@ -1,4 +1,6 @@
+import 'dart:convert'; // ✅ Added for jsonEncode/Decode
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart'; // ✅ Added for GlobalKey & Navigator
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class NotificationService {
@@ -9,92 +11,122 @@ class NotificationService {
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
+  
+  // ✅ 1. Add a variable to hold the Navigator Key
+  GlobalKey<NavigatorState>? _navigatorKey;
 
-  // 1. INITIALIZE EVERYTHING
-  Future<void> init() async {
-    // Request Permission (Critical for iOS)
+  // ✅ 2. Update init to accept the key
+  Future<void> init(GlobalKey<NavigatorState> navigatorKey) async {
+    _navigatorKey = navigatorKey; // Store it for later
+
+    // Request Permission
     NotificationSettings settings = await _messaging.requestPermission(
       alert: true,
       badge: true,
       sound: true,
-      provisional: false,
     );
+    print('🔔 Permission Status: ${settings.authorizationStatus}');
 
- if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-      print('✅ User granted permission');
-    } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
-      print('⚠️ User granted provisional permission');
-    } else {
-      print('❌ User declined or has not accepted permission');
-    }
-
-    // Setup Local Notifications for Foreground display
+    // Setup Local Notifications
     const AndroidInitializationSettings androidSettings = 
-        AndroidInitializationSettings('@mipmap/ic_launcher'); // Ensure icon exists
+        AndroidInitializationSettings('@mipmap/ic_launcher'); 
     const InitializationSettings initSettings = 
         InitializationSettings(android: androidSettings);
 
     await _localNotifications.initialize(initSettings,
-      onDidReceiveNotificationResponse: (response) {
-        // Handle click when app is open
-        print("🔔 Tapped foreground notification: ${response.payload}");
-        // Navigate to screen based on payload...
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        // ✅ 3. Handle Foreground Tap (Local Notification)
+        if (response.payload != null) {
+          try {
+            // We encoded the whole data map as JSON, now we decode it
+            final Map<String, dynamic> data = jsonDecode(response.payload!);
+            _handleNavigation(data);
+          } catch (e) {
+            print("❌ Error parsing notification payload: $e");
+          }
+        }
       },
     );
 
-    // Create the Channel (Required for Android 8+)
     await _createChannel();
 
-    // Listen to Foreground Messages
+    // ✅ 4. Listen to Foreground Messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('📩 Foreground Message Received: ${message.notification?.title}');
+      print('📩 Foreground Message: ${message.notification?.title}');
+      // We pass the whole message so we can encode the 'data' into the payload
       _showForegroundNotification(message);
     });
     
-    // Listen to Background Clicks (When app opens from notification)
+    // ✅ 5. Listen to Background/Terminated Taps
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print('🚀 App Opened from Notification: ${message.data}');
-      // Handle navigation logic here (e.g., go to Bag Lift screen)
+      print('🚀 App Opened from Background: ${message.data}');
+      _handleNavigation(message.data);
     });
-  }
-
-  // 2. GET THE TOKEN (The Handshake)
-  Future<String?> getFcmToken() async {
-    String? token = await _messaging.getToken();
-    print("🔥 FCM Token: $token");
-    return token;
-  }
-  Future<void> checkAndRequestPermission() async {
-    NotificationSettings settings = await _messaging.getNotificationSettings();
-
-    if (settings.authorizationStatus != AuthorizationStatus.authorized) {
-      // If previously denied, standard request won't work. 
-      // We must open phone settings.
-      print("⚠️ Permission previously denied. Opening settings...");
-      await _messaging.requestPermission(); 
-      // Note: On some devices, you might need 'permission_handler' package 
-      // to openAppSettings() if this doesn't work.
-    } else {
-       print("✅ Permissions are already active.");
+    
+    // ✅ 6. Check if App was opened from "Terminated" state
+    RemoteMessage? initialMessage = await _messaging.getInitialMessage();
+    if (initialMessage != null) {
+      print('🚀 App Launched from Terminated: ${initialMessage.data}');
+      _handleNavigation(initialMessage.data);
     }
   }
 
-  // Helper: Create Channel
+  // --- 🧠 THE BRAIN: CENTRAL NAVIGATION LOGIC ---
+  void _handleNavigation(Map<String, dynamic> data) {
+    // Check if the payload contains our specific type
+    final String? type = data['type']; // e.g., "BAG_LIFT"
+    final String? id = data['referenceId']; // e.g., UUID
+
+    if (type == 'BAG_LIFT' && id != null) {
+      print("🔀 Navigating to Bag Lift Details: $id");
+      
+      // Use the GlobalKey to navigate without context!
+      _navigatorKey?.currentState?.pushNamed(
+        '/bag_lift_details', // You must define this route in main.dart
+        arguments: id,
+      );
+    } 
+    // Add other types here (e.g. "NEW_PJP", "ORDER_APPROVED")
+  }
+Future<String?> getFcmToken() async {
+    print("🔍 DEBUG: Starting FCM Token generation request...");
+    
+    try {
+      // 1. Request the token
+      String? token = await _messaging.getToken();
+      
+      // 2. Analyze the result
+      if (token == null) {
+        print("❌ DEBUG: Google replied, but the Token is NULL.");
+        print("   -> Check: Does your emulator have Google Play Store installed?");
+        print("   -> Check: Is google-services.json present in android/app/?");
+      } else {
+        print("✅ DEBUG: FCM Token GENERATED successfully!");
+        print("   -> Token: ${token.substring(0, 20)}..."); // Print first 20 chars
+      }
+      
+      return token;
+      
+    } catch (e) {
+      // 3. Catch crashes (Network issues, Config issues)
+      print("🔥 DEBUG: FCM Token Generation CRASHED.");
+      print("   -> Error: $e");
+      return null;
+    }
+  }
+
   Future<void> _createChannel() async {
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'high_importance_channel', // Must match AndroidManifest.xml
+      'high_importance_channel',
       'High Importance Notifications',
-      description: 'This channel is used for important notifications.',
       importance: Importance.max,
       playSound: true,
     );
-
     await _localNotifications
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
   }
 
-  // Helper: Show Banner
   Future<void> _showForegroundNotification(RemoteMessage message) async {
     RemoteNotification? notification = message.notification;
     AndroidNotification? android = message.notification?.android;
@@ -104,16 +136,17 @@ class NotificationService {
         notification.hashCode,
         notification.title,
         notification.body,
-        NotificationDetails(
+        const NotificationDetails(
           android: AndroidNotificationDetails(
             'high_importance_channel',
             'High Importance Notifications',
-            icon: '@mipmap/ic_launcher', // Ensure this icon resource exists
+            icon: '@mipmap/ic_launcher',
             importance: Importance.max,
             priority: Priority.high,
           ),
         ),
-        payload: message.data['referenceId'], // Pass ID for deep linking
+        // ✅ IMPORTANT: Encode the DATA into the payload string
+        payload: jsonEncode(message.data), 
       );
     }
   }

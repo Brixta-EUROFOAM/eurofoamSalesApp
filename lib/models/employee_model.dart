@@ -8,6 +8,7 @@ class Employee {
   final String? firstName;
   final String? lastName;
   final String? email;
+  final String? fcmToken; //NOTIFICATION R KAAORNE
   final String? loginId;
   final String? area;
   final String? region;
@@ -35,6 +36,7 @@ class Employee {
     this.companyName,
     this.role,
     this.isTechnicalRole = false,
+    this.fcmToken, //NOTIFICATION STUFF
     this.techLoginId,
     this.deviceId,
   });
@@ -56,6 +58,7 @@ class Employee {
       firstName: json["firstName"] as String?,
       lastName: json["lastName"] as String?,
       email: json["email"] as String?,
+      fcmToken: json["fcmToken"] as String?,//notification ahiboleee return object
       area: json["area"] as String?,
       region: json["region"] as String?,
       loginId: json["salesmanLoginId"] as String?,
@@ -82,6 +85,8 @@ class Employee {
     bool? isTechnicalRole,
     String? techLoginId,
     String? deviceId,
+    String? fcmToken,
+    
   }) {
     return Employee(
       id: id ?? this.id,
@@ -96,6 +101,7 @@ class Employee {
       isTechnicalRole: isTechnicalRole ?? this.isTechnicalRole,
       techLoginId: techLoginId ?? this.techLoginId,
       deviceId: deviceId ?? this.deviceId,
+      fcmToken: fcmToken ?? this.fcmToken,
     );
   }
 

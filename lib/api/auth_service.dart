@@ -35,12 +35,14 @@ class AuthService {
     String loginId,
     String password,
     String deviceId,
+    String? fcmToken,
   ) async {
     final url = Uri.parse('$_baseUrl/api/auth/login');
     final requestBody = jsonEncode({
       'loginId': loginId.trim(),
       'password': password,
       'deviceId': deviceId,
+      'fcmToken': fcmToken,
     });
 
     //dev.log('--- Sending Login Request ---', name: 'AuthService');
@@ -156,38 +158,63 @@ class AuthService {
       return null;
     }
   }
+// Inside AuthService class
+
   Future<void> syncDeviceToken(dynamic userId, String fcmToken, String deviceId) async {
     final url = Uri.parse('$_baseUrl/api/users/device');
     
-    // Get the token we just saved
+    // USING PRINT SO IT DEFINITELY SHOWS UP
+    print("🔵 [Sync] Step 1: Process Started.");
+    
     final authToken = await _getToken(); 
     
     if (authToken == null) {
-        dev.log("⚠️ Cannot sync device: No Auth Token found.", name: 'AuthService');
+        print("❌ [Sync] FAILURE: No Auth Token found in storage.");
         return;
     }
 
+    // 1. DEBUG ID PARSING
+    print("🔵 [Sync] Step 2: Parsing ID. Raw: '$userId' (Type: ${userId.runtimeType})");
+    
+    int? parsedId;
+    if (userId is int) {
+      parsedId = userId;
+    } else if (userId is String) {
+      parsedId = int.tryParse(userId);
+    }
+
+    if (parsedId == null) {
+       print("❌ [Sync] FAILURE: Could not parse User ID to int.");
+       return;
+    }
+    
+    print("🟢 [Sync] Step 3: ID Parsed as: $parsedId");
+
     try {
+      print("🚀 [Sync] Step 4: Sending PUT Request to $url");
+      
       final response = await http.put(
         url,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken', // Secure the request
+          'Authorization': 'Bearer $authToken', 
         },
         body: json.encode({
-          'userId': userId,
+          'userId': parsedId,
           'fcmToken': fcmToken,
           'deviceId': deviceId,
         }),
       );
 
+      print("📥 [Sync] Step 5: Response Code: ${response.statusCode}");
+
       if (response.statusCode == 200) {
-        dev.log("✅ Device Token Synced Successfully", name: 'AuthService');
+        print("✅ [Sync] SUCCESS: Token updated in database!");
       } else {
-        dev.log("⚠️ Failed to sync device: ${response.body}", name: 'AuthService');
+        print("⚠️ [Sync] SERVER REJECTED: ${response.body}");
       }
     } catch (e) {
-      dev.log("❌ Error syncing device: $e", name: 'AuthService');
+      print("🔥 [Sync] CRASH: HTTP Request failed: $e");
     }
   }
 }

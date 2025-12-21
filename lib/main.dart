@@ -14,12 +14,15 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:salesmanapp/services/notification_service.dart'; 
 import 'package:salesmanapp/screens/app_selector_screen.dart'; // NEW SELECTOR
 
+
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   debugPrint("Firebase Initialized Successfully.");
 
-  await NotificationService().init();
+  await NotificationService().init(navigatorKey);
   debugPrint("NOTIFICATIONS INITIALISE KORA hol dei..");
 
   await dotenv.load(fileName: ".env");

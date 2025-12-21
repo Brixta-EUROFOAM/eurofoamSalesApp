@@ -71,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleLogin() async {
     FocusScope.of(context).unfocus();
 
-    // 1. Normalize Input (Uppercase for prefix check)
+    // 1. Normalize Input
     final enteredLoginId = _loginIdController.text.trim().toUpperCase();
     final password = _passwordController.text;
 
@@ -80,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // --- 2. PATTERN ENFORCEMENT ---
+    // 2. PATTERN ENFORCEMENT
     if (_isTechnicalLogin) {
       if (!enteredLoginId.startsWith('TSE')) {
         setState(() => _errorMessage = 'Technical IDs must start with "TSE".');
@@ -100,52 +100,54 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final String deviceId = await _getUniqueDeviceId();
-      // 3. Authenticate with Backend
-      final Employee employee = await AuthService().login(
+      
+      // --- FIX START: Get Token BEFORE Login ---
+      String? fcmToken;
+      try {
+        dev.log("🔍 Fetching FCM Token...", name: 'LoginScreen');
+        fcmToken = await NotificationService().getFcmToken();
+        dev.log("✅ Token retrieved: ${fcmToken?.substring(0, 10)}...", name: 'LoginScreen');
+      } catch (e) {
+        dev.log("⚠️ Failed to fetch FCM token (Proceeding without it): $e", name: 'LoginScreen');
+      }
+      // --- FIX END ---
+
+      // 3. Authenticate (Send EVERYTHING together)
+      // Note: Ensure your AuthService.login() accepts this 4th argument now!
+      Employee employee = await AuthService().login(
         enteredLoginId,
         password,
         deviceId,
+        fcmToken, 
       );
-      try {
-        // 1. Get the "Address" (FCM Token) from Firebase
-        String? fcmToken = await NotificationService().getFcmToken();
-        
-        if (fcmToken != null) {
-           // 2. Send to Backend to link with this User ID
-           await AuthService().syncDeviceToken(employee.id, fcmToken, deviceId);
-        }
-      } catch (e) {
-        // Don't block login if notification sync fails, just log it
-        dev.log("⚠️ Notification Sync Warning: $e");
+
+      // 4. Update local model with the token we just sent
+      if (fcmToken != null) {
+        employee = employee.copyWith(fcmToken: fcmToken);
       }
 
       if (!mounted) return;
 
-      // 4. ROLE VALIDATION (Security Check)
+      // 5. ROLE VALIDATION & NAVIGATION
       if (_isTechnicalLogin) {
-        // User entered via "Technical" door, but is their role actually technical?
         if (!employee.isTechnicalRole) {
           throw Exception(
             "Access Denied: This account is not authorized for Technical Access.",
           );
         }
 
-        // Save preference for auto-login
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('is_technical_mode', true);
 
-        // Go to Tech App
         Navigator.of(context).pushNamedAndRemoveUntil(
           '/technical_home',
           (route) => false,
           arguments: employee,
         );
       } else {
-        // User entered via "Sales" door.
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('is_technical_mode', false);
 
-        // Go to Sales App
         Navigator.of(context).pushNamedAndRemoveUntil(
           '/home',
           (route) => false,
