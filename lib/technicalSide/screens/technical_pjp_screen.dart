@@ -66,6 +66,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   void _showCreateOptions() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),

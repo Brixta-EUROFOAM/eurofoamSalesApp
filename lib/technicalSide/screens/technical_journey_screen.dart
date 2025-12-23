@@ -218,6 +218,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       _lastRecordedPosition = initialPosition;
       _routeTaken.add(LatLng(initialPosition.latitude, initialPosition.longitude));
 
+      // live loc updates sent to radar
+      await Radar.startTracking('responsive');
+
       _currentJourneyId = 'JRN-TECH-${widget.employee.id}-${DateTime.now().millisecondsSinceEpoch}';
 
       _showTrackingNotification();
@@ -266,6 +269,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     dev.log("🛑 STOPPING JOURNEY...", name: 'TechJourney');
     _radarArrivalCheckTimer?.cancel();
     _cancelTrackingNotification();
+
+    // stop sending live loc updates to radar
+    await Radar.stopTracking();
 
     if (!_isJourneyActive) return;
 
