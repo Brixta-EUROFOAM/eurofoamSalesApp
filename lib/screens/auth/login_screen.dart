@@ -5,9 +5,11 @@ import 'package:salesmanapp/api/auth_service.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:developer' as dev;
+import 'dart:developer';
 import 'package:device_info_plus/device_info_plus.dart';
 //notification nigga
 import 'package:salesmanapp/services/notification_service.dart';
+import 'package:android_id/android_id.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -56,15 +58,24 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<String> _getUniqueDeviceId() async {
-    var deviceInfo = DeviceInfoPlugin();
-    if (Platform.isAndroid) {
-      var androidInfo = await deviceInfo.androidInfo;
-      return androidInfo.id; // unique ID on Android
-    } else if (Platform.isIOS) {
-      var iosInfo = await deviceInfo.iosInfo;
-      return iosInfo.identifierForVendor ??
-          "unknown_ios_id"; // unique ID on iOS
+    try {
+      if (Platform.isAndroid) {
+        // ✅ USE 'android_id' PACKAGE HERE
+        // This gives the SSAID (Secure Settings Android ID), which is unique.
+        const androidIdPlugin = AndroidId();
+        final String? androidId = await androidIdPlugin.getId();
+        return androidId ?? "unknown_android_id";
+      } else if (Platform.isIOS) {
+        // ✅ USE 'device_info_plus' HERE
+        // iOS doesn't allow a permanent ID, but this is the standard vendor ID.
+        var deviceInfo = DeviceInfoPlugin();
+        var iosInfo = await deviceInfo.iosInfo;
+        return iosInfo.identifierForVendor ?? "unknown_ios_id";
+      }
+    } catch (e) {
+      log('Failed to get Device ID: $e');
     }
+
     return "unknown_device";
   }
 
@@ -100,15 +111,21 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final String deviceId = await _getUniqueDeviceId();
-      
+
       // --- FIX START: Get Token BEFORE Login ---
       String? fcmToken;
       try {
         dev.log("🔍 Fetching FCM Token...", name: 'LoginScreen');
         fcmToken = await NotificationService().getFcmToken();
-        dev.log("✅ Token retrieved: ${fcmToken?.substring(0, 10)}...", name: 'LoginScreen');
+        dev.log(
+          "✅ Token retrieved: ${fcmToken?.substring(0, 10)}...",
+          name: 'LoginScreen',
+        );
       } catch (e) {
-        dev.log("⚠️ Failed to fetch FCM token (Proceeding without it): $e", name: 'LoginScreen');
+        dev.log(
+          "⚠️ Failed to fetch FCM token (Proceeding without it): $e",
+          name: 'LoginScreen',
+        );
       }
       // --- FIX END ---
 
@@ -118,7 +135,7 @@ class _LoginScreenState extends State<LoginScreen> {
         enteredLoginId,
         password,
         deviceId,
-        fcmToken, 
+        fcmToken,
       );
 
       // 4. Update local model with the token we just sent
