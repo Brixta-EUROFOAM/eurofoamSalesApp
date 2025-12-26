@@ -1,188 +1,238 @@
 import 'dart:convert';
-import 'dart:async'; // Required for Timer/Future.delayed
-import 'package:firebase_messaging/firebase_messaging.dart';
+import 'dart:async';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-// ✅ IMPORT THE SHARED KEY (Crucial for reliable navigation)
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:salesmanapp/navigation_key.dart';
 
+/// ===============================================================
+/// 🔥 BACKGROUND HANDLER (DO NOT MOVE / DO NOT INLINE)
+/// ===============================================================
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+
+  debugPrint("🔔 [FCM BG] Message ID: ${message.messageId}");
+  debugPrint("🔔 [FCM BG] Data: ${message.data}");
+
+  if (message.data['action'] == 'logout') {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setBool('force_logout_on_resume', true);
+    await prefs.setString(
+      'force_logout_message',
+      message.data['message'] ??
+          'You were signed out because your account was used on another device.',
+    );
+
+    // 🧹 Clear session crumbs
+    await prefs.remove('jwt_token');
+    await prefs.remove('user_id');
+    await prefs.remove('is_technical_mode');
+
+    debugPrint("🔐 [FCM BG] Logout flag set successfully");
+  }
+}
+
+/// ===============================================================
+/// 📢 NOTIFICATION SERVICE (Singleton)
+/// ===============================================================
 class NotificationService {
-  // Singleton Pattern
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final FlutterLocalNotificationsPlugin _localNotifications = FlutterLocalNotificationsPlugin();
-  
-  // ❌ REMOVED local _navigatorKey. We use the imported 'navigatorKey' directly.
+  final FlutterLocalNotificationsPlugin _localNotifications =
+      FlutterLocalNotificationsPlugin();
 
-  // ✅ UPDATED INIT: No arguments needed anymore
+  /// ===============================================================
+  /// 🚀 INIT
+  /// ===============================================================
   Future<void> init() async {
-    print("🔔 [NotificationService] Initializing with Shared Key...");
+    debugPrint("🔔 [NotificationService] Init start");
 
-    // Request Permission
-    NotificationSettings settings = await _messaging.requestPermission(
-      alert: true, badge: true, sound: true,
+    // 🔑 REQUIRED: background handler registration
+    FirebaseMessaging.onBackgroundMessage(
+      firebaseMessagingBackgroundHandler,
     );
-    print('🔔 Permission Status: ${settings.authorizationStatus}');
 
-    // Setup Local Notifications
-    const AndroidInitializationSettings androidSettings = 
-        AndroidInitializationSettings('@mipmap/ic_launcher'); 
-    const InitializationSettings initSettings = 
-        InitializationSettings(android: androidSettings);
+    // Permissions
+    final settings = await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    debugPrint("🔔 Permission: ${settings.authorizationStatus}");
 
-    await _localNotifications.initialize(initSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse response) {
-        // 🪤 TRAP 1: FOREGROUND TAP DETECTED
-        print("🪤 [Trap 1] Foreground Notification Tapped!");
-        print("   -> Raw Payload: ${response.payload}");
+    // Local notifications init
+    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initSettings = InitializationSettings(android: androidInit);
 
-        if (response.payload != null && response.payload!.isNotEmpty) {
-          try {
-            final Map<String, dynamic> data = jsonDecode(response.payload!);
-            _handleNavigation(data);
-          } catch (e) {
-            print("❌ [Trap 1 Error] JSON Decode Failed: $e");
-          }
-        } else {
-           print("⚠️ [Trap 1 Warning] Payload was null or empty.");
-        }
+    await _localNotifications.initialize(
+      initSettings,
+      onDidReceiveNotificationResponse: (response) {
+        debugPrint("🪤 [Trap 1] Foreground tap");
+        if (response.payload == null || response.payload!.isEmpty) return;
+
+        final data = jsonDecode(response.payload!);
+        _handleIncomingData(data);
       },
     );
 
     await _createChannel();
 
-    // 📩 Listen to Foreground Messages
+    /// ===========================================================
+    /// 📩 FOREGROUND MESSAGE
+    /// ===========================================================
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('📩 Foreground Message Received: ${message.notification?.title}');
-      
-      // 🪤 TRAP 2: INSPECT DATA BEFORE SHOWING
-      print("🪤 [Trap 2] Foreground Data Content: ${message.data}");
-      
-      if (message.data.isEmpty) {
-        print("⚠️ [Trap 2 Warning] Data is EMPTY! Backend is likely failing to send the 'data' block.");
-      }
+      debugPrint("📩 Foreground message received");
+      debugPrint("   Data: ${message.data}");
+
+      if (_handleLogoutSignal(message.data)) return;
 
       _showForegroundNotification(message);
     });
-    
-    // 🚀 Listen to Background Taps
+
+    /// ===========================================================
+    /// 📩 BACKGROUND TAP
+    /// ===========================================================
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print("🪤 [Trap 3] Background/Minimised Tap Detected!");
-      print("   -> Data: ${message.data}");
-      _handleNavigation(message.data);
+      debugPrint("🪤 [Trap 3] Background tap");
+      _handleIncomingData(message.data);
     });
-    
-    // 🚀 Check Terminated State Launch (Cold Start Fix)
-    RemoteMessage? initialMessage = await _messaging.getInitialMessage();
+
+    /// ===========================================================
+    /// ❄️ TERMINATED / COLD START
+    /// ===========================================================
+    final initialMessage = await _messaging.getInitialMessage();
     if (initialMessage != null) {
-      print("❄️ App Launched from TERMINATED state. Data: ${initialMessage.data}");
-      // Wait 2 seconds for app to build, then navigate
+      debugPrint("❄️ Cold start message detected");
       Future.delayed(const Duration(seconds: 2), () {
-        _handleNavigation(initialMessage.data);
+        _handleIncomingData(initialMessage.data);
       });
     }
   }
 
-  // --- 🧠 CENTRAL NAVIGATION LOGIC ---
-  void _handleNavigation(Map<String, dynamic> data) {
-    print("--------------------------------------------------");
-    print("🪤 [Trap 5] Handling Navigation Logic...");
-    
-    // Log all keys
-    data.forEach((key, value) => print("   -> Key: '$key', Value: '$value'"));
+  /// ===============================================================
+  /// 🔐 LOGOUT SIGNAL HANDLER (shared logic)
+  /// ===============================================================
+  bool _handleLogoutSignal(Map<String, dynamic> data) {
+    if (data['action'] != 'logout') return false;
 
-    final String? type = data['type'];
-    final String? id = data['referenceId'] ?? data['id'] ?? data['bagLiftId'] ?? data['data'];
+    debugPrint("🚨 Logout signal received (FG/BG)");
 
-    print("   -> Extracted Type: '$type'");
-    print("   -> Extracted ID:   '$id'");
+    SharedPreferences.getInstance().then((prefs) async {
+      await prefs.setBool('force_logout_on_resume', true);
+      await prefs.setString(
+        'force_logout_message',
+        data['message'] ??
+            'You were signed out because your account was used on another device.',
+      );
 
-    // ✅ USE THE IMPORTED KEY DIRECTLY
+      await prefs.remove('jwt_token');
+      await prefs.remove('user_id');
+      await prefs.remove('is_technical_mode');
+    });
+
+    return true; // ⛔ STOP navigation
+  }
+
+  /// ===============================================================
+  /// 🧠 CENTRAL DATA ROUTER
+  /// ===============================================================
+  void _handleIncomingData(Map<String, dynamic> data) {
+    debugPrint("--------------------------------------------------");
+    debugPrint("🪤 Handling incoming data");
+    data.forEach((k, v) => debugPrint("   $k : $v"));
+
+    if (_handleLogoutSignal(data)) {
+      debugPrint("🔐 Logout handled — navigation aborted");
+      return;
+    }
+
+    final type = data['type'];
+    final id =
+        data['referenceId'] ?? data['id'] ?? data['bagLiftId'] ?? data['data'];
+
     if (navigatorKey.currentState == null) {
-      print("🔥 [Trap 5 Critical] Navigator Key State is NULL! Retrying in 1s...");
-      
-      // 🔄 AUTO-RETRY LOGIC
+      debugPrint("🔥 Navigator null — retrying");
       Future.delayed(const Duration(seconds: 1), () {
-         if (navigatorKey.currentState != null) {
-           print("🔄 Retry Success! Navigating now...");
-           _handleNavigation(data);
-         } else {
-           print("❌ Retry Failed. Navigation aborted.");
-         }
+        if (navigatorKey.currentState != null) {
+          _handleIncomingData(data);
+        }
       });
       return;
     }
 
     if (type == 'BAG_LIFT' && id != null) {
-      print("🔀 [Trap 5 Success] Valid Match! Pushing Route: /approve_mason_bagLift");
-      
-      // ✅ USE THE IMPORTED KEY
-      navigatorKey.currentState?.pushNamed(
-        '/approve_mason_bagLift', 
+      navigatorKey.currentState!.pushNamed(
+        '/approve_mason_bagLift',
         arguments: id,
       );
-    } else {
-      print("⚠️ [Trap 5 Fail] Conditions not met.");
-      print("   -> Check: Does Type == 'BAG_LIFT'? ${type == 'BAG_LIFT'}");
-      print("   -> Check: Is ID not null? ${id != null}");
     }
-    print("--------------------------------------------------");
+
+    debugPrint("--------------------------------------------------");
   }
 
-  Future<String?> getFcmToken() async {
-    print("🔍 DEBUG: Starting FCM Token generation request...");
-    try {
-      String? token = await _messaging.getToken();
-      if (token == null) {
-        print("❌ DEBUG: Token is NULL.");
-      } else {
-        print("✅ DEBUG: FCM Token: ${token.substring(0, 20)}...");
-      }
-      return token;
-    } catch (e) {
-      print("🔥 DEBUG: Token Gen Error: $e");
-      return null;
-    }
+  /// ===============================================================
+  /// 🔔 FOREGROUND NOTIFICATION
+  /// ===============================================================
+  Future<void> _showForegroundNotification(RemoteMessage message) async {
+    final notification = message.notification;
+    final android = message.notification?.android;
+
+    if (notification == null || android == null) return;
+
+    await _localNotifications.show(
+      notification.hashCode,
+      notification.title,
+      notification.body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'high_importance_channel',
+          'High Importance Notifications',
+          importance: Importance.max,
+          priority: Priority.high,
+          icon: '@mipmap/ic_launcher',
+        ),
+      ),
+      payload: jsonEncode(message.data),
+    );
   }
 
+  /// ===============================================================
+  /// 🔧 CHANNEL
+  /// ===============================================================
   Future<void> _createChannel() async {
-    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+    const channel = AndroidNotificationChannel(
       'high_importance_channel',
       'High Importance Notifications',
       importance: Importance.max,
       playSound: true,
     );
+
     await _localNotifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
   }
 
-  Future<void> _showForegroundNotification(RemoteMessage message) async {
-    RemoteNotification? notification = message.notification;
-    AndroidNotification? android = message.notification?.android;
-
-    if (notification != null && android != null) {
-      // 🪤 TRAP 6: Creating Local Notification
-      String payloadData = jsonEncode(message.data);
-      
-      _localNotifications.show(
-        notification.hashCode,
-        notification.title,
-        notification.body,
-        const NotificationDetails(
-          android: AndroidNotificationDetails(
-            'high_importance_channel',
-            'High Importance Notifications',
-            icon: '@mipmap/ic_launcher',
-            importance: Importance.max,
-            priority: Priority.high,
-          ),
-        ),
-        payload: payloadData, 
-      );
+  /// ===============================================================
+  /// 🪪 TOKEN
+  /// ===============================================================
+  Future<String?> getFcmToken() async {
+    try {
+      final token = await _messaging.getToken();
+      debugPrint("✅ FCM Token: ${token?.substring(0, 20)}...");
+      return token;
+    } catch (e) {
+      debugPrint("🔥 Token error: $e");
+      return null;
     }
   }
 }

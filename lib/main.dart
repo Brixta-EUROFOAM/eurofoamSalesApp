@@ -3,6 +3,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // --- WIDGETS & THEMES ---
 import 'package:salesmanapp/widgets/app_theme.dart';
@@ -10,19 +11,22 @@ import 'package:salesmanapp/widgets/theme_provider.dart';
 
 // --- MODELS & SERVICES ---
 import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/services/notification_service.dart'; 
-import 'package:salesmanapp/api/auth_service.dart'; // ✅ Added for Auto-Login check
+import 'package:salesmanapp/services/notification_service.dart';
+import 'package:salesmanapp/api/auth_service.dart';
+import 'package:salesmanapp/services/update_service.dart'; // <--- IMPORT YOUR UpdateService
 
 // --- SCREENS ---
 import 'package:salesmanapp/screens/auth/login_screen.dart';
 import 'package:salesmanapp/screens/nav_screen.dart';
 import 'package:salesmanapp/screens/app_selector_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/technical_nav_screen.dart';
-import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_bagLift.dart'; // ✅ Added for Notification Route
-import 'package:salesmanapp/navigation_key.dart';
+import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_bagLift.dart';
+ // Assuming this defines navigatorKey
 import 'package:firebase_core/firebase_core.dart';
 
-// 1. DEFINE GLOBAL KEY
+// 1. DEFINE GLOBAL KEY FOR NAVIGATOR
+// We'll use this to get a BuildContext that's always under MaterialApp.
+final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
 
 
 Future<void> main() async {
@@ -30,13 +34,12 @@ Future<void> main() async {
   await Firebase.initializeApp();
   debugPrint("Firebase Initialized Successfully.");
 
-  // 2. PASS KEY TO SERVICE
   await NotificationService().init();
   debugPrint("NOTIFICATIONS INITIALIZED.");
 
   await dotenv.load(fileName: ".env");
   await Hive.initFlutter();
-  
+
   final radarPublishableKey = dotenv.env['RADAR_API_KEY'];
   if (radarPublishableKey != null) {
     await Radar.initialize(radarPublishableKey);
@@ -53,8 +56,67 @@ Future<void> main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  Future<void> _checkForcedLogout() async {
+  final prefs = await SharedPreferences.getInstance();
+
+  final shouldLogout = prefs.getBool('force_logout_on_resume') ?? false;
+  if (!shouldLogout) return;
+
+  final message = prefs.getString('force_logout_message');
+
+  // 🔥 Clear the flag immediately (ONE-TIME trigger)
+  await prefs.remove('force_logout_on_resume');
+  await prefs.remove('force_logout_message');
+
+  // 🔐 Hard auth cleanup
+  await AuthService().logout(); // must clear tokens + storage
+
+  // 🧭 Navigate safely
+  if (globalNavigatorKey.currentState != null) {
+    globalNavigatorKey.currentState!.pushNamedAndRemoveUntil(
+      '/salesforce_login_page',
+      (route) => false,
+    );
+  }
+
+  // 🗣 Optional user feedback
+  if (message != null && globalNavigatorKey.currentContext != null) {
+    ScaffoldMessenger.of(globalNavigatorKey.currentContext!).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red.shade700,
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  debugPrint("🔐 Forced logout executed successfully");
+}
+
+  @override
+  void initState() {
+    super.initState();
+    // Schedule the version check to run after the first frame is built,
+    // ensuring globalNavigatorKey.currentContext is available.
+    WidgetsBinding.instance.addPostFrameCallback((_) async{
+
+      await _checkForcedLogout(); 
+      if (globalNavigatorKey.currentContext != null) {
+        UpdateService.checkVersion(globalNavigatorKey.currentContext!);
+        debugPrint("UpdateService.checkVersion called using globalNavigatorKey.currentContext.");
+      } else {
+        debugPrint("ERROR: globalNavigatorKey.currentContext was null during post-frame callback.");
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,9 +125,9 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'BEST WORK FORCE',
-      
-      // 3. ✅ ASSIGN THE KEY HERE (Crucial for Notifications)
-      navigatorKey: navigatorKey,
+
+      // 3. ✅ ASSIGN THE GLOBAL NAVIGATOR KEY HERE
+      navigatorKey: globalNavigatorKey, // Use the global key
 
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
@@ -76,7 +138,7 @@ class MyApp extends StatelessWidget {
         '/selector': (context) => const AppSelectorScreen(),
         '/salesforce_login_page': (context) => const LoginScreen(),
       },
-      
+
       onGenerateRoute: (settings) {
         // --- 1. Existing Salesman App ---
         if (settings.name == '/home') {
@@ -104,9 +166,9 @@ class MyApp extends StatelessWidget {
               // We need the 'Employee' object to build the screen.
               // Fetch it securely from storage (Auto-Login).
               return FutureBuilder<Employee?>(
-                future: AuthService().tryAutoLogin(), 
+                future: AuthService().tryAutoLogin(),
                 builder: (context, snapshot) {
-                  
+
                   // A. Waiting for storage...
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Scaffold(
@@ -117,13 +179,13 @@ class MyApp extends StatelessWidget {
                   // B. User Found! Open Screen + Auto-Dialog
                   if (snapshot.hasData && snapshot.data != null) {
                     return ApproveMasonBagLift(
-                      employee: snapshot.data!, 
+                      employee: snapshot.data!,
                       highlightedId: bagLiftId, // <--- Pass ID to auto-open dialog
                     );
                   }
 
                   // C. No User (Logged out)? Redirect to Login
-                  return const LoginScreen(); 
+                  return const LoginScreen();
                 },
               );
             },

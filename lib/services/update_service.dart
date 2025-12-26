@@ -19,8 +19,10 @@ class UpdateService {
       await remoteConfig.setConfigSettings(
         RemoteConfigSettings(
           fetchTimeout: const Duration(minutes: 1),
-          minimumFetchInterval: Duration.zero, // DEV
-          // minimumFetchInterval: const Duration(hours: 1), // PROD
+          // For real-time updates, minimumFetchInterval becomes less critical after the initial fetch.
+          // You can keep Duration.zero for development, or a longer duration for production
+          // as the listener will bypass it for immediate updates.
+          minimumFetchInterval: Duration.zero, 
         ),
       );
 
@@ -29,26 +31,46 @@ class UpdateService {
         'min_required_version': 1,
       });
 
+      // --- Initial fetch and activate ---
+      // This is still good to do when the app starts to get the latest config immediately.
       await remoteConfig.fetchAndActivate();
 
-      // 🔑 IMPORTANT: This is a BUILD NUMBER
-      final int minRequiredBuild =
-          remoteConfig.getInt('min_required_version');
+      // --- Add the real-time listener ---
+      // This listener will be invoked whenever a new config version is published on the server.
+      remoteConfig.onConfigUpdated.listen((event) async {
+        debugPrint('Remote Config updated in real-time!');
+        // Activate the newly fetched config values
+        await remoteConfig.activate();
+        debugPrint('Activated new Remote Config values.');
 
-      final PackageInfo info = await PackageInfo.fromPlatform();
-      final int currentBuild = int.parse(info.buildNumber);
+        // Now, re-check the version with the newly activated config
+        _checkAndPromptForUpdate(context, remoteConfig);
+      }, onError: (error) {
+        debugPrint('Error listening for Remote Config updates: $error');
+      });
 
-      debugPrint(
-        "📱 App Build: $currentBuild | ☁️ Min Required Build: $minRequiredBuild",
-      );
+      // Also perform an initial check based on the config fetched at startup
+      _checkAndPromptForUpdate(context, remoteConfig);
 
-      if (currentBuild < minRequiredBuild) {
-        if (context.mounted) {
-          _showUpdateDialog(context);
-        }
-      }
     } catch (e) {
       debugPrint("Update check failed: $e");
+    }
+  }
+
+  static Future<void> _checkAndPromptForUpdate(BuildContext context, FirebaseRemoteConfig remoteConfig) async {
+    final int minRequiredBuild = remoteConfig.getInt('min_required_version');
+
+    final PackageInfo info = await PackageInfo.fromPlatform();
+    final int currentBuild = int.parse(info.buildNumber);
+
+    debugPrint(
+      "📱 App Build: $currentBuild | ☁️ Min Required Build: $minRequiredBuild",
+    );
+
+    if (currentBuild < minRequiredBuild) {
+      if (context.mounted) {
+        _showUpdateDialog(context);
+      }
     }
   }
 

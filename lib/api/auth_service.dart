@@ -6,6 +6,7 @@ import 'dart:developer' as dev;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../models/employee_model.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
   static const String _baseUrl = 'http://13.203.79.51'; //aws
@@ -24,10 +25,15 @@ class AuthService {
   }
 
   /// Deletes the JWT from storage to log the user out.
-  Future<void> logout() async {
-    await _storage.delete(key: 'jwt_token');
-    dev.log('Token deleted. User logged out.', name: 'AuthService');
-  }
+Future<void> logout() async {
+  await _storage.deleteAll();
+
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.clear();
+
+  dev.log('User fully logged out', name: 'AuthService');
+}
+
 
   /// Main login function.
   /// It now gets a JWT, saves it, and then fetches the user's profile.
