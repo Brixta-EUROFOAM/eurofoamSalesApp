@@ -21,13 +21,13 @@ import 'package:salesmanapp/screens/nav_screen.dart';
 import 'package:salesmanapp/screens/app_selector_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/technical_nav_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_bagLift.dart';
- // Assuming this defines navigatorKey
+// Assuming this defines navigatorKey
 import 'package:firebase_core/firebase_core.dart';
 
 // 1. DEFINE GLOBAL KEY FOR NAVIGATOR
 // We'll use this to get a BuildContext that's always under MaterialApp.
-final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
-
+final GlobalKey<NavigatorState> globalNavigatorKey =
+    GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,59 +63,69 @@ class MyApp extends StatefulWidget {
   State<MyApp> createState() => _MyAppState();
 }
 
-class _MyAppState extends State<MyApp> {
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   Future<void> _checkForcedLogout() async {
-  final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
 
-  final shouldLogout = prefs.getBool('force_logout_on_resume') ?? false;
-  if (!shouldLogout) return;
+    final shouldLogout = prefs.getBool('force_logout_on_resume') ?? false;
+    if (!shouldLogout) return;
 
-  final message = prefs.getString('force_logout_message');
+    final message = prefs.getString('force_logout_message');
 
-  // 🔥 Clear the flag immediately (ONE-TIME trigger)
-  await prefs.remove('force_logout_on_resume');
-  await prefs.remove('force_logout_message');
+    // 🔥 Nuke ALL local state (single source of truth)
+    await prefs.clear();
 
-  // 🔐 Hard auth cleanup
-  await AuthService().logout(); // must clear tokens + storage
+    // 🔐 Hard auth cleanup (secure storage, etc.)
+    await AuthService().logout();
 
-  // 🧭 Navigate safely
-  if (globalNavigatorKey.currentState != null) {
-    globalNavigatorKey.currentState!.pushNamedAndRemoveUntil(
-      '/salesforce_login_page',
-      (route) => false,
-    );
+    // 🧭 Navigate safely to login
+    if (globalNavigatorKey.currentState != null) {
+      globalNavigatorKey.currentState!.pushNamedAndRemoveUntil(
+        '/salesforce_login_page',
+        (route) => false,
+      );
+    }
+
+    // 🗣 Optional user feedback
+    if (message != null && globalNavigatorKey.currentContext != null) {
+      ScaffoldMessenger.of(globalNavigatorKey.currentContext!).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red.shade700,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+
+    debugPrint("🔐 Forced logout executed successfully");
   }
-
-  // 🗣 Optional user feedback
-  if (message != null && globalNavigatorKey.currentContext != null) {
-    ScaffoldMessenger.of(globalNavigatorKey.currentContext!).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red.shade700,
-        duration: const Duration(seconds: 4),
-      ),
-    );
-  }
-
-  debugPrint("🔐 Forced logout executed successfully");
-}
 
   @override
   void initState() {
     super.initState();
-    // Schedule the version check to run after the first frame is built,
-    // ensuring globalNavigatorKey.currentContext is available.
-    WidgetsBinding.instance.addPostFrameCallback((_) async{
+    WidgetsBinding.instance.addObserver(this);
 
-      await _checkForcedLogout(); 
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _checkForcedLogout();
+
       if (globalNavigatorKey.currentContext != null) {
         UpdateService.checkVersion(globalNavigatorKey.currentContext!);
-        debugPrint("UpdateService.checkVersion called using globalNavigatorKey.currentContext.");
-      } else {
-        debugPrint("ERROR: globalNavigatorKey.currentContext was null during post-frame callback.");
       }
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint("🔄 App resumed — checking forced logout");
+      await _checkForcedLogout();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   @override
@@ -168,7 +178,6 @@ class _MyAppState extends State<MyApp> {
               return FutureBuilder<Employee?>(
                 future: AuthService().tryAutoLogin(),
                 builder: (context, snapshot) {
-
                   // A. Waiting for storage...
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Scaffold(
@@ -180,7 +189,8 @@ class _MyAppState extends State<MyApp> {
                   if (snapshot.hasData && snapshot.data != null) {
                     return ApproveMasonBagLift(
                       employee: snapshot.data!,
-                      highlightedId: bagLiftId, // <--- Pass ID to auto-open dialog
+                      highlightedId:
+                          bagLiftId, // <--- Pass ID to auto-open dialog
                     );
                   }
 
