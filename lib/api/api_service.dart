@@ -488,6 +488,24 @@ class ApiService {
     );
   }
 
+  // ✅ NEW: Fetch Stats for Approval Logic
+  Future<Map<String, int>> getMasonBagStats({
+    required String masonId,
+    required String siteId,
+  }) async {
+    final queryString = 'masonId=$masonId&siteId=$siteId';
+    
+    // We use the generic _get helper
+    return _get('mason-stats?$queryString', (json) {
+      // The backend returns { "data": { "overall": 100, "site": 50 } }
+      // Our _get helper unwraps "data", so 'json' here IS the inner object.
+      return {
+        'overall': int.tryParse(json['overall']?.toString() ?? '0') ?? 0,
+        'site': int.tryParse(json['site']?.toString() ?? '0') ?? 0,
+      };
+    });
+  }
+
   Future<PjpData> fetchPendingAndVerifiedPjps({
     required int userId,
     String? startDate,

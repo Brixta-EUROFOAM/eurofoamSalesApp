@@ -52,27 +52,28 @@ class UpdateService {
     }
   }
 
-  static void _showUpdateDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // 🔒 cannot dismiss
-      builder: (context) => WillPopScope(
-        onWillPop: () async => false, // 🔒 block back button
-        child: AlertDialog(
-          title: const Text("Update Required"),
-          content: const Text(
-            "A new version of the app is available. Please update to continue using the app.",
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: _launchStore,
-              child: const Text("Update Now"),
-            ),
-          ],
+ static void _showUpdateDialog(BuildContext context) {
+  showDialog(
+    context: context,
+    barrierDismissible: false, // 🔒 cannot tap outside
+    builder: (context) => PopScope(
+      canPop: false, // 🔒 blocks system back & predictive back
+      child: AlertDialog(
+        title: const Text("Update Required"),
+        content: const Text(
+          "A new version of the app is available. Please update to continue using the app.",
         ),
+        actions: [
+          ElevatedButton(
+            onPressed: _launchStore,
+            child: const Text("Update Now"),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
+
 
   static void _launchStore() async {
     final url = Uri.parse(

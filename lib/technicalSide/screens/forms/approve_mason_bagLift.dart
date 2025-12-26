@@ -172,6 +172,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
 
   // --- 📸 Verification Dialog ---
   void _showVerificationDialog(MasonBagLift item) {
+    bool _isValidatingRules = false;
     final bagCountController = TextEditingController(
       text: item.bagCount.toString(),
     );
@@ -497,47 +498,69 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                   ),
                 ),
               ),
+// 🔴 THE LOGIC BUTTON
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _accentGreen,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
+                  backgroundColor: _accentGreen, 
+                  foregroundColor: Colors.white, 
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))
                 ),
-                onPressed: _isUploadingImage
-                    ? null
-                    : () {
-                        // VALIDATION
-                        if (selectedSite == null || selectedDealer == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
+                
+                // Disable button if validation is running
+                onPressed: (_isUploadingImage || _isValidatingRules) 
+                  ? null 
+                  : () async {
+                      // 1. BASIC INPUT VALIDATION
+                      if (selectedSite == null || selectedDealer == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Site and Dealer are mandatory."), backgroundColor: Colors.red));
+                        return;
+                      }
+                      if (validApproverId == null) return; // Should handle error UI elsewhere
+
+                      // 2. 🟢 START CHECKING DB (Spinner ON)
+                      setStateDialog(() => _isValidatingRules = true);
+
+                      try {
+                        // 3. 🔍 CALL API TO GET NUMBERS
+                        // We use "0" if masonId is null just to run the check safely
+                        final stats = await _api.getMasonBagStats(
+                          masonId: item.masonId ,
+                          siteId: selectedSite!.id?? "0"
+                        );
+                        
+                        final int overallBags = stats['overall'] ?? 0;
+                        final int siteBags = stats['site'] ?? 0;
+
+                        // 4. 🛑 THE RULE:
+                        // "If Mason has < 800 AND Site has < 600 -> BLOCK"
+                        if (overallBags < 800 && siteBags < 600) {
+                          
+                          // Stop spinner
+                          setStateDialog(() => _isValidatingRules = false);
+
+                          // SHOW BLOCKING DIALOG
+                          if (!mounted) return;
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: Row(children: const [Icon(Icons.block, color: _dangerRed), SizedBox(width: 8), Text("Approval Blocked")]),
                               content: Text(
-                                "Error: Site and Dealer are mandatory.",
+                                "Cannot Auto-Approve.\n\n"
+                                "• Mason History: $overallBags (Needs 800+)\n"
+                                "• Site History: $siteBags (Needs 600+)\n\n"
+                                "Please contact Admin."
                               ),
-                              backgroundColor: Colors.red,
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("OK", style: TextStyle(color: _cardNavy)))
+                              ],
                             ),
                           );
-                          return;
+                          return; // ⛔ EXIT HERE. DO NOT APPROVE.
                         }
 
-                        if (validApproverId == null) {
-                          // STOP HERE if ID is invalid
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                "Error: Your User ID ('${widget.employee.id}') is not a valid number. Cannot approve.",
-                              ),
-                              backgroundColor: _dangerRed,
-                              duration: const Duration(seconds: 4),
-                            ),
-                          );
-                          return;
-                        }
+                        // 5. ✅ PASSED? PROCEED TO APPROVE
+                        Navigator.pop(context); // Close Review Dialog
 
-                        Navigator.pop(context);
-
-                        // CALL API WITH ALL NEW FIELDS
                         _updateStatus(
                           item.id,
                           'approved',
@@ -550,11 +573,15 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                           verificationSiteImageUrl: _uploadedSiteImageUrl,
                           approvedBy: validApproverId,
                         );
-                      },
-                child: const Text(
-                  "VERIFY & APPROVE",
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
+
+                      } catch (e) {
+                        setStateDialog(() => _isValidatingRules = false);
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Validation Error: $e"), backgroundColor: _dangerRed));
+                      }
+                  },
+                child: _isValidatingRules
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text("VERIFY & APPROVE", style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           );
