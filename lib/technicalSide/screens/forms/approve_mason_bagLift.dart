@@ -499,6 +499,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                 ),
               ),
 // 🔴 THE LOGIC BUTTON
+             // 🔴 THE LOGIC BUTTON (Replace lines 351 - 418 with this)
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _accentGreen, 
@@ -512,24 +513,37 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                   : () async {
                       // 1. BASIC INPUT VALIDATION
                       if (selectedSite == null || selectedDealer == null) {
-                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Site and Dealer are mandatory."), backgroundColor: Colors.red));
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Error: Site and Dealer are mandatory."), backgroundColor: _dangerRed));
                         return;
                       }
-                      if (validApproverId == null) return; // Should handle error UI elsewhere
+
+                      // ⚠️ FIX: Check for Invalid User ID (Prevents Silent Failure)
+                      if (validApproverId == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text("Error: Your Employee ID ('${widget.employee.id}') is not a valid number."), backgroundColor: _dangerRed)
+                        );
+                        return; 
+                      }
 
                       // 2. 🟢 START CHECKING DB (Spinner ON)
                       setStateDialog(() => _isValidatingRules = true);
 
                       try {
+                        // ⚠️ FIX: Handle potential NULLs in IDs before sending to API
+                        final String safeMasonId = item.masonId ;
+                        final String safeSiteId = selectedSite?.id ?? "0";
+
                         // 3. 🔍 CALL API TO GET NUMBERS
-                        // We use "0" if masonId is null just to run the check safely
                         final stats = await _api.getMasonBagStats(
-                          masonId: item.masonId ,
-                          siteId: selectedSite!.id?? "0"
+                          masonId: safeMasonId,
+                          siteId: safeSiteId
                         );
                         
-                        final int overallBags = stats['overall'] ?? 0;
-                        final int siteBags = stats['site'] ?? 0;
+                        // ⚠️ FIX: Safely Parse JSON Numbers (Handles String "800" vs Int 800)
+                        final int overallBags = int.tryParse(stats['overall'].toString()) ?? 0;
+                        final int siteBags = int.tryParse(stats['site'].toString()) ?? 0;
+
+                        print("📊 Verification Stats: Overall=$overallBags, Site=$siteBags");
 
                         // 4. 🛑 THE RULE:
                         // "If Mason has < 800 AND Site has < 600 -> BLOCK"
@@ -561,6 +575,8 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                         // 5. ✅ PASSED? PROCEED TO APPROVE
                         Navigator.pop(context); // Close Review Dialog
 
+                        // Now we call updateStatus.
+                        // validApproverId is guaranteed to be non-null here because of the check above.
                         _updateStatus(
                           item.id,
                           'approved',
@@ -571,11 +587,12 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                           keyPersonPhone: personPhoneController.text,
                           memo: memoController.text,
                           verificationSiteImageUrl: _uploadedSiteImageUrl,
-                          approvedBy: validApproverId,
+                          approvedBy: validApproverId, 
                         );
 
                       } catch (e) {
                         setStateDialog(() => _isValidatingRules = false);
+                        print("Validation Error: $e");
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Validation Error: $e"), backgroundColor: _dangerRed));
                       }
                   },

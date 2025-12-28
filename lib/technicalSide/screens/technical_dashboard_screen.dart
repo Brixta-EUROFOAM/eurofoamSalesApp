@@ -7,6 +7,9 @@ import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:provider/provider.dart';
+import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+
 
 // --- FORMS IMPORTS ---
 import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
@@ -31,6 +34,11 @@ class TechnicalDashboardScreen extends StatefulWidget {
 
 class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> with WidgetsBindingObserver {
   final ApiService _apiService = ApiService();
+bool _attendanceEnabled(BuildContext context) {
+  final flags = context.read<TechnicalFlags>();
+  return flags.attendance;
+}
+
   
   bool _isCheckingIn = false;
   bool _isCheckingOut = false;
@@ -219,6 +227,10 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
   }
 
   void _showMasonActions(BuildContext context) {
+    final flags = context.read<TechnicalFlags>();
+    if(!flags.masonManagement)
+      
+    return;
     // (Existing Code Hidden for Brevity)
     showModalBottomSheet(
       context: context,
@@ -232,6 +244,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
           children: [
             Text("Mason Management", style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
+            if(flags.approveBagLift)
             _buildActionSheetItem(
               icon: Icons.shopping_bag_outlined,
               title: "Approve Bag Lift",
@@ -243,6 +256,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                 _openFullScreen(ApproveMasonBagLift(employee: widget.employee));
               },
             ),
+            if(flags.approveKyc)
             _buildActionSheetItem(
               icon: Icons.verified_user_outlined,
               title: "Approve KYC",
@@ -254,6 +268,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                 _openFullScreen(ApproveMasonKycScreen(employee: widget.employee));
               },
             ),
+            if(flags.approveRewards)
             _buildActionSheetItem(
               icon: Icons.card_giftcard,
               title: "Approve Rewards",
@@ -265,6 +280,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                 _openFullScreen(ApproveMasonRewardsScreen(employee: widget.employee));
               },
             ),
+            if(flags.myMasons)
             _buildActionSheetItem(
               icon: Icons.groups_rounded,
               title: "My Masons List",
@@ -284,6 +300,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
 
   void _showTechnicalActions(BuildContext context) {
      // (Existing Code Hidden for Brevity)
+     final flags = context.read<TechnicalFlags>();
+     if(!flags.technicalOps) return;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -299,6 +317,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
               style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)
             ),
             const SizedBox(height: 16),
+            if(flags.createTvr)
             _buildActionSheetItem(
              icon: Icons.assignment_add,
              title: "Create TVR",
@@ -314,6 +333,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                );
              },
             ),
+            if(flags.registerSite)
             _buildActionSheetItem(
               icon: Icons.add_location_alt,
               title: "Register Site",
@@ -325,6 +345,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
                 _openFullScreen(AddSiteForm(employee: widget.employee));
               },
             ),
+            if(flags.addDealerSubDealer)
             _buildActionSheetItem(
               icon: Icons.store_mall_directory_outlined,
               title: "Add Dealer/Sub Dealer",
@@ -345,6 +366,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
   @override
   Widget build(BuildContext context) {
     String userArea = "N/A";
+    final flags = context.watch<TechnicalFlags>();
     try { userArea = (widget.employee as dynamic).area ?? "N/A"; } catch (_) {}
 
     return Scaffold(
@@ -402,6 +424,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
           children: [
             
             // 1. HERO CARD
+            if (_attendanceEnabled(context))
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
@@ -514,6 +537,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
             
             // 3. FINTECH STYLE LIST ITEMS
             // Mason Operations
+           
+            if(flags.masonManagement)
             _buildFintechCard(
               title: "Mason Management",
               subtitle: "Masons, KYC, Bag Lifts",
@@ -527,6 +552,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen> wit
             const SizedBox(height: 16),
 
             // Technical Operations
+            if(flags.technicalOps)
             _buildFintechCard(
               title: "Technical Ops",
               subtitle: "TVR, Site Registration, Add Dealer",

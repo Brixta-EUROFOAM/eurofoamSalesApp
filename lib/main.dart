@@ -4,6 +4,8 @@ import 'package:flutter_radar/flutter_radar.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+
 
 // --- WIDGETS & THEMES ---
 import 'package:salesmanapp/widgets/app_theme.dart';
@@ -48,14 +50,24 @@ Future<void> main() async {
     debugPrint("ERROR: RADAR_PUBLISHABLE_KEY not found in .env file.");
   }
 
-  runApp(
-    ChangeNotifierProvider(
-      create: (context) => ThemeProvider(),
-      child: const MyApp(),
-    ),
-  );
-}
+runApp(
+  MultiProvider(
+    providers: [
+      // 🔥 FEATURE FLAGS (control plane)
+      Provider<TechnicalFlags>.value(
+        value: TechnicalFlags.dev,
+      ),
 
+      // 🎨 THEME PROVIDER (already used by MyApp)
+      ChangeNotifierProvider<ThemeProvider>(
+        create: (_) => ThemeProvider(),
+      ),
+    ],
+    child: const MyApp(),
+  ),
+);
+
+}
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 
