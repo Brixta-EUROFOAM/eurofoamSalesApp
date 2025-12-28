@@ -10,6 +10,21 @@ class TechnicalFlags {
   final bool createTvr;
   final bool registerSite;
   final bool addDealerSubDealer;
+  //pantydropping navigation
+  final bool dashboard;
+  final bool visits;
+  final bool journey;
+  final bool profile;
+  //pjp screen flags
+  final bool createPjp;
+  final bool pjpjourney;
+  final bool bulkpjp;
+  //journey screen nigga
+  final bool journeyMap;
+  final bool journeyTracking;
+  final bool journeyStartStop;
+  final bool journeyNavigation;
+  final bool journeyNotifications;
 
   const TechnicalFlags({
     required this.attendance,
@@ -22,9 +37,20 @@ class TechnicalFlags {
     required this.createTvr,
     required this.registerSite,
     required this.addDealerSubDealer,
+    required this.dashboard,
+    required this.visits,
+    required this.journey,
+    required this.profile,
+    required this.createPjp,
+    required this.bulkpjp,
+    required this.pjpjourney,
+    required this.journeyMap,
+    required this.journeyTracking,
+    required this.journeyStartStop,
+    required this.journeyNavigation,
+    required this.journeyNotifications,
   });
 
-  // 👇 THIS IS THE SWITCH (FOR NOW)
   static const TechnicalFlags dev = TechnicalFlags(
     attendance: true,
     masonManagement: true,
@@ -36,5 +62,20 @@ class TechnicalFlags {
     createTvr: true,
     registerSite: true,
     addDealerSubDealer: true,
+    //nav bar stuff
+    dashboard: true,
+    journey: true,
+    visits: true,
+    profile: true,
+    //pjp
+    createPjp: true,
+    bulkpjp: true,
+    pjpjourney: true,
+    //journey
+    journeyMap: true,
+    journeyNavigation: true,
+    journeyStartStop: true,
+    journeyTracking: true,
+    journeyNotifications: true,
   );
 }

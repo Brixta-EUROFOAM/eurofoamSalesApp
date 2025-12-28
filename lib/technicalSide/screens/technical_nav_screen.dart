@@ -1,5 +1,6 @@
 // lib/technicalSide/screens/technical_nav_screen.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
 //import 'package:salesmanapp/technicalSide/models/sites_model.dart';
@@ -10,6 +11,7 @@ import 'package:salesmanapp/technicalSide/screens/technical_dashboard_screen.dar
 import 'package:salesmanapp/technicalSide/screens/technical_profile_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/technical_pjp_screen.dart'; 
 import 'package:salesmanapp/technicalSide/screens/technical_journey_screen.dart'; 
+import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 
 // --- Forms & Actions ---
 import 'package:salesmanapp/technicalSide/screens/forms/create_tvr_form.dart';
@@ -80,23 +82,26 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final flags = context.read<TechnicalFlags>();
     final List<Widget> pages = [
+      if(flags.dashboard)
       TechnicalDashboardScreen(employee: widget.employee), // 0: Home
       
       // --- ✅ Connected the Key here ---
+      if(flags.visits)
       TechnicalPjpScreen(
         key: _pjpKey, 
         employee: widget.employee, 
         onStartJourney: _startJourney
       ), // 1: Visits
-      
+      if(flags.journey)
       TechnicalJourneyScreen(
         employee: widget.employee,
         initialJourneyData: _journeyData,
         onDestinationConsumed: () {}, // Journey started
         onJourneyCompleted: _onJourneyCompleted, // Journey ended
       ), // 2: Journey
-      
+      if(flags.profile)
       TechnicalProfileScreen(employee: widget.employee), // 3: Profile
     ];
 
@@ -173,23 +178,27 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
             surfaceTintColor: Colors.white,
             height: 70,
             elevation: 0,
-            destinations: const [
-              NavigationDestination(
+            destinations: [
+              if(flags.dashboard)
+              const NavigationDestination(
                 icon: Icon(Icons.grid_view_outlined),
                 selectedIcon: Icon(Icons.grid_view_rounded),
                 label: 'Dashboard',
               ),
-              NavigationDestination(
+              if(flags.visits)
+              const NavigationDestination(
                 icon: Icon(Icons.calendar_month_outlined),
                 selectedIcon: Icon(Icons.calendar_month),
                 label: 'Visits', 
               ),
-              NavigationDestination(
+              if(flags.journey)
+              const NavigationDestination(
                 icon: Icon(Icons.near_me_outlined),
                 selectedIcon: Icon(Icons.near_me),
                 label: 'Journey',
               ),
-              NavigationDestination(
+              if(flags.profile)
+              const NavigationDestination(
                 icon: Icon(Icons.person_outline),
                 selectedIcon: Icon(Icons.person),
                 label: 'Profile',

@@ -19,6 +19,8 @@ import 'package:polyline_codec/polyline_codec.dart';
 import 'package:slide_to_act/slide_to_act.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
+import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 
 class TechnicalJourneyScreen extends StatefulWidget {
   final Employee employee;
@@ -39,6 +41,7 @@ class TechnicalJourneyScreen extends StatefulWidget {
 }
 
 class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
+  late final TechnicalFlags flags;
   final Completer<MapLibreMapController> _controllerCompleter = Completer();
   late Future<String> _styleFuture;
 
@@ -96,23 +99,33 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   @override
   void initState() {
     super.initState();
+    flags = context.read<TechnicalFlags>();
+    if(flags.journeyNotifications){
     _initializeNotifications();
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Radar.setUserId(widget.employee.id);
       Radar.setDescription(widget.employee.displayName);
+      if(flags.journeyTracking){
       _setupRadarListeners();
+      }
 
+      if(flags.journeyMap){
       _determinePositionAndMoveCamera();
+      }
+      if(flags.journeyTracking){
       _startLocationStream();
+      }
 
-      if (widget.initialJourneyData != null) {
+      if (widget.initialJourneyData != null && flags.journeyStartStop) {
         _processNewJourneyData(widget.initialJourneyData!);
       }
     });
-
+if(flags.journeyMap){
     _styleFuture = _readStyle();
   }
+}
 
   @override
   void didUpdateWidget(covariant TechnicalJourneyScreen oldWidget) {

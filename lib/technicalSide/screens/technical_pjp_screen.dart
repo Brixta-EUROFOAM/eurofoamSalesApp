@@ -9,6 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:provider/provider.dart';
+import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+
+
 
 class TechnicalPjpScreen extends StatefulWidget {
   final Employee employee;
@@ -41,7 +45,9 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
 
   @override
   void initState() {
+    final flags = context.read<TechnicalFlags>();
     super.initState();
+    if(flags.createPjp)
     refreshPjpList();
   }
 
@@ -64,6 +70,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   }
 
   void _showCreateOptions() {
+    final flags = context.read<TechnicalFlags>();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -88,6 +95,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                     ),
                   ),
                 ),
+                if (flags.createPjp)
                 ListTile(
                   leading: Container(
                     padding: const EdgeInsets.all(8),
@@ -113,6 +121,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                     _showSingleCreateForm();
                   },
                 ),
+                if(flags.createPjp)
                 ListTile(
                   leading: Container(
                     padding: const EdgeInsets.all(8),
@@ -172,8 +181,10 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
 
   // --- Handles both Site and Dealer logic ---
   Future<void> _startJourney(Pjp pjp) async {
+    final flags = context.read<TechnicalFlags>();
     // 1. Block Pending
-    if (pjp.status.toUpperCase() == 'PENDING') {
+    if (pjp.status.toUpperCase() == 'PENDING') 
+    if(flags.pjpjourney){
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Cannot start a Pending plan. Please wait for approval."),
@@ -231,46 +242,49 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final displayDate = DateFormat('d MMMM, yyyy').format(_selectedDate);
-    final displayDay = DateFormat('EEEE').format(_selectedDate);
-    final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
+@override
+Widget build(BuildContext context) {
+  final flags = context.read<TechnicalFlags>();
+  final displayDate = DateFormat('d MMMM, yyyy').format(_selectedDate);
+  final displayDay = DateFormat('EEEE').format(_selectedDate);
+  final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
 
-    return Scaffold(
+  return Scaffold(
+    backgroundColor: _bgLight,
+
+    appBar: AppBar(
       backgroundColor: _bgLight,
-
-      appBar: AppBar(
-        backgroundColor: _bgLight,
-        elevation: 0,
-        automaticallyImplyLeading: false,
-        centerTitle: false,
-        toolbarHeight: 70,
-        title: Padding(
-          padding: const EdgeInsets.only(left: 8.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                isToday ? "My Visits (Today)" : "Visits",
-                style: TextStyle(
-                  color: _textDark,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -0.5,
-                ),
+      elevation: 0,
+      automaticallyImplyLeading: false,
+      centerTitle: false,
+      toolbarHeight: 70,
+      title: Padding(
+        padding: const EdgeInsets.only(left: 8.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isToday ? "My Visits (Today)" : "Visits",
+              style: TextStyle(
+                color: _textDark,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                letterSpacing: -0.5,
               ),
-              Text(
-                "$displayDay, $displayDate",
-                style: TextStyle(
-                  color: _textGrey,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
+            ),
+            Text(
+              "$displayDay, $displayDate",
+              style: TextStyle(
+                color: _textGrey,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-        actions: [
+      ),
+      actions: [
+        if (flags.createPjp)
           Padding(
             padding: const EdgeInsets.only(right: 20.0),
             child: InkWell(
@@ -309,59 +323,64 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
               ),
             ),
           ),
-        ],
-      ),
+      ],
+    ),
 
-      body: Column(
-        children: [
-          _buildDateSelector(),
-          const SizedBox(height: 10),
+    body: Column(
+      children: [
+        if (flags.visits) _buildDateSelector(),
+        const SizedBox(height: 10),
 
-          Expanded(
-            child: RefreshIndicator(
-              onRefresh: () async => refreshPjpList(),
-              color: _cardNavy,
-              backgroundColor: Colors.white,
-              child: FutureBuilder<List<Pjp>>(
-                future: _pjpFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Center(
-                      child: CircularProgressIndicator(color: _cardNavy),
-                    );
-                  }
+        Expanded(
+          child: flags.pjpjourney
+              ? RefreshIndicator(
+                  onRefresh: () async => refreshPjpList(),
+                  color: _cardNavy,
+                  backgroundColor: Colors.white,
+                  child: FutureBuilder<List<Pjp>>(
+                    future: _pjpFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState ==
+                          ConnectionState.waiting) {
+                        return Center(
+                          child: CircularProgressIndicator(
+                            color: _cardNavy,
+                          ),
+                        );
+                      }
 
-                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                    return _buildEmptyState();
-                  }
+                      if (!snapshot.hasData ||
+                          snapshot.data!.isEmpty) {
+                        return _buildEmptyState();
+                      }
 
-                  // Filter out COMPLETED PJPs
-                  final allPjps = snapshot.data!;
-                  final pjps = allPjps
-                      .where((p) => p.status != 'COMPLETED')
-                      .toList();
+                      final pjps = snapshot.data!
+                          .where((p) => p.status != 'COMPLETED')
+                          .toList();
 
-                  if (pjps.isEmpty) {
-                    return _buildEmptyState();
-                  }
+                      if (pjps.isEmpty) {
+                        return _buildEmptyState();
+                      }
 
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 80),
-                    itemCount: pjps.length,
-                    separatorBuilder: (ctx, i) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final pjp = pjps[index];
-                      return _buildVisitCard(pjp);
+                      return ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(
+                            20, 10, 20, 80),
+                        itemCount: pjps.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          return _buildVisitCard(pjps[index]);
+                        },
+                      );
                     },
-                  );
-                },
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildDateSelector() {
     return Container(
@@ -447,6 +466,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   }
 
   Widget _buildVisitCard(Pjp pjp) {
+    final flags = context.read<TechnicalFlags>();
     // 1. Status Logic
     final isPending = pjp.status.toUpperCase() == 'PENDING';
     final isInProgress = pjp.status.toUpperCase() == 'IN_PROGRESS';
@@ -495,7 +515,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
     } catch (_) {}
 
     return Slidable(
-      enabled: !isPending, 
+      enabled: flags.pjpjourney &&!isPending, 
       startActionPane: ActionPane(
         motion: const StretchMotion(),
         children: [
@@ -526,7 +546,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: () => _startJourney(pjp),
+            onTap: () => flags.journey ? () => _startJourney(pjp) :null,
             borderRadius: BorderRadius.circular(20),
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -649,6 +669,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   }
 
   Widget _buildEmptyState() {
+    final flags = context.read<TechnicalFlags>();
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -687,6 +708,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
             style: TextStyle(color: _textGrey, fontSize: 14),
           ),
           const SizedBox(height: 24),
+          if (flags.createPjp)
           OutlinedButton.icon(
             onPressed: _showCreateOptions,
             icon: const Icon(Icons.add),
