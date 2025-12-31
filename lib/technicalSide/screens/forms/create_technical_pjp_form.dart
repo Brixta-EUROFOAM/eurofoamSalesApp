@@ -1,10 +1,10 @@
 // lib/technicalSide/screens/forms/create_technical_pjp_form.dart
-import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:salesmanapp/core/app_kernel.dart'; //
+import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
+import 'package:salesmanapp/features/mapselectionpjp/map_selection_result.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
-import 'package:salesmanapp/technicalSide/models/sites_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 
 class CreateTechnicalPjpForm extends StatefulWidget {
@@ -25,42 +25,37 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   final _formKey = GlobalKey<FormState>();
   final ApiService _apiService = ApiService();
 
+  // --- KERNEL FEATURE ---
+  // Accessing the controller via AppKernel as per your architectural example
+  late final MapSelectionController _mapController = 
+      AppKernel.instance.feature<MapSelectionController>();
+
   // --- STATE ---
   String _visitType = 'Site';
-  TechnicalSite? _selectedSite;
-  Dealer? _selectedDealer;
   bool _isSubmitting = false;
   String? _selectedActivityType;
+  MapSelectionResult? _pickedLocation; // Stores the LatLng and Address result
 
-  // --- CONTROLLERS (Initialized empty for integer fields) ---
+  // --- CONTROLLERS ---
   final _descriptionController = TextEditingController();
   final _routeController = TextEditingController();
-
-  // Integer fields initialized as empty strings
   final _newSiteVisitsController = TextEditingController(text: '');
   final _followUpVisitsController = TextEditingController(text: '');
   final _dealerVisitsController = TextEditingController(text: '');
   final _influencerVisitsController = TextEditingController(text: '');
   final _bagsController = TextEditingController(text: '');
   final _schemesController = TextEditingController(text: '');
-
   final _infNameController = TextEditingController();
   final _infPhoneController = TextEditingController();
-  final _activityTypeController = TextEditingController();
+  
   final List<String> _activityOptions = [
-    'Mason',
-    'Contractor',
-    'Engineer/Architect',
-    'Builder',
-    'Dealer',
+    'Mason', 'Contractor', 'Engineer/Architect', 'Builder', 'Dealer',
   ];
 
   // --- THEME ---
   static const Color _surfaceWhite = Colors.white;
   static const Color _cardNavy = Color(0xFF0F172A);
-  static const Color _textDark = Color(
-    0xFF111827,
-  ); // Standard Grey-900 equivalent
+  static const Color _textDark = Color(0xFF111827); 
   static const Color _textGrey = Color(0xFF6B7280);
   static const Color _inputFill = Color(0xFFF9FAFB);
   static const Color _accentGreen = Color(0xFF10B981);
@@ -78,35 +73,16 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
     _schemesController.dispose();
     _infNameController.dispose();
     _infPhoneController.dispose();
-    _activityTypeController.dispose();
     super.dispose();
   }
 
-  // --- SEARCH HANDLERS ---
-  Future<void> _openSiteSearch() async {
-    final TechnicalSite? result = await showDialog(
-      context: context,
-      builder: (_) => _SiteSearchDialog(
-        api: _apiService,
-        userId: int.tryParse(widget.employee.id) ?? 0,
-      ),
-    );
+  // --- NEW FEATURE HANDLER ---
+  Future<void> _handleMapSelection() async {
+    // Uses the controller logic you just wired up in the AppKernel
+    final result = await _mapController.showMapPicker(context);
     if (result != null) {
       setState(() {
-        _selectedSite = result;
-        _routeController.text = result.address;
-      });
-    }
-  }
-
-  Future<void> _openDealerSearch() async {
-    final Dealer? result = await showDialog(
-      context: context,
-      builder: (_) => _DealerSearchDialog(api: _apiService),
-    );
-    if (result != null) {
-      setState(() {
-        _selectedDealer = result;
+        _pickedLocation = result;
         _routeController.text = result.address;
       });
     }
@@ -115,36 +91,22 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   // --- SUBMISSION ---
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
-
-    if (_visitType == 'Site' && _selectedSite == null) {
-      _showSnack('Please select a site.', Colors.orange);
-      return;
-    }
-    if (_visitType == 'Dealer' && _selectedDealer == null) {
-      _showSnack('Please select a dealer.', Colors.orange);
+    
+    // Safety check for map selection
+    if (_pickedLocation == null) {
+      _showSnack('Please select a destination on the map.', Colors.orange);
       return;
     }
 
     setState(() => _isSubmitting = true);
 
     try {
-      double lat = 0.0, lng = 0.0;
-      String primaryName = '';
-      String? sId, dId;
+      String primaryName = _visitType == 'Influencer' 
+          ? _infNameController.text 
+          : "$_visitType Visit";
 
-      if (_visitType == 'Site') {
-        lat = _selectedSite!.latitude;
-        lng = _selectedSite!.longitude;
-        primaryName = _selectedSite!.siteName;
-        sId = _selectedSite!.id;
-      } else if (_visitType == 'Dealer') {
-        lat = _selectedDealer!.latitude ?? 0.0;
-        lng = _selectedDealer!.longitude ?? 0.0;
-        primaryName = _selectedDealer!.name;
-        dId = _selectedDealer!.id;
-      } else {
-        primaryName = _infNameController.text;
-      }
+      // Using the controller logic to format the "Viable Data" string
+      final formattedArea = _mapController.formatPjpArea(primaryName, _pickedLocation!);
 
       final newPjp = Pjp(
         id: '',
@@ -153,21 +115,13 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
         createdById: int.parse(widget.employee.id),
         status: 'pending',
         verificationStatus: 'PENDING',
-        areaToBeVisited: '$primaryName, ${_routeController.text}|$lat|$lng',
+        areaToBeVisited: formattedArea, // Now contains lat/lng from map
         route: _routeController.text,
-        description: _descriptionController.text.isNotEmpty
-            ? _descriptionController.text
-            : null,
-        siteId: sId,
-        siteName: _visitType == 'Site' ? primaryName : null,
-        dealerId: dId,
-        dealerName: _visitType == 'Dealer' ? primaryName : null,
+        description: _descriptionController.text.isNotEmpty ? _descriptionController.text : null,
         plannedNewSiteVisits: int.tryParse(_newSiteVisitsController.text) ?? 0,
-        plannedFollowUpSiteVisits:
-            int.tryParse(_followUpVisitsController.text) ?? 0,
+        plannedFollowUpSiteVisits: int.tryParse(_followUpVisitsController.text) ?? 0,
         plannedNewDealerVisits: int.tryParse(_dealerVisitsController.text) ?? 0,
-        plannedInfluencerVisits:
-            int.tryParse(_influencerVisitsController.text) ?? 0,
+        plannedInfluencerVisits: int.tryParse(_influencerVisitsController.text) ?? 0,
         noOfConvertedBags: int.tryParse(_bagsController.text) ?? 0,
         noOfMasonPcSchemes: int.tryParse(_schemesController.text) ?? 0,
         influencerName: _infNameController.text,
@@ -191,11 +145,7 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   void _showSnack(String msg, Color color) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: color,
-          behavior: SnackBarBehavior.floating,
-        ),
+        SnackBar(content: Text(msg), backgroundColor: color, behavior: SnackBarBehavior.floating),
       );
     }
   }
@@ -203,13 +153,9 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.9,
-        ),
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
         padding: const EdgeInsets.all(24.0),
         decoration: const BoxDecoration(
           color: _surfaceWhite,
@@ -224,25 +170,25 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
               children: [
                 Center(
                   child: Container(
-                    width: 40,
-                    height: 4,
+                    width: 40, height: 4,
                     margin: const EdgeInsets.only(bottom: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(12),
-                    ),
+                    decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
                 _buildVisitTypeSelector(),
                 const SizedBox(height: 24),
                 _buildDynamicContextFields(),
                 const SizedBox(height: 16),
-                _buildSimpleInput(
+                
+                // UPDATED UI: Trigger map selection
+                _buildMapSelectorInput(
                   label: "Route / Full Address",
                   controller: _routeController,
-                  icon: Icons.route_outlined,
-                  hint: "Populated from selection",
+                  icon: Icons.map_rounded,
+                  hint: "Tap to select from map",
+                  onTap: _handleMapSelection,
                 ),
+
                 const Divider(height: 40),
                 _buildSectionHeader("Planned Visit Targets", Icons.ads_click),
                 _buildDynamicMetricGrid(),
@@ -267,14 +213,43 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
     );
   }
 
+  // Special UI helper for the Map Selector
+  Widget _buildMapSelectorInput({
+    required String label,
+    required TextEditingController controller,
+    required IconData icon,
+    required String hint,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: IgnorePointer(
+        child: TextFormField(
+          controller: controller,
+          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: const TextStyle(color: _textGrey),
+            prefixIcon: Icon(icon, color: _accentBlue, size: 20),
+            suffixIcon: const Icon(Icons.location_searching, color: _accentBlue),
+            hintText: hint,
+            filled: true,
+            fillColor: _inputFill,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          ),
+          validator: (v) => v == null || v.isEmpty ? 'Please select location' : null,
+        ),
+      ),
+    );
+  }
+
+  // --- EXISTING UI HELPERS ---
   Widget _buildVisitTypeSelector() {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: _inputFill,
-        borderRadius: BorderRadius.circular(12),
-      ),
+      decoration: BoxDecoration(color: _inputFill, borderRadius: BorderRadius.circular(12)),
       child: Row(
         children: [
           _buildSegmentButton('Site Visit', 'Site'),
@@ -286,59 +261,29 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   }
 
   Widget _buildDynamicContextFields() {
-    switch (_visitType) {
-      case 'Site':
-        return _buildSelectionField(
-          label: "Select Site",
-          value: _selectedSite?.siteName,
-          hint: "Search for a site...",
-          icon: Icons.location_city,
-          onTap: _openSiteSearch,
-        );
-      case 'Dealer':
-        return _buildSelectionField(
-          label: "Select Dealer",
-          value: _selectedDealer?.name,
-          hint: "Search for a dealer...",
-          icon: Icons.store,
-          onTap: _openDealerSearch,
-        );
-      case 'Influencer':
-        return Column(
-          children: [
-            _buildSimpleInput(
-              label: "Name (PC / Mason / Engg)",
-              controller: _infNameController,
-              icon: Icons.person_outline,
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildFintechDropdown(
-                    label: "Activity Type",
-                    value: _selectedActivityType,
-                    items: _activityOptions,
-                    icon: Icons.assignment_ind_rounded,
-                    onChanged: (v) => setState(() => _selectedActivityType = v),
-                  ),
+    if (_visitType == 'Influencer') {
+      return Column(
+        children: [
+          _buildSimpleInput(label: "Name (PC / Mason / Engg)", controller: _infNameController, icon: Icons.person_outline),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildFintechDropdown(
+                  label: "Activity Type", value: _selectedActivityType, items: _activityOptions,
+                  icon: Icons.assignment_ind_rounded, onChanged: (v) => setState(() => _selectedActivityType = v),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildSimpleInput(
-                    label: "Phone",
-                    controller: _infPhoneController,
-                    icon: Icons.phone_android,
-                    isPhone: true,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      default:
-        return const SizedBox.shrink();
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildSimpleInput(label: "Phone", controller: _infPhoneController, icon: Icons.phone_android, isPhone: true),
+              ),
+            ],
+          ),
+        ],
+      );
     }
+    return const SizedBox.shrink();
   }
 
   Widget _buildDynamicMetricGrid() {
@@ -346,65 +291,32 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
     if (_visitType == 'Site') {
       metrics.addAll([
         _buildMetricItem("New Sites", _newSiteVisitsController, _accentBlue),
-        _buildMetricItem(
-          "Follow-up Sites",
-          _followUpVisitsController,
-          Colors.purple,
-        ),
+        _buildMetricItem("Follow-up Sites", _followUpVisitsController, Colors.purple),
       ]);
     } else if (_visitType == 'Dealer') {
-      metrics.add(
-        _buildMetricItem("New Dealers", _dealerVisitsController, Colors.orange),
-      );
+      metrics.add(_buildMetricItem("New Dealers", _dealerVisitsController, Colors.orange));
     } else if (_visitType == 'Influencer') {
-      metrics.add(
-        _buildMetricItem(
-          "Influencers",
-          _influencerVisitsController,
-          Colors.teal,
-        ),
-      );
+      metrics.add(_buildMetricItem("Influencers", _influencerVisitsController, Colors.teal));
     }
-
     return Wrap(spacing: 12, runSpacing: 12, children: metrics);
   }
 
-  Widget _buildMetricItem(
-    String label,
-    TextEditingController ctrl,
-    Color color,
-  ) {
+  Widget _buildMetricItem(String label, TextEditingController ctrl, Color color) {
     return Container(
       width: (MediaQuery.of(context).size.width - 60) / 2,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _inputFill,
-        borderRadius: BorderRadius.circular(16),
+        color: _inputFill, borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color.withOpacity(0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
           TextField(
-            controller: ctrl,
-            keyboardType: TextInputType.number,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: _textDark, // Visible Grey-900 text
-            ),
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              isDense: true,
-            ),
+            controller: ctrl, keyboardType: TextInputType.number,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _textDark),
+            decoration: const InputDecoration(border: InputBorder.none, isDense: true),
           ),
         ],
       ),
@@ -414,50 +326,30 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   Widget _buildBusinessGoalRow() {
     return Row(
       children: [
-        Expanded(
-          child: _buildMetricItem("Target Bags", _bagsController, _accentGreen),
-        ),
+        Expanded(child: _buildMetricItem("Target Bags", _bagsController, _accentGreen)),
         const SizedBox(width: 12),
-        Expanded(
-          child: _buildMetricItem(
-            "PC Schemes",
-            _schemesController,
-            Colors.redAccent,
-          ),
-        ),
+        Expanded(child: _buildMetricItem("PC Schemes", _schemesController, Colors.redAccent)),
       ],
     );
   }
 
   Widget _buildFintechDropdown({
-    required String label,
-    required String? value,
-    required List<String> items,
-    required IconData icon,
-    required void Function(String?) onChanged,
+    required String label, required String? value, required List<String> items,
+    required IconData icon, required void Function(String?) onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DropdownButtonFormField<String>(
-          value: value,
-          isExpanded: true,
-          dropdownColor: _surfaceWhite,
+          value: value, isExpanded: true, dropdownColor: _surfaceWhite,
           style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
           decoration: InputDecoration(
-            labelText: label,
-            labelStyle: const TextStyle(color: _textGrey),
+            labelText: label, labelStyle: const TextStyle(color: _textGrey),
             prefixIcon: Icon(icon, color: _textGrey, size: 20),
-            filled: true,
-            fillColor: _inputFill,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
+            filled: true, fillColor: _inputFill,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
           ),
-          items: items
-              .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-              .toList(),
+          items: items.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
           onChanged: onChanged,
           validator: (v) => v == null ? 'Required' : null,
         ),
@@ -466,37 +358,19 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   }
 
   Widget _buildSimpleInput({
-    required String label,
-    required TextEditingController controller,
-    required IconData icon,
-    String? hint,
-    int maxLines = 1,
-    bool isPhone = false,
+    required String label, required TextEditingController controller,
+    required IconData icon, String? hint, int maxLines = 1, bool isPhone = false,
   }) {
     return TextFormField(
-      controller: controller,
-      maxLines: maxLines,
+      controller: controller, maxLines: maxLines,
       keyboardType: isPhone ? TextInputType.phone : TextInputType.text,
-      style: const TextStyle(
-        color: _textDark,
-        fontWeight: FontWeight.w500,
-      ), // Visible Grey-900 text
+      style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
       decoration: InputDecoration(
-        labelText: label,
-        labelStyle: const TextStyle(color: _textGrey),
+        labelText: label, labelStyle: const TextStyle(color: _textGrey),
         prefixIcon: Icon(icon, color: _textGrey, size: 20),
-        hintText: hint,
-        hintStyle: TextStyle(color: _textGrey.withOpacity(0.5)),
-        filled: true,
-        fillColor: _inputFill,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _cardNavy, width: 1.5),
-        ),
+        hintText: hint, filled: true, fillColor: _inputFill,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cardNavy, width: 1.5)),
       ),
     );
   }
@@ -507,90 +381,17 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
       child: GestureDetector(
         onTap: () => setState(() {
           _visitType = value;
-          _selectedSite = null;
-          _selectedDealer = null;
-          // Clear dependent controllers when switching
-          if (value != 'Site') {
-            _newSiteVisitsController.clear();
-            _followUpVisitsController.clear();
-          }
+          if (value != 'Site') { _newSiteVisitsController.clear(); _followUpVisitsController.clear(); }
           if (value != 'Dealer') _dealerVisitsController.clear();
           if (value != 'Influencer') _influencerVisitsController.clear();
         }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: isSelected ? _cardNavy : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : _textGrey,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-              ),
-            ),
-          ),
+          decoration: BoxDecoration(color: isSelected ? _cardNavy : Colors.transparent, borderRadius: BorderRadius.circular(8)),
+          child: Center(child: Text(label, style: TextStyle(color: isSelected ? Colors.white : _textGrey, fontWeight: FontWeight.bold, fontSize: 14))),
         ),
       ),
-    );
-  }
-
-  Widget _buildSelectionField({
-    required String label,
-    required String? value,
-    required String hint,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            color: _textGrey,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            decoration: BoxDecoration(
-              color: _inputFill,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Icon(icon, color: _textGrey, size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    value ?? hint,
-                    style: TextStyle(
-                      color: value != null
-                          ? _textDark
-                          : _textGrey.withOpacity(0.5),
-                      fontWeight: value != null
-                          ? FontWeight.w600
-                          : FontWeight.normal,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.search, color: _textGrey, size: 20),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -601,15 +402,7 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
         children: [
           Icon(icon, size: 18, color: _cardNavy),
           const SizedBox(width: 8),
-          Text(
-            title.toUpperCase(),
-            style: const TextStyle(
-              color: _cardNavy,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.2,
-            ),
-          ),
+          Text(title.toUpperCase(), style: const TextStyle(color: _cardNavy, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
         ],
       ),
     );
@@ -621,272 +414,14 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
       child: ElevatedButton(
         onPressed: _isSubmitting ? null : _submitForm,
         style: ElevatedButton.styleFrom(
-          backgroundColor: _cardNavy,
-          foregroundColor: Colors.white,
+          backgroundColor: _cardNavy, foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: _isSubmitting
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-            : const Text(
-                'CREATE PLAN',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.0,
-                ),
-              ),
+            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+            : const Text('CREATE PLAN', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0)),
       ),
-    );
-  }
-}
-
-// 🔎 SEARCH DIALOGS
-// ==========================================
-
-class _SiteSearchDialog extends StatefulWidget {
-  final ApiService api;
-  final int userId;
-  const _SiteSearchDialog({required this.api, required this.userId});
-  @override
-  State<_SiteSearchDialog> createState() => _SiteSearchDialogState();
-}
-
-class _SiteSearchDialogState extends State<_SiteSearchDialog> {
-  List<TechnicalSite> _allSites = [];
-  List<TechnicalSite> _filteredSites = [];
-  bool _isLoading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchInitialData();
-  }
-
-  // Fetch all sites once, then filter locally (better for UX if list < 500 items)
-  Future<void> _fetchInitialData() async {
-    try {
-      final results = await widget.api.fetchTechnicalSites(
-        userId: widget.userId,
-      );
-      if (mounted) {
-        setState(() {
-          _allSites = results;
-          _filteredSites = results;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  void _onSearchChanged(String query) {
-    final lowerQuery = query.toLowerCase();
-    setState(() {
-      _filteredSites = _allSites.where((site) {
-        return site.siteName.toLowerCase().contains(lowerQuery) ||
-            (site.area?.toLowerCase().contains(lowerQuery) ?? false);
-      }).toList();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _BaseSearchDialog<TechnicalSite>(
-      title: "Select Site",
-      isLoading: _isLoading,
-      results: _filteredSites,
-      onSearchChanged: _onSearchChanged,
-      itemBuilder: (site) => ListTile(
-        title: Text(
-          site.siteName,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF111827),
-          ),
-        ),
-        subtitle: Text(
-          site.address,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: Color(0xFF6B7280)),
-        ),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: const Color(0xFFEFF6FF),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Icon(
-            Icons.apartment,
-            color: Color(0xFF3B82F6),
-            size: 20,
-          ),
-        ),
-        onTap: () => Navigator.pop(context, site),
-      ),
-    );
-  }
-}
-
-class _DealerSearchDialog extends StatefulWidget {
-  final ApiService api;
-  const _DealerSearchDialog({required this.api});
-  @override
-  State<_DealerSearchDialog> createState() => _DealerSearchDialogState();
-}
-
-class _DealerSearchDialogState extends State<_DealerSearchDialog> {
-  List<Dealer> _results = [];
-  bool _isLoading = false;
-  Timer? _debounce;
-
-  void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      if (query.isNotEmpty) _performSearch(query);
-    });
-  }
-
-  Future<void> _performSearch(String query) async {
-    setState(() => _isLoading = true);
-    try {
-      final results = await widget.api.fetchDealers(search: query, limit: 15);
-      if (mounted) setState(() => _results = results);
-    } catch (e) {
-      debugPrint("Dealer Search Error: $e");
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return _BaseSearchDialog<Dealer>(
-      title: "Select Dealer",
-      isLoading: _isLoading,
-      results: _results,
-      onSearchChanged: _onSearchChanged,
-      itemBuilder: (dealer) => ListTile(
-        title: Text(
-          dealer.name,
-          style: const TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF111827),
-          ),
-        ),
-        subtitle: Text(
-          "${dealer.area} • ${dealer.phoneNo}",
-          style: const TextStyle(color: Color(0xFF6B7280)),
-        ),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF0FDF4),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Icon(Icons.store, color: Color(0xFF10B981), size: 20),
-        ),
-        onTap: () => Navigator.pop(context, dealer),
-      ),
-    );
-  }
-}
-
-class _BaseSearchDialog<T> extends StatelessWidget {
-  final String title;
-  final bool isLoading;
-  final List<T> results;
-  final Function(String) onSearchChanged;
-  final Widget Function(T) itemBuilder;
-
-  const _BaseSearchDialog({
-    required this.title,
-    required this.isLoading,
-    required this.results,
-    required this.onSearchChanged,
-    required this.itemBuilder,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const bgColor = Colors.white;
-    const textColor = Color(0xFF111827);
-    const hintColor = Color(0xFF6B7280);
-    const inputFill = Color(0xFFF9FAFB);
-
-    return AlertDialog(
-      backgroundColor: bgColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Text(
-        title,
-        style: const TextStyle(color: textColor, fontWeight: FontWeight.bold),
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: 400,
-        child: Column(
-          children: [
-            TextField(
-              autofocus: true,
-              style: const TextStyle(color: textColor),
-              decoration: const InputDecoration(
-                hintText: "Type to search...",
-                hintStyle: TextStyle(color: hintColor),
-                prefixIcon: Icon(Icons.search, color: hintColor),
-                filled: true,
-                fillColor: inputFill,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12)),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: EdgeInsets.symmetric(
-                  vertical: 0,
-                  horizontal: 12,
-                ),
-              ),
-              onChanged: onSearchChanged,
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFF0F172A),
-                      ),
-                    )
-                  : results.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "No results found",
-                        style: TextStyle(color: hintColor),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: results.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                      itemBuilder: (ctx, i) => itemBuilder(results[i]),
-                    ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, null),
-          child: const Text("CANCEL", style: TextStyle(color: hintColor)),
-        ),
-      ],
     );
   }
 }

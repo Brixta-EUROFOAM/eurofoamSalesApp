@@ -1,17 +1,14 @@
 import 'dart:async';
-import 'dart:convert';
-
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:flutter_radar/flutter_radar.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-// Project
+// Project Imports
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/models/geotracking_data_model.dart';
-
 import 'journey_tracking_capabilities.dart';
 import 'journey_tracking_result.dart';
 
@@ -28,13 +25,16 @@ class JourneyTrackingController {
   Position? _lastPosition;
 
   StreamSubscription<Position>? _positionSubscription;
+  Timer? _radarPeriodicTimer; // For Radar reliability in background
 
   // ────────────────── STREAMS (UI READ-ONLY) ──────────────────
   final _distanceStreamController = StreamController<double>.broadcast();
   final _positionStreamController = StreamController<LatLng>.broadcast();
+  final _eventStreamController = StreamController<JourneyTrackingEvent>.broadcast();
 
   Stream<double> get distanceStream => _distanceStreamController.stream;
   Stream<LatLng> get positionStream => _positionStreamController.stream;
+  Stream<JourneyTrackingEvent> get eventStream => _eventStreamController.stream;
   bool get isActive => _isActive;
 
   JourneyTrackingController({
@@ -109,13 +109,19 @@ class JourneyTrackingController {
       }
 
       if (caps.radarTracking) {
-        await Radar.startTracking('responsive');
+        await Radar.startTracking('responsive'); //
         _setupRadarListeners();
+        
+        // Start periodic force-track to ensure geofence reliability
+        _radarPeriodicTimer?.cancel();
+        _radarPeriodicTimer = Timer.periodic(
+          const Duration(seconds: 30),
+          (_) => Radar.trackOnce(),
+        );
       }
 
-      return const JourneyTrackingResult(
-        event: JourneyTrackingEvent.started,
-      );
+      _eventStreamController.add(JourneyTrackingEvent.started);
+      return const JourneyTrackingResult(event: JourneyTrackingEvent.started);
     } catch (e) {
       _isActive = false;
       return JourneyTrackingResult(
@@ -128,19 +134,17 @@ class JourneyTrackingController {
   // ────────────────── STOP JOURNEY ──────────────────
   Future<JourneyTrackingResult> stopJourney() async {
     if (!_isActive) {
-      return const JourneyTrackingResult(
-        event: JourneyTrackingEvent.stopped,
-      );
+      return const JourneyTrackingResult(event: JourneyTrackingEvent.stopped);
     }
 
     final checkOutTime = DateTime.now();
 
     try {
+      // 1️⃣ Update final tracking stats in DB
       if (_dbTrackingRecordId != null && _lastPosition != null) {
         await api.updateGeoTrackingPoint(_dbTrackingRecordId!, {
           'isActive': false,
-          'totalDistanceTravelled':
-              (_totalDistance / 1000.0).toStringAsFixed(3),
+          'totalDistanceTravelled': (_totalDistance / 1000.0).toStringAsFixed(3),
           'latitude': _lastPosition!.latitude,
           'longitude': _lastPosition!.longitude,
           'locationType': 'JOURNEY_END',
@@ -148,24 +152,28 @@ class JourneyTrackingController {
         });
       }
 
+      // 2️⃣ Complete PJP
       if (_currentPjpId != null) {
         await api.updatePjp(_currentPjpId!, {'status': 'COMPLETED'});
       }
     } catch (_) {
-      // backend failure should NOT block cleanup
+      // Logic cleanup should proceed even if API PATCH fails
     }
 
+    _eventStreamController.add(JourneyTrackingEvent.stopped);
+    _cleanup();
+
+    return const JourneyTrackingResult(event: JourneyTrackingEvent.stopped);
+  }
+
+  void _cleanup() {
     _isActive = false;
     _currentPjpId = null;
     _dbTrackingRecordId = null;
-
-    await notifications.cancel(1);
-    await _positionSubscription?.cancel();
-    if (caps.radarTracking) await Radar.stopTracking();
-
-    return const JourneyTrackingResult(
-      event: JourneyTrackingEvent.stopped,
-    );
+    _radarPeriodicTimer?.cancel();
+    notifications.cancel(1);
+    _positionSubscription?.cancel();
+    if (caps.radarTracking) Radar.stopTracking(); //
   }
 
   // ────────────────── LIVE POSITION + DISTANCE ──────────────────
@@ -193,9 +201,9 @@ class JourneyTrackingController {
         }
 
         _lastPosition = pos;
-        _positionStreamController
-            .add(LatLng(pos.latitude, pos.longitude));
+        _positionStreamController.add(LatLng(pos.latitude, pos.longitude));
 
+        // Proximity Notification (500m)
         final distToDest = Geolocator.distanceBetween(
           pos.latitude,
           pos.longitude,
@@ -230,6 +238,7 @@ class JourneyTrackingController {
   }
 
   Future<void> onArrival() async {
+    _eventStreamController.add(JourneyTrackingEvent.arrived); // Notify UI for Dialog
     await stopJourney();
   }
 
@@ -278,31 +287,10 @@ class JourneyTrackingController {
     }
   }
 
-  Future<String> mapStyle(String apiKey) async {
-    return jsonEncode({
-      "version": 8,
-      "sources": {
-        "stadia": {
-          "type": "raster",
-          "tiles": [
-            "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}@2x.png?api_key=$apiKey"
-          ],
-          "tileSize": 256
-        }
-      },
-      "layers": [
-        {
-          "id": "stadia-layer",
-          "source": "stadia",
-          "type": "raster"
-        }
-      ]
-    });
-  }
-
   void dispose() {
+    _cleanup();
     _distanceStreamController.close();
     _positionStreamController.close();
-    _positionSubscription?.cancel();
+    _eventStreamController.close();
   }
 }

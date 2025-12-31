@@ -13,9 +13,12 @@ class JourneyTrackingCapabilities {
 
   factory JourneyTrackingCapabilities.fromFlags(TechnicalFlags flags) {
     return JourneyTrackingCapabilities(
-      enabled: flags.pjpjourney,
-      notifications: flags.pjpjourney,
-      radarTracking: flags.pjpjourney,
+      // Aligned with the flag used for Kernel registration
+      enabled: flags.journeyTracking, 
+      // Aligned with specific notification flag
+      notifications: flags.journeyNotifications, 
+      // Radar tracking is part of the journey tracking feature
+      radarTracking: flags.journeyTracking, 
     );
   }
 }

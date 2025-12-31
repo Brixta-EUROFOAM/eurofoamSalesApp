@@ -18,6 +18,14 @@ import 'package:salesmanapp/features/technicalPjpshowcreateOptions/create_option
 import 'package:salesmanapp/features/technicalPjpshowcreateOptions/create_option_capabilities.dart';
 import 'package:salesmanapp/features/journeytracking/journey_tracking_capabilities.dart';
 import 'package:salesmanapp/features/journeytracking/journey_tracking_controller.dart';
+import 'package:salesmanapp/features/launchgooglemapsJourneyscreen/googlemaps_controller.dart';
+import 'package:salesmanapp/features/launchgooglemapsJourneyscreen/googlemaps_capabilities.dart';
+import 'package:salesmanapp/features/journeylocation/journeylocation_capabilities.dart';
+import 'package:salesmanapp/features/journeylocation/journeylocation_controller.dart';
+import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_capabilities.dart';
+import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_controller.dart';
+import 'package:salesmanapp/features/mapselectionpjp/map_selection_capabilities.dart';
+import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
 
 // --- WIDGETS & THEMES ---
 import 'package:salesmanapp/widgets/app_theme.dart';
@@ -82,6 +90,32 @@ Future<void> main() async {
     flags.createPjp,
     () =>
         CreateOptionController(caps: CreateOptionCapabilities.fromFlags(flags)),
+  );
+
+  kernel.registerIf<JourneyLocationController>(
+    flags.journeyMap || flags.journeyTracking,
+    () => JourneyLocationController(
+      caps: JourneyLocationCapabilities.fromFlags(flags),
+    ),
+  );
+  kernel.registerIf<MapSelectionController>(
+    flags.journeyMap, // Using your new flag
+    () =>
+        MapSelectionController(caps: MapSelectionCapabilities.fromFlags(flags)),
+  );
+
+  kernel.registerIf<JourneyNavigationController>(
+    flags.journeyMap,
+    () => JourneyNavigationController(
+      caps: JourneyNavigationCapabilities.fromFlags(flags),
+    ),
+  );
+
+  kernel.registerIf<JourneyMapStyleController>(
+    flags.journeyMap,
+    () => JourneyMapStyleController(
+      caps: JourneyMapStyleCapabilities.fromFlags(flags),
+    ),
   );
 
   //KENEL REGISTRATION
