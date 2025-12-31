@@ -2,9 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as dev;
 
-import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/geotracking_data_model.dart';
+
 import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/technicalSide/models/sites_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
@@ -60,14 +59,12 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
   final String? _stadiaApiKey = dotenv.env['STADIA_API_KEY'];
   final String? _radarApiKey = dotenv.env['RADAR_API_KEY'];
-  final ApiService _apiService = ApiService();
 
   // Journey State
   bool _isJourneyActive = false;
   double _totalDistanceTravelled = 0.0;
   Position? _lastRecordedPosition;
-  String? _currentJourneyId;
-  String? _currentGeoTrackingDbId;
+
 
   // Data Holding State
   Pjp? _currentPjp;
@@ -75,7 +72,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   Dealer? _currentDealer;
   bool _isSiteVisit = true;
 
-  String? _currentPjpId;
+
   LatLng? _currentUserLocation;
   LatLng? _destinationLocation;
   final List<LatLng> _routeTaken = [];
@@ -195,7 +192,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     }
 
     // Assign State
-    _currentPjpId = pjp!.id;
     _currentPjp = pjp;
     _isSiteVisit = isSite;
     _destinationLocation = destination;
@@ -229,163 +225,97 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     widget.onDestinationConsumed?.call();
   }
 
-  Future<void> _startJourney() async {
-    if (_isJourneyActive ||
-        _destinationLocation == null ||
-        _currentPjp == null) {
-      _showError("Cannot start: Data not loaded.");
+Future<void> _startJourney() async {
+  if (_isJourneyActive || _destinationLocation == null || _currentPjp == null) {
+    _showError("Cannot start: Data not loaded.");
+    return;
+  }
+
+  try {
+    final tracking =
+        AppKernel.instance.feature<JourneyTrackingController>();
+
+    final result = await tracking.startJourney(
+      pjp: _currentPjp!,
+      userId: int.parse(widget.employee.id),
+      destination: _destinationLocation!,
+      isSite: _isSiteVisit,
+      siteId: _currentSite?.id,
+      dealerId: _currentDealer?.id,
+    );
+
+    if (result.event == JourneyTrackingEvent.error) {
+      _showError(result.message ?? 'Journey start failed');
       return;
     }
 
-    try {
-      // 🔑 Kernel-backed controller
-      final tracking = AppKernel.instance.feature<JourneyTrackingController>();
-
-      // 1️⃣ Tell controller: journey intent
-      final trackingResult = await tracking.startJourney(_currentPjp!.id);
-
-      if (trackingResult.event == JourneyTrackingEvent.error) {
-        _showError(trackingResult.message ?? 'Journey start failed');
-        return;
-      }
-
-      // 2️⃣ UI state reset
-      _isNearDestinationNotified = false;
-      _routeTaken.clear();
-      _isTravelledLineLayerAdded = false;
-      _currentGeoTrackingDbId = null;
-
-      final mapController = await _controllerCompleter.future;
-      try {
-        await mapController.removeLayer('rt-line');
-        await mapController.removeSource('rt-source');
-      } catch (_) {}
-
-      // 3️⃣ Initial location (UI concern)
-      final initialPosition = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      _lastRecordedPosition = initialPosition;
-      _routeTaken.add(
-        LatLng(initialPosition.latitude, initialPosition.longitude),
-      );
-
-      _currentJourneyId =
-          'JRN-TECH-${widget.employee.id}-${DateTime.now().millisecondsSinceEpoch}';
-
-      // 4️⃣ Persist start point
-      final startPoint = GeoTrackingPoint(
-        userId: int.parse(widget.employee.id),
-        journeyId: _currentJourneyId!,
-        latitude: initialPosition.latitude,
-        longitude: initialPosition.longitude,
-        destLat: _destinationLocation?.latitude,
-        destLng: _destinationLocation?.longitude,
-        siteId: _isSiteVisit ? _currentSite?.id : null,
-        dealerId: !_isSiteVisit ? _currentDealer?.id : null,
-        isActive: true,
-        locationType: 'JOURNEY_START',
-      );
-
-      _currentGeoTrackingDbId = await _apiService.sendGeoTrackingPoint(
-        startPoint,
-      );
-
-      if (_currentPjpId != null) {
-        await _apiService.updatePjp(_currentPjpId!, {'status': 'IN_PROGRESS'});
-      }
-
-      // 5️⃣ UI enters active mode
-      setState(() {
-        _isJourneyActive = true;
-        _totalDistanceTravelled = 0.0;
-        _distanceDisplay = "0.00 km";
-      });
-    } catch (e) {
-      _showError("Failed to start journey: $e");
-      setState(() => _isJourneyActive = false);
-    }
-  }
-
-  Future<void> _stopJourney() async {
-    if (!_isJourneyActive) return;
-
-    dev.log("🛑 STOPPING JOURNEY...", name: 'TechJourney');
-
-    try {
-      // 🔑 Kernel-backed controller
-      final tracking = AppKernel.instance.feature<JourneyTrackingController>();
-
-      await tracking.stopJourney();
-    } catch (_) {
-      // Feature may be disabled — UI still continues cleanup
-    }
-
-    final checkInTime = DateTime.now();
-
-    // 1️⃣ Patch GeoTracking
-    if (_currentGeoTrackingDbId != null && _lastRecordedPosition != null) {
-      try {
-        await _apiService.updateGeoTrackingPoint(_currentGeoTrackingDbId!, {
-          'isActive': false,
-          'totalDistanceTravelled': (_totalDistanceTravelled / 1000.0)
-              .toStringAsFixed(3),
-          'latitude': _lastRecordedPosition!.latitude,
-          'longitude': _lastRecordedPosition!.longitude,
-          'locationType': 'JOURNEY_END',
-          'checkOutTime': checkInTime.toIso8601String(),
-        });
-      } catch (e) {
-        dev.log("⚠️ GeoTracking PATCH Failed: $e", name: 'TechJourney');
-      }
-    }
-
-    // 2️⃣ Update PJP
-    if (_currentPjpId != null) {
-      try {
-        await _apiService.updatePjp(_currentPjpId!, {'status': 'COMPLETED'});
-      } catch (_) {}
-    }
-
-    // 3️⃣ Notify parent
-    if (widget.onJourneyCompleted != null && _currentPjp != null) {
-      final entity = _isSiteVisit ? _currentSite : _currentDealer;
-      if (entity != null) {
-        widget.onJourneyCompleted!(
-          _currentPjp!,
-          entity,
-          _isSiteVisit,
-          checkInTime,
-        );
-      }
-    }
-
-    // 4️⃣ Map cleanup
+    // UI-only reset
     final mapController = await _controllerCompleter.future;
     try {
-      await mapController.removeLayer('route-line');
-      await mapController.removeSource('route-source');
       await mapController.removeLayer('rt-line');
       await mapController.removeSource('rt-source');
     } catch (_) {}
 
-    // 5️⃣ Reset UI state
-    if (mounted) {
-      setState(() {
-        _isJourneyActive = false;
-        _currentJourneyId = null;
-        _currentPjp = null;
-        _currentSite = null;
-        _currentDealer = null;
-        _currentPjpId = null;
-        _destinationLocation = null;
-        _distanceDisplay = "Visit Completed";
-        _routeTaken.clear();
-        _currentGeoTrackingDbId = null;
-      });
+    setState(() {
+      _isJourneyActive = true;
+      _distanceDisplay = "0.00 km";
+      _routeTaken.clear();
+    });
+  } catch (e) {
+    _showError("Failed to start journey: $e");
+  }
+}
+
+
+Future<void> _stopJourney() async {
+  if (!_isJourneyActive) return;
+
+  try {
+    final tracking =
+        AppKernel.instance.feature<JourneyTrackingController>();
+
+    await tracking.stopJourney();
+  } catch (_) {
+    // feature disabled → UI still cleans up
+  }
+
+  final checkInTime = DateTime.now();
+
+  // Notify parent (business flow)
+  if (widget.onJourneyCompleted != null && _currentPjp != null) {
+    final entity = _isSiteVisit ? _currentSite : _currentDealer;
+    if (entity != null) {
+      widget.onJourneyCompleted!(
+        _currentPjp!,
+        entity,
+        _isSiteVisit,
+        checkInTime,
+      );
     }
   }
+
+  // Map cleanup (UI concern)
+  final mapController = await _controllerCompleter.future;
+  try {
+    await mapController.removeLayer('route-line');
+    await mapController.removeSource('route-source');
+    await mapController.removeLayer('rt-line');
+    await mapController.removeSource('rt-source');
+  } catch (_) {}
+
+  // Reset UI
+  if (mounted) {
+    setState(() {
+      _isJourneyActive = false;
+      _currentPjp = null;
+      _currentSite = null;
+      _currentDealer = null;
+      _destinationLocation = null;
+      _distanceDisplay = "Visit Completed";
+      _routeTaken.clear();
+    });
+  }
+}
 
   // ... [Keep _startLocationStream, _onPositionUpdate, _drawUserLocationPointer as they were] ...
   // ... [Keep _updateTravelledPolyline, _getDirectionsAndDrawRoute, Notification logic as they were] ...

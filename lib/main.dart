@@ -66,6 +66,7 @@ Future<void> main() async {
     () => JourneyTrackingController(
       caps: JourneyTrackingCapabilities.fromFlags(flags),
       notifications: FlutterLocalNotificationsPlugin(),
+      api: ApiService(),
     ),
   );
 
