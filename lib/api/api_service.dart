@@ -539,9 +539,33 @@ class ApiService {
     }
   }
 
-  Future<Pjp> createPjp(Pjp pjp) async {
-    return _post('pjp', pjp.toJson(), (json) => Pjp.fromJson(json));
-  }
+Future<Pjp> createPjp(Pjp pjp) async {
+  final Map<String, dynamic> payload =
+      Map<String, dynamic>.from(pjp.toJson());
+
+  // ❌ REMOVE FIELDS NOT ACCEPTED BY BACKEND (Zod .strict())
+  payload.remove('id');                 // server generates
+  payload.remove('createdAt');          // server-managed
+  payload.remove('updatedAt');          // server-managed
+  payload.remove('diversionReason');    // ❌ causing validation failure
+  payload.remove('siteName');            // read-only
+  payload.remove('dealerName');          // read-only
+
+  // ✅ NORMALIZE EMPTY STRINGS → null
+  payload.updateAll((key, value) {
+    if (value is String && value.trim().isEmpty) {
+      return null;
+    }
+    return value;
+  });
+
+  return _post(
+    'pjp',
+    payload,
+    (json) => Pjp.fromJson(json),
+  );
+}
+
 
   Future<Map<String, dynamic>> createBulkPjp({
     required int userId,
