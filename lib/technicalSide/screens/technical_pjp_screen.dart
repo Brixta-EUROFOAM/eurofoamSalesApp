@@ -7,12 +7,18 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
+// Added for LatLng
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
-import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_controller.dart';
 import 'package:salesmanapp/core/app_kernel.dart';
 import 'package:salesmanapp/features/technicalPjpcreate/pjp_create_controller.dart';
 import 'package:salesmanapp/features/technicalPjpcreate/pjp_create_results.dart';
 import 'package:salesmanapp/features/technicalPjpshowcreateOptions/create_option_controller.dart';
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart';
+
+// 🔥 Feature Imports for Robust Journey Start
+import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_controller.dart';
+import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_result.dart';
+import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_capabilities.dart';
 
 class TechnicalPjpScreen extends StatefulWidget {
   final Employee employee;
@@ -71,12 +77,12 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   void _showCreateOptions() {
     try {
       final controller = AppKernel.instance.feature<CreateOptionController>();
-
       final options = controller.getOptions();
+      final isDark = Theme.of(context).brightness == Brightness.dark;
 
       showModalBottomSheet(
         context: context,
-        backgroundColor: Colors.white,
+        backgroundColor: Theme.of(context).cardColor,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
@@ -84,19 +90,36 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
           return SafeArea(
             child: Wrap(
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(left: 16, top: 16, bottom: 8),
+                Padding(
+                  padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
                   child: Text(
                     "Plan Visit",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
                   ),
                 ),
 
                 ...options.map((option) {
                   return ListTile(
                     leading: Icon(option.icon, color: option.iconColor),
-                    title: Text(option.title),
-                    subtitle: Text(option.subtitle),
+                    title: Text(
+                      option.title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : const Color(0xFF111827),
+                      ),
+                    ),
+                    subtitle: Text(
+                      option.subtitle,
+                      style: TextStyle(
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF6B7280),
+                      ),
+                    ),
                     onTap: () {
                       Navigator.pop(context);
 
@@ -172,26 +195,74 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
     }
   }
 
-  // --- Handles both Site and Dealer logic ---
-  void _startJourney(Pjp pjp) async {
+  // 🔥 CORE FIX: ROBUST START JOURNEY LOGIC USING PJP CONTROLLER
+  Future<void> _startJourney(Pjp pjp) async {
+    // DEBUG: Start of Method
+    debugPrint("🚀 [TechnicalPjpScreen] _startJourney initiated for PJP ID: ${pjp.id}");
+    debugPrint("📝 [TechnicalPjpScreen] Raw AreaToBeVisited: '${pjp.areaToBeVisited}'");
+
+    // 1. Show Loading Indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => const Center(child: CircularProgressIndicator()),
+    );
+
     try {
-      // 🔑 SINGLE SOURCE OF TRUTH
-      final controller = AppKernel.instance.feature<PjpJourneyController>();
+      // 2. Initialize the Controller
+      final flags = context.read<TechnicalFlags>();
+      final caps = PjpJourneyCapabilities.fromFlags(flags);
+      final controller = PjpJourneyController(
+        api: _apiService,
+        caps: caps,
+      );
 
-      final result = await controller.start(pjp);
+      debugPrint("⚙️ [TechnicalPjpScreen] Controller initialized. Caps enabled: ${caps.enabled}");
 
+      // 3. Resolve Location (Parses "Area|Lat|Lng", checks Status, fetches Site/Dealer Coords)
+      debugPrint("⏳ [TechnicalPjpScreen] Calling controller.start(pjp)...");
+      final PjpJourneyResult result = await controller.start(pjp);
+
+      debugPrint("✅ [TechnicalPjpScreen] Controller returned result:");
+      debugPrint("   -> DisplayName: ${result.displayName}");
+      debugPrint("   -> Destination: ${result.destination}");
+      debugPrint("   -> IsSite: ${result.isSite}");
+      debugPrint("   -> Entity Type: ${result.entity.runtimeType}");
+
+      // 4. Dismiss Loading Indicator
+      if (mounted) Navigator.pop(context);
+
+      // 5. Navigate with PRECISE data
+      debugPrint("🚀 [TechnicalPjpScreen] Calling widget.onStartJourney callback...");
+      
       widget.onStartJourney({
         'pjp': pjp,
+        'displayName': result.displayName, // Clean name from controller
+        'destination': result.destination, // Precise LatLng from controller
+        'journeyMode': JourneyMode.planned,
         'isSite': result.isSite,
-        'displayName': result.displayName,
-        'destination': result.destination,
-        'entity': result.entity,
+        
+        // Explicitly NULL entities as requested (Just the area to be visited)
+        'site': null,
+        'dealer': null,
       });
+
     } catch (e) {
+      // Dismiss loader on error
+      if (mounted) Navigator.pop(context);
+      
+      debugPrint("❌ [TechnicalPjpScreen] Error starting journey: $e");
+
+      String msg = e.toString();
+      // Remove "Exception: " prefix if present for cleaner UI
+      if (msg.startsWith('Exception: ')) {
+        msg = msg.substring(11);
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
-          backgroundColor: Colors.redAccent,
+          content: Text(msg), 
+          backgroundColor: Colors.red
         ),
       );
     }
@@ -429,35 +500,14 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
         ? "PENDING"
         : (isInProgress ? "IN PROGRESS" : "APPROVED");
 
-    // 2. Name Resolution Logic
-    String displayName = "Unknown Visit";
-    String displayType = "General Visit";
+    String displayName = "Planned Area Visit";
 
-    if (pjp.siteName != null && pjp.siteName!.isNotEmpty) {
-      displayName = pjp.siteName!;
-      displayType = "Site Visit";
-    } else if (pjp.dealerName != null && pjp.dealerName!.isNotEmpty) {
-      displayName = pjp.dealerName!;
-      displayType = "Dealer Visit";
-    } else if (pjp.description != null && pjp.description!.isNotEmpty) {
-      displayName = pjp.description!;
-      displayType = "Remark";
-    } else {
-      // Fallback
-      try {
-        final rawInfo = pjp.areaToBeVisited.split('|').first;
-        if (rawInfo.isNotEmpty) {
-          if (rawInfo.contains(',')) {
-            displayName = rawInfo.split(',').first.trim();
-          } else {
-            displayName = rawInfo;
-          }
-          displayType = "Scheduled Visit";
-        }
-      } catch (e) {
-        // Keep defaults
+    try {
+      final parts = pjp.areaToBeVisited.split('|');
+      if (parts.isNotEmpty && parts.first.trim().isNotEmpty) {
+        displayName = parts.first.trim(); // ✅ AREA NAME
       }
-    }
+    } catch (_) {}
 
     // 3. Address Resolution
     String displayAddress = "";
@@ -554,7 +604,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                         ),
 
                         Text(
-                          displayType,
+                          displayAddress,
                           style: TextStyle(
                             color: _textGrey,
                             fontWeight: FontWeight.w500,

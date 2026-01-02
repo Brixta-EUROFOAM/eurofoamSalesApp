@@ -26,6 +26,15 @@ import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_capabilitie
 import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_controller.dart';
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_capabilities.dart';
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
+import 'package:salesmanapp/features/technicalBulkPjp/bulk_pjp_capabilities.dart';
+import 'package:salesmanapp/features/technicalBulkPjp/bulk_pjp_controller.dart';
+import 'package:salesmanapp/features/planedAreaJourney/planed_capabilities.dart';
+import 'package:salesmanapp/features/planedAreaJourney/planed_controller.dart';
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_controller.dart';
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_capabilities.dart';
+import 'package:salesmanapp/features/journey_bootstrap/journey_bootstrap_controller.dart';
+import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_capabilities.dart';
+import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_controller.dart';
 
 // --- WIDGETS & THEMES ---
 import 'package:salesmanapp/widgets/app_theme.dart';
@@ -69,6 +78,23 @@ Future<void> main() async {
       caps: PjpJourneyCapabilities.fromFlags(flags),
     ),
   );
+
+  kernel.registerIf<UnplannedJourneyController>(
+    flags.journey,
+    () => UnplannedJourneyController(
+      caps: UnplannedJourneyCapabilities.fromFlags(flags),
+    ),
+  );
+
+  kernel.registerIf<JourneyModeController>(
+    flags.journey,
+    () => JourneyModeController(caps: JourneyModeCapabilities.fromFlags(flags)),
+  );
+
+  kernel.registerIf<JourneyBootstrapController>(
+    flags.journeyStartStop, // or a new flag if you want later
+    () => JourneyBootstrapController(),
+  );
   kernel.registerIf<JourneyTrackingController>(
     flags.journeyTracking,
     () => JourneyTrackingController(
@@ -86,10 +112,24 @@ Future<void> main() async {
     ),
   );
 
+  kernel.registerIf<BulkPjpController>(
+    flags.createPjp,
+    () => BulkPjpController(
+      api: ApiService(),
+      caps: BulkPjpCapabilities.fromFlags(flags),
+    ),
+  );
+
   kernel.registerIf<CreateOptionController>(
     flags.createPjp,
     () =>
         CreateOptionController(caps: CreateOptionCapabilities.fromFlags(flags)),
+  );
+  kernel.registerIf<PlannedAreaJourneyController>(
+    flags.pjpjourney,
+    () => PlannedAreaJourneyController(
+      caps: PlannedAreaJourneyCapabilities.fromFlags(flags),
+    ),
   );
 
   kernel.registerIf<JourneyLocationController>(

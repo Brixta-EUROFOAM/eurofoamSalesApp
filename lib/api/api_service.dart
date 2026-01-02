@@ -540,32 +540,26 @@ class ApiService {
   }
 
 Future<Pjp> createPjp(Pjp pjp) async {
-  final Map<String, dynamic> payload =
-      Map<String, dynamic>.from(pjp.toJson());
+    final Map<String, dynamic> payload = Map<String, dynamic>.from(
+      pjp.toJson(),
+    );
+    payload.remove('id');
+    payload.remove('createdAt');
+    payload.remove('updatedAt');
+    payload.remove('diversionReason');
+    payload.remove('siteName');
+    payload.remove('dealerName');
 
-  // ❌ REMOVE FIELDS NOT ACCEPTED BY BACKEND (Zod .strict())
-  payload.remove('id');                 // server generates
-  payload.remove('createdAt');          // server-managed
-  payload.remove('updatedAt');          // server-managed
-  payload.remove('diversionReason');    // ❌ causing validation failure
-  payload.remove('siteName');            // read-only
-  payload.remove('dealerName');          // read-only
+    // ✅ NORMALIZE EMPTY STRINGS → null
+    payload.updateAll((key, value) {
+      if (value is String && value.trim().isEmpty) {
+        return null;
+      }
+      return value;
+    });
 
-  // ✅ NORMALIZE EMPTY STRINGS → null
-  payload.updateAll((key, value) {
-    if (value is String && value.trim().isEmpty) {
-      return null;
-    }
-    return value;
-  });
-
-  return _post(
-    'pjp',
-    payload,
-    (json) => Pjp.fromJson(json),
-  );
-}
-
+    return _post('pjp', payload, (json) => Pjp.fromJson(json));
+  }
 
   Future<Map<String, dynamic>> createBulkPjp({
     required int userId,
@@ -577,17 +571,29 @@ Future<Pjp> createPjp(Pjp pjp) async {
     required String areaToBeVisited,
     String? description,
     String status = 'PENDING',
+    int plannedNewSiteVisits = 0,
+    int plannedFollowUpSiteVisits = 0,
+    int plannedNewDealerVisits = 0,
+    int plannedInfluencerVisits = 0,
+    int noOfConvertedBags = 0,
+    int noOfMasonPcSchemes = 0,
   }) async {
     final body = {
       'userId': userId,
       'createdById': createdById,
-      if (dealerIds != null) 'dealerIds': dealerIds,
-      if (siteIds != null) 'siteIds': siteIds,
+      'dealerIds': dealerIds, 
+      'siteIds': siteIds,
       'baseDate': baseDate.toIso8601String().split('T').first,
       'batchSizePerDay': batchSizePerDay,
       'areaToBeVisited': areaToBeVisited,
       'description': description,
       'status': status,
+      'plannedNewSiteVisits': plannedNewSiteVisits,
+      'plannedFollowUpSiteVisits': plannedFollowUpSiteVisits,
+      'plannedNewDealerVisits': plannedNewDealerVisits,
+      'plannedInfluencerVisits': plannedInfluencerVisits,
+      'noOfConvertedBags': noOfConvertedBags,
+      'noOfMasonPcSchemes': noOfMasonPcSchemes,
     };
     body.removeWhere((key, value) => value == null);
     final url = Uri.parse('$_baseUrl/api/bulkpjp');
