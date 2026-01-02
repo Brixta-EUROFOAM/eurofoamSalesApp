@@ -9,6 +9,7 @@ import 'package:salesmanapp/technicalSide/models/mason_baglift_model.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/technicalSide/models/sites_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class ApproveMasonBagLift extends StatefulWidget {
   final Employee employee;
@@ -30,6 +31,18 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   late Future<List<MasonBagLift>> _futureLifts;
   bool _isProcessing = false;
 
+  // --- CORE STATE (RAM Management) ---
+  File? _recoveredFile;
+  String? _reviewingItemId;
+
+  final _bagCountController = TextEditingController();
+  final _personNameController = TextEditingController();
+  final _personPhoneController = TextEditingController();
+  final _memoController = TextEditingController();
+
+  TechnicalSite? _selectedSite;
+  Dealer? _selectedDealer;
+
   // --- FINTECH THEME PALETTE ---
   static const Color _bgLight = Color(0xFFF3F4F6);
   static const Color _surfaceWhite = Colors.white;
@@ -45,80 +58,163 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   void initState() {
     super.initState();
     _loadData();
+
+    // ⚡ RAM RECOVERY: Run after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadDrafts();
+      // Only check lost data if we have a reviewing ID saved
+      if (_reviewingItemId != null && _reviewingItemId!.isNotEmpty) {
+        await _checkLostData();
+      }
+    });
   }
 
-  // 1. Change 'void' to 'Future<void>' or just 'void' marked 'async'
-  // Inside _ApproveMasonBagLiftState class...
+  // --- RECOVERY LOGIC ---
+  Future<void> _saveDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('bag_lift_review_id', _reviewingItemId ?? "");
+    await prefs.setString('bag_lift_count', _bagCountController.text);
+    await prefs.setString('bag_lift_memo', _memoController.text);
+    await prefs.setString('bag_lift_p_name', _personNameController.text);
+    await prefs.setString('bag_lift_p_phone', _personPhoneController.text);
+
+    if (_selectedSite != null) {
+      await prefs.setString('bag_lift_site_id', _selectedSite!.id!);
+      await prefs.setString('bag_lift_site_name', _selectedSite!.siteName);
+    }
+    if (_selectedDealer != null) {
+      await prefs.setString('bag_lift_dealer_id', _selectedDealer!.id!);
+      await prefs.setString('bag_lift_dealer_name', _selectedDealer!.name);
+    }
+  }
+
+  Future<void> _loadDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedId = prefs.getString('bag_lift_review_id') ?? "";
+    if (savedId.isNotEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _reviewingItemId = savedId;
+        _bagCountController.text = prefs.getString('bag_lift_count') ?? "";
+        _memoController.text = prefs.getString('bag_lift_memo') ?? "";
+        _personNameController.text = prefs.getString('bag_lift_p_name') ?? "";
+        _personPhoneController.text = prefs.getString('bag_lift_p_phone') ?? "";
+
+        final sId = prefs.getString('bag_lift_site_id');
+        final sName = prefs.getString('bag_lift_site_name');
+        if (sId != null && sName != null) {
+          _selectedSite = TechnicalSite(
+            id: sId,
+            siteName: sName,
+            address: "",
+            concernedPerson: "",
+            phoneNo: "",
+            latitude: 0.0,
+            longitude: 0.0,
+          );
+        }
+
+        final dId = prefs.getString('bag_lift_dealer_id');
+        final dName = prefs.getString('bag_lift_dealer_name');
+        if (dId != null && dName != null) {
+          _selectedDealer = Dealer(
+            id: dId,
+            name: dName,
+            area: "",
+            type: "", 
+            region: "", 
+            phoneNo: "", 
+            address: "", 
+            totalPotential: 0.0, 
+            bestPotential: 0.0, 
+            brandSelling: [], 
+            feedbacks: "", 
+          );
+        }
+      });
+    }
+  }
+
+  Future<void> _clearDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = [
+      'bag_lift_review_id',
+      'bag_lift_count',
+      'bag_lift_memo',
+      'bag_lift_p_name',
+      'bag_lift_p_phone',
+      'bag_lift_site_id',
+      'bag_lift_dealer_id',
+    ];
+    for (var key in keys) await prefs.remove(key);
+    
+    if (mounted) {
+      setState(() {
+        _reviewingItemId = null;
+        _recoveredFile = null;
+        _selectedSite = null;
+        _selectedDealer = null;
+        _bagCountController.clear();
+        _memoController.clear();
+        _personNameController.clear();
+        _personPhoneController.clear();
+      });
+    }
+  }
+
+  // 📸 FIXED: Robust Lost Data Retrieval
+  Future<void> _checkLostData() async {
+    try {
+      final LostDataResponse response = await _picker.retrieveLostData();
+      
+      if (response.isEmpty) return;
+
+      if (response.file != null && _reviewingItemId != null) {
+        if(mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Restoring camera image..."), backgroundColor: _infoBlue),
+          );
+        }
+
+        setState(() => _recoveredFile = File(response.file!.path));
+
+        // Wait for list to be ready before finding item
+        final list = await _futureLifts;
+        try {
+          final target = list.firstWhere((item) => item.id == _reviewingItemId);
+          // Re-open dialog automatically
+          if (mounted) _showVerificationDialog(target);
+        } catch (e) {
+          debugPrint("Recovery failed: Item no longer in list");
+        }
+      }
+    } catch (e) {
+      debugPrint("Lost Data Error: $e");
+    }
+  }
 
   void _loadData() async {
     final rawId = widget.employee.id.trim();
     final userId = int.tryParse(rawId);
 
     if (userId != null) {
-      // 1. Start loading the list
       setState(() {
         _futureLifts = _api.fetchPendingBagLifts(userId: userId);
       });
 
-      // 2. CHECK IF WE HAVE A NOTIFICATION ID
       if (widget.highlightedId != null) {
-        print(
-          "🪤 [Auto-Open] Notification ID received: '${widget.highlightedId}'",
-        );
-
         try {
-          // A. Wait for the API List
           final list = await _futureLifts;
-          print("🪤 [Auto-Open] List loaded. Items count: ${list.length}");
-
-          // B. Debug: Print all IDs in the list to check for matches
-          for (var item in list) {
-            print("   -> List Item ID: '${item.id}'");
-          }
-
-          // C. Try to find the match
-          final targetItem = list.firstWhere(
-            (item) => item.id == widget.highlightedId,
-            orElse: () => throw Exception("ID matches nothing in the list"),
-          );
-
-          print("🪤 [Auto-Open] ✅ MATCH FOUND! Opening dialog...");
-
-          // D. Wait for UI to be ready
-          if (!mounted) return;
-
-          // E. OPEN THE DIALOG
-          // We wrap it in a microtask to ensure the BuildContext is stable
-          Future.microtask(() {
-            _showVerificationDialog(targetItem);
-          });
-        } catch (e) {
-          print("🪤 [Auto-Open] ❌ FAILURE: $e");
-
-          // Show a visual error so you know it failed
+          final targetItem = list.firstWhere((item) => item.id == widget.highlightedId);
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text("Could not open Notification Item: $e"),
-                backgroundColor: Colors.red,
-              ),
-            );
+            Future.microtask(() => _showVerificationDialog(targetItem));
           }
+        } catch (e) {
+          debugPrint("Auto-Open Failed: $e");
         }
       }
     } else {
-      // Error handling for invalid User ID
-      setState(() {
-        _futureLifts = Future.value([]);
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Error: Invalid User ID"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      setState(() => _futureLifts = Future.value([]));
     }
   }
 
@@ -145,7 +241,6 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     );
   }
 
-  // --- Helper for Labels ---
   Widget _buildLabel(String text, {bool isMandatory = false}) {
     return RichText(
       text: TextSpan(
@@ -181,26 +276,21 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     );
   }
 
-  // --- 📸 Verification Dialog ---
   void _showVerificationDialog(MasonBagLift item) {
+    _reviewingItemId = item.id;
+
+    if (_bagCountController.text.isEmpty) {
+      _bagCountController.text = item.bagCount.toString();
+    }
+    _saveDrafts();
+
+    // Local Logic State
     bool _isValidatingRules = false;
-    final bagCountController = TextEditingController(
-      text: item.bagCount.toString(),
-    );
-
-    // Controllers for Manual Entry Fields
-    final personNameController = TextEditingController();
-    final personPhoneController = TextEditingController();
-    final memoController = TextEditingController();
-
-    TechnicalSite? selectedSite;
-    Dealer? selectedDealer;
-
-    File? _siteImageFile;
+    File? _siteImageFile = _recoveredFile; // Initialize with recovered file if exists
     String? _uploadedSiteImageUrl;
     bool _isUploadingImage = false;
+    bool _needsAutoUpload = _recoveredFile != null; // Flag to trigger upload for recovered file
 
-    // We attempt to parse the string ID to an int here.
     final int? validApproverId = int.tryParse(widget.employee.id);
 
     showDialog(
@@ -208,30 +298,58 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) {
-          bool isFormUnlocked = _uploadedSiteImageUrl != null;
+          
+          // 1. Helper Function to Upload
+          Future<void> _handleUpload(File file) async {
+             setStateDialog(() => _isUploadingImage = true);
+             try {
+               final url = await _api.uploadImageToR2(file);
+               if(mounted) {
+                 setStateDialog(() {
+                   _uploadedSiteImageUrl = url;
+                   _isUploadingImage = false;
+                 });
+               }
+             } catch (e) {
+               if(mounted) {
+                 setStateDialog(() => _isUploadingImage = false);
+                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Upload failed: $e")));
+               }
+             }
+          }
 
-          Future<void> _pickAndUploadImage() async {
+          // 2. Auto-Upload Trigger for Recovered File
+          if (_needsAutoUpload && _siteImageFile != null) {
+            _needsAutoUpload = false; // Run only once
+            // Run after build to avoid state errors
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+               _handleUpload(_siteImageFile!);
+            });
+          }
+
+          bool isFormUnlocked = _siteImageFile != null;
+
+          Future<void> _pickNewImage() async {
             try {
+              // This line might kill the app on low-ram devices
               final XFile? picked = await _picker.pickImage(
                 source: ImageSource.camera,
-                imageQuality: 60,
+                imageQuality: 50, 
               );
+              
               if (picked == null) return;
 
+              // If app survives, update state
               setStateDialog(() {
                 _siteImageFile = File(picked.path);
-                _isUploadingImage = true;
               });
+              
+              // Upload immediately
+              await _handleUpload(File(picked.path));
+              _saveDrafts();
 
-              final url = await _api.uploadImageToR2(_siteImageFile!);
-
-              setStateDialog(() {
-                _uploadedSiteImageUrl = url;
-                _isUploadingImage = false;
-              });
             } catch (e) {
-              setStateDialog(() => _isUploadingImage = false);
-              debugPrint("Image upload error: $e");
+              debugPrint("Image picker error: $e");
             }
           }
 
@@ -249,11 +367,10 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- 1. PHOTO OPTION (NOW AT THE TOP) ---
                   _buildLabel("Verification Photo (Site)", isMandatory: true),
                   const SizedBox(height: 8),
                   InkWell(
-                    onTap: _isUploadingImage ? null : _pickAndUploadImage,
+                    onTap: _isUploadingImage ? null : _pickNewImage,
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
                       height: 140,
@@ -291,7 +408,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                                 ),
                                 SizedBox(height: 8),
                                 Text(
-                                  "TAP TO TAKE PHOTO FIRST",
+                                  "TAP TO TAKE PHOTO",
                                   style: TextStyle(
                                     color: _cardNavy,
                                     fontSize: 11,
@@ -304,108 +421,35 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                     ),
                   ),
 
-                  if (_uploadedSiteImageUrl != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
-                      child: Row(
-                        children: const [
-                          Icon(
-                            Icons.check_circle,
-                            size: 16,
-                            color: _accentGreen,
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            "Photo verified. You can now fill the form.",
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: _accentGreen,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-
                   const Divider(height: 32),
 
                   Opacity(
-                    opacity: isFormUnlocked
-                        ? 1.0
-                        : 0.5, // Dims the UI when locked
+                    opacity: isFormUnlocked ? 1.0 : 0.5,
                     child: AbsorbPointer(
-                      absorbing:
-                          !isFormUnlocked, // Blocks all touch interaction
+                      absorbing: !isFormUnlocked,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Verified Bag Count
                           _buildLabel("Verified Bag Count", isMandatory: true),
                           const SizedBox(height: 8),
                           TextField(
-                            controller: bagCountController,
+                            controller: _bagCountController,
+                            onChanged: (val) => _saveDrafts(),
                             keyboardType: TextInputType.number,
+                            style: const TextStyle(color: Color(0xFF111827)),
                             decoration: _inputDecoration("Enter actual count"),
                           ),
                           const SizedBox(height: 16),
 
-                          // Dealer Selection
                           _buildLabel("Select Dealer", isMandatory: true),
                           const SizedBox(height: 8),
                           InkWell(
                             onTap: () async {
-                              final result =
-                                  await _showServerSearchDealerDialog();
-                              if (result != null)
-                                setStateDialog(() => selectedDealer = result);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 16,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _inputFill,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      selectedDealer?.name ??
-                                          "Tap to Search Dealer...",
-                                      style: TextStyle(
-                                        color: selectedDealer != null
-                                            ? _textDark
-                                            : Colors.grey,
-                                      ),
-                                    ),
-                                  ),
-                                  const Icon(
-                                    Icons.search,
-                                    color: _textDark,
-                                    size: 20,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Site Selection
-                          _buildLabel("Link to Site", isMandatory: true),
-                          const SizedBox(height: 8),
-                          InkWell(
-                            onTap: () async {
-                              final result =
-                                  await _showServerSearchSiteDialog();
-                              if (result != null) {
-                                setStateDialog(() {
-                                  selectedSite = result;
-                                  personNameController.text =
-                                      result.concernedPerson;
-                                  personPhoneController.text = result.phoneNo;
-                                });
+                              final res = await _showServerSearchDealerDialog();
+                              if (res != null) {
+                                setStateDialog(() => _selectedDealer = res);
+                                _selectedDealer = res; // Sync Parent
+                                _saveDrafts();
                               }
                             },
                             child: Container(
@@ -421,10 +465,10 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                                 children: [
                                   Expanded(
                                     child: Text(
-                                      selectedSite?.siteName ??
-                                          "Tap to Search Site...",
+                                      _selectedDealer?.name ??
+                                          "Tap to Search Dealer...",
                                       style: TextStyle(
-                                        color: selectedSite != null
+                                        color: _selectedDealer != null
                                             ? _textDark
                                             : Colors.grey,
                                       ),
@@ -441,21 +485,75 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                           ),
                           const SizedBox(height: 16),
 
-                          // Key Person
+                          _buildLabel("Link to Site", isMandatory: true),
+                          const SizedBox(height: 8),
+                          InkWell(
+                            onTap: () async {
+                              final result = await _showServerSearchSiteDialog();
+                              if (result != null) {
+                                setStateDialog(() {
+                                  _selectedSite = result;
+                                  _personNameController.text = result.concernedPerson;
+                                  _personPhoneController.text = result.phoneNo;
+                                });
+                                _saveDrafts();
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 16,
+                              ),
+                              decoration: BoxDecoration(
+                                color: _inputFill,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _selectedSite?.siteName ??
+                                          "Tap to Search Site...",
+                                      style: TextStyle(
+                                        color: _selectedSite != null
+                                            ? _textDark
+                                            : Colors.grey,
+                                      ),
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.search,
+                                    color: _textDark,
+                                    size: 20,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+
                           _buildLabel("Site Key Person Details"),
                           const SizedBox(height: 8),
                           Row(
                             children: [
                               Expanded(
                                 child: TextField(
-                                  controller: personNameController,
+                                  controller: _personNameController,
+                                  onChanged: (val) => _saveDrafts(),
+                                  style: const TextStyle(
+                                    color: Color(0xFF111827),
+                                  ),
                                   decoration: _inputDecoration("Name"),
                                 ),
                               ),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: TextField(
-                                  controller: personPhoneController,
+                                  controller: _personPhoneController,
+                                  onChanged: (val) => _saveDrafts(),
+                                  style: const TextStyle(
+                                    color: Color(0xFF111827),
+                                  ),
                                   decoration: _inputDecoration("Phone"),
                                   keyboardType: TextInputType.phone,
                                 ),
@@ -464,11 +562,12 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                           ),
                           const SizedBox(height: 16),
 
-                          // Remarks
-                          _buildLabel("Remarks / Rejection Reason"),
+                          _buildLabel("Remarks / Reason"),
                           const SizedBox(height: 8),
                           TextField(
-                            controller: memoController,
+                            controller: _memoController,
+                            onChanged: (val) => _saveDrafts(),
+                            style: const TextStyle(color: Color(0xFF111827)),
                             decoration: _inputDecoration("Enter notes..."),
                             maxLines: 2,
                           ),
@@ -492,26 +591,12 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
               ),
               TextButton(
                 onPressed: () {
-                  // 1. Validate ID before rejecting
-                  if (validApproverId == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          "Error: Invalid User ID ('${widget.employee.id}'). Cannot reject.",
-                        ),
-                        backgroundColor: _dangerRed,
-                      ),
-                    );
-                    return;
-                  }
-
+                  if (validApproverId == null) return;
                   Navigator.pop(context);
-
-                  _updateStatus(
-                    item.id,
-                    'rejected',
-                    memo: memoController.text,
-                    approvedBy: validApproverId,
+                  _handleBackgroundApproval(
+                    id: item.id,
+                    status: 'rejected',
+                    approverId: validApproverId,
                   );
                 },
                 child: const Text(
@@ -522,8 +607,6 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                   ),
                 ),
               ),
-              // 🔴 THE LOGIC BUTTON
-              // 🔴 THE LOGIC BUTTON (Replace lines 351 - 418 with this)
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _accentGreen,
@@ -532,13 +615,12 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                 ),
-
-                // Disable button if validation is running
                 onPressed: (_isUploadingImage || _isValidatingRules)
                     ? null
                     : () async {
-                        // 1. BASIC INPUT VALIDATION
-                        if (selectedSite == null || selectedDealer == null) {
+                        if (_selectedSite == null ||
+                            _selectedDealer == null ||
+                            validApproverId == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
@@ -550,99 +632,42 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                           return;
                         }
 
-                        // ⚠️ FIX: Check for Invalid User ID (Prevents Silent Failure)
-                        if (validApproverId == null) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                "Error: Your Employee ID ('${widget.employee.id}') is not a valid number.",
-                              ),
-                              backgroundColor: _dangerRed,
-                            ),
-                          );
-                          return;
+                        // Final check if upload didn't happen yet (e.g. quick click)
+                        if(_uploadedSiteImageUrl == null && _siteImageFile != null) {
+                           await _handleUpload(_siteImageFile!);
+                           if(_uploadedSiteImageUrl == null) return; // Fail safe
                         }
 
-                        // 2. 🟢 START CHECKING DB (Spinner ON)
                         setStateDialog(() => _isValidatingRules = true);
-
                         try {
-                          // ⚠️ FIX: Handle potential NULLs in IDs before sending to API
-                          final String safeMasonId = item.masonId;
-                          final String safeSiteId = selectedSite?.id ?? "0";
-
-                          // 3. 🔍 CALL API TO GET NUMBERS
                           final stats = await _api.getMasonBagStats(
-                            masonId: safeMasonId,
-                            siteId: safeSiteId,
+                            masonId: item.masonId,
+                            siteId: _selectedSite!.id!,
                           );
-
-                          // ⚠️ FIX: Safely Parse JSON Numbers (Handles String "800" vs Int 800)
                           final int overallBags =
                               int.tryParse(stats['overall'].toString()) ?? 0;
                           final int siteBags =
                               int.tryParse(stats['site'].toString()) ?? 0;
 
-                          print(
-                            "📊 Verification Stats: Overall=$overallBags, Site=$siteBags",
-                          );
-
                           if (overallBags > 800 && siteBags > 600) {
-                            // Stop spinner
                             setStateDialog(() => _isValidatingRules = false);
-
-                            // SHOW BLOCKING DIALOG
                             if (!mounted) return;
-                            showDialog(
-                              context: context,
-                              builder: (ctx) => AlertDialog(
-                                title: Row(
-                                  children: const [
-                                    Icon(Icons.block, color: _dangerRed),
-                                    SizedBox(width: 8),
-                                    Text("Approval Blocked"),
-                                  ],
-                                ),
-                                content: Text(
-                                  "Cannot Auto-Approve.\n\n"
-                                  "• Mason History: $overallBags (Needs 800+)\n"
-                                  "• Site History: $siteBags (Needs 600+)\n\n"
-                                  "Please contact Admin.",
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () => Navigator.pop(ctx),
-                                    child: const Text(
-                                      "OK",
-                                      style: TextStyle(color: _cardNavy),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                            return; // ⛔ EXIT HERE. DO NOT APPROVE.
+                            _showBlockDialog(overallBags, siteBags);
+                            return;
                           }
 
-                          // 5. ✅ PASSED? PROCEED TO APPROVE
-                          Navigator.pop(context); // Close Review Dialog
+                          Navigator.pop(
+                            context,
+                          ); 
 
-                          // Now we call updateStatus.
-                          // validApproverId is guaranteed to be non-null here because of the check above.
-                          _updateStatus(
-                            item.id,
-                            'approved',
-                            bagCount: int.tryParse(bagCountController.text),
-                            siteId: selectedSite?.id,
-                            dealerId: selectedDealer?.id,
-                            keyPersonName: personNameController.text,
-                            keyPersonPhone: personPhoneController.text,
-                            memo: memoController.text,
-                            verificationSiteImageUrl: _uploadedSiteImageUrl,
-                            approvedBy: validApproverId,
+                          _handleBackgroundApproval(
+                            id: item.id,
+                            status: 'approved',
+                            approverId: validApproverId,
+                            imageUrl: _uploadedSiteImageUrl,
                           );
                         } catch (e) {
                           setStateDialog(() => _isValidatingRules = false);
-                          print("Validation Error: $e");
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text("Validation Error: $e"),
@@ -651,7 +676,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                           );
                         }
                       },
-                child: _isValidatingRules
+                child: (_isValidatingRules || _isUploadingImage)
                     ? const SizedBox(
                         width: 20,
                         height: 20,
@@ -672,17 +697,100 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     );
   }
 
-  Future<void> _updateStatus(
-    String id,
-    String status, {
+  void _showBlockDialog(int overall, int site) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white, 
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: const [
+            Icon(
+              Icons.block_flipped,
+              color: Color(0xFFEF4444),
+            ), 
+            SizedBox(width: 12),
+            Text(
+              "Approval Blocked",
+              style: TextStyle(
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              "Cannot Auto-Approve based on current history rules:",
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _buildBlockDetail("Mason History", overall, 800),
+            const SizedBox(height: 8),
+            _buildBlockDetail("Site History", site, 600),
+            const SizedBox(height: 16),
+            const Text(
+              "Please contact your Admin for manual approval.",
+              style: TextStyle(
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              "OK",
+              style: TextStyle(
+                color: Color(0xFF1E293B),
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBlockDetail(String label, int current, int limit) {
+    return Row(
+      children: [
+        const Icon(Icons.circle, size: 6, color: Color(0xFF64748B)),
+        const SizedBox(width: 8),
+        Text(
+          "$label: ",
+          style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+        ),
+        Text(
+          "$current (Needs less than $limit)",
+          style: const TextStyle(
+            color: Color(0xFF0F172A),
+            fontWeight: FontWeight.bold,
+            fontSize: 13,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _handleBackgroundApproval({
+    required String id,
+    required String status,
     int? bagCount,
     String? siteId,
     String? dealerId,
-    String? keyPersonName,
-    String? keyPersonPhone,
-    String? memo,
-    String? verificationSiteImageUrl,
-    required int approvedBy, // Made required
+    required int approverId,
+    String? imageUrl,
   }) async {
     setState(() => _isProcessing = true);
     try {
@@ -692,33 +800,33 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
         bagCount: bagCount,
         siteId: siteId,
         dealerId: dealerId,
-        siteKeyPersonName: keyPersonName,
-        siteKeyPersonPhone: keyPersonPhone,
-        memo: memo,
-        verificationSiteImageUrl: verificationSiteImageUrl,
-        approvedBy: approvedBy,
-        approvedAt: DateTime.now().toIso8601String(), // Send Current Time
+        siteKeyPersonName: _personNameController.text,
+        siteKeyPersonPhone: _personPhoneController.text,
+        memo: _memoController.text,
+        verificationSiteImageUrl: imageUrl,
+        approvedBy: approverId,
+        approvedAt: DateTime.now().toIso8601String(),
       );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Lift $status successfully"),
-            backgroundColor: status == 'approved' ? _accentGreen : _dangerRed,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        _loadData();
-      }
+      await _clearDrafts(); // Wipe disk only on success
+      _loadData();
+      _toast("Successfully Approved");
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Error: $e"), backgroundColor: _dangerRed),
-        );
-      }
+      _toast("Error: $e", isError: true);
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
+  }
+
+  void _toast(String msg, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: isError ? _dangerRed : _accentGreen,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override

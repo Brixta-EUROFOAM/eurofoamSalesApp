@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // Added for RAM Recovery
 
 class CreateTvrScreen extends StatefulWidget {
   final Employee employee;
@@ -75,7 +76,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   // Selection
   TechnicalSite? _selectedSite;
   Mason? _selectedMason;
-  Dealer? _selectedDealer; 
+  Dealer? _selectedDealer;
 
   // Dropdowns
   String? _selectedVisitType = 'Site Visit';
@@ -115,7 +116,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   File? _sitePhotoFile;
 
   // --- DROPDOWN DATA LISTS ---
-  // form options 
+  // form options
   final List<String> _customerTypeOptions = [
     'IHB/Site',
     'Engineer/Architect',
@@ -206,6 +207,127 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         _regionOptions.contains(widget.employee.region)) {
       _selectedRegion = widget.employee.region;
     }
+
+    // ⚡ RAM RECOVERY LOGIC
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+       await _loadDrafts();
+       await _checkLostData();
+    });
+  }
+
+  // --- 💾 RECOVERY SYSTEM ---
+  
+  // 1. Save state to disk
+  Future<void> _saveDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Save Controllers
+    await prefs.setString('tvr_party_name', _associatedPartyNameController.text);
+    await prefs.setString('tvr_phone', _phoneNoController.text);
+    await prefs.setString('tvr_address', _siteAddressController.text);
+    await prefs.setString('tvr_area', _areaController.text);
+    await prefs.setString('tvr_remarks', _salespersonRemarksController.text);
+    await prefs.setString('tvr_purpose', _purposeOfVisitController.text);
+    await prefs.setString('tvr_market', _marketNameController.text);
+    await prefs.setString('tvr_const_area', _constAreaSqFtController.text);
+    await prefs.setString('tvr_est_req', _estRequirementController.text);
+    await prefs.setString('tvr_brand_price', _currentBrandPriceController.text);
+    await prefs.setString('tvr_site_stock', _siteStockController.text);
+    await prefs.setString('tvr_qty', _conversionQuantityValueController.text);
+
+    // Save Dropdowns
+    if (_selectedCustomerType != null) await prefs.setString('tvr_cust_type', _selectedCustomerType!);
+    if (_selectedVisitCategory != null) await prefs.setString('tvr_visit_cat', _selectedVisitCategory!);
+    if (_selectedVisitType != null) await prefs.setString('tvr_visit_type', _selectedVisitType!);
+    if (_selectedRegion != null) await prefs.setString('tvr_region', _selectedRegion!);
+    if (_selectedStage != null) await prefs.setString('tvr_stage', _selectedStage!);
+    
+    // Save Booleans
+    await prefs.setBool('tvr_is_converted', _isConverted);
+    await prefs.setBool('tvr_is_bag_picked', _isBagPicked);
+  }
+
+  // 2. Load state from disk
+  Future<void> _loadDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Only load if we have data to avoid overwriting init logic
+    if (prefs.containsKey('tvr_party_name')) {
+      setState(() {
+        _associatedPartyNameController.text = prefs.getString('tvr_party_name') ?? "";
+        _phoneNoController.text = prefs.getString('tvr_phone') ?? "";
+        _siteAddressController.text = prefs.getString('tvr_address') ?? "";
+        _areaController.text = prefs.getString('tvr_area') ?? "";
+        _salespersonRemarksController.text = prefs.getString('tvr_remarks') ?? "";
+        _purposeOfVisitController.text = prefs.getString('tvr_purpose') ?? "";
+        _marketNameController.text = prefs.getString('tvr_market') ?? "";
+        _constAreaSqFtController.text = prefs.getString('tvr_const_area') ?? "";
+        _estRequirementController.text = prefs.getString('tvr_est_req') ?? "";
+        _currentBrandPriceController.text = prefs.getString('tvr_brand_price') ?? "";
+        _siteStockController.text = prefs.getString('tvr_site_stock') ?? "";
+        _conversionQuantityValueController.text = prefs.getString('tvr_qty') ?? "";
+
+        _selectedCustomerType = prefs.getString('tvr_cust_type');
+        _selectedVisitCategory = prefs.getString('tvr_visit_cat');
+        _selectedVisitType = prefs.getString('tvr_visit_type');
+        _selectedRegion = prefs.getString('tvr_region');
+        _selectedStage = prefs.getString('tvr_stage');
+
+        _isConverted = prefs.getBool('tvr_is_converted') ?? false;
+        _isBagPicked = prefs.getBool('tvr_is_bag_picked') ?? false;
+      });
+    }
+  }
+
+  // 3. Clear drafts after submit
+  Future<void> _clearDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear(); // Or remove specific keys
+  }
+
+  // 4. Recover Lost Image (The Process Death Fix)
+  Future<void> _checkLostData() async {
+    final LostDataResponse response = await _imagePicker.retrieveLostData();
+    if (response.isEmpty) return;
+    
+    if (response.file != null) {
+      final prefs = await SharedPreferences.getInstance();
+      final action = prefs.getString('pending_camera_action');
+
+      setState(() {
+        if (action == 'check_in') {
+          _inTimeImageFile = File(response.file!.path);
+          _handleRecoveryCheckIn(); // Auto upload and fetch GPS
+        } else if (action == 'site_photo') {
+          _sitePhotoFile = File(response.file!.path);
+        }
+      });
+    }
+  }
+
+  // Helper for check-in recovery
+  Future<void> _handleRecoveryCheckIn() async {
+      setState(() => _isUploadingImage = true);
+      try {
+        if (_inTimeImageFile != null) {
+          final imageUrl = await _apiService.uploadImageToR2(_inTimeImageFile!);
+          final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+          
+          if(mounted) {
+            setState(() {
+              _inTimeImageUrl = imageUrl;
+              _checkInTime = DateTime.now(); // Reset time to now
+              _capturedLocation = position;
+              _latitudeController.text = position.latitude.toStringAsFixed(6);
+              _longitudeController.text = position.longitude.toStringAsFixed(6);
+              _isUploadingImage = false;
+            });
+            showSnack("Check-in Restored Successfully", backgroundColor: _accentGreen);
+          }
+        }
+      } catch(e) {
+        if(mounted) setState(() => _isUploadingImage = false);
+      }
   }
 
   @override
@@ -252,6 +374,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         _selectedStage = site.stageOfConstruction;
       }
     });
+    _saveDrafts();
   }
 
   void _onMasonSelected(Mason mason) {
@@ -260,6 +383,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       _influencerNameController.text = mason.name;
       _influencerPhoneController.text = mason.phoneNumber;
     });
+    _saveDrafts();
   }
 
   void _onDealerSelected(Dealer dealer) {
@@ -274,6 +398,122 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         _selectedRegion = dealer.region;
       }
     });
+    _saveDrafts();
+  }
+
+  // --- 🛑 PLAY STORE COMPLIANT LOCATION LOGIC ---
+  Future<Position?> _ensureLocationPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // 1. Check GPS
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      showSnack(
+        "Location services are disabled. Please enable GPS.",
+        backgroundColor: Colors.red,
+      );
+      return null;
+    }
+
+    // 2. Check Permission
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      // 3. SHOW PROMINENT DISCLOSURE (Crucial for Play Store)
+      if (!mounted) return null;
+      final bool userAgreed = await _showLocationDisclosureDialog();
+
+      if (!userAgreed) {
+        showSnack(
+          "Location is required to verify Site Visit.",
+          backgroundColor: Colors.orange,
+        );
+        return null;
+      }
+
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        showSnack("Location permission denied.", backgroundColor: Colors.red);
+        return null;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) _showSettingsDialog();
+      return null;
+    }
+
+    // 4. Get Position
+    try {
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+    } catch (e) {
+      debugPrint("Location Error: $e");
+      return null;
+    }
+  }
+
+  // --- 📢 DISCLOSURE DIALOG ---
+  Future<bool> _showLocationDisclosureDialog() async {
+    return await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: const [
+                Icon(Icons.location_on, color: _cardNavy),
+                SizedBox(width: 8),
+                Text("Location Required"),
+              ],
+            ),
+            content: const Text(
+              "To verify this technical visit, this app collects location data to ensure you are physically present at the site.\n\n"
+              "This data is collected only when you tap 'Fetch Location' or 'Check-In'.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("DENY", style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _cardNavy),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text(
+                  "ACCEPT",
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  // --- ⚙️ SETTINGS DIALOG ---
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Permission Required"),
+        content: const Text(
+          "Location permission is permanently denied. Please enable it in Settings to submit TVRs.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("CANCEL"),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Geolocator.openAppSettings();
+            },
+            child: const Text("OPEN SETTINGS"),
+          ),
+        ],
+      ),
+    );
   }
 
   // --- Fetch Location & Address ---
@@ -281,11 +521,18 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     setState(() => _isFetchingLocation = true);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
-    try {
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+    // 1. Get Location SAFELY (Play Store Compliant)
+    // This calls the helper method that handles Disclosure & Permissions
+    final Position? position = await _ensureLocationPermission();
 
+    // If null, permission was denied or GPS is off. Stop here.
+    if (position == null) {
+      setState(() => _isFetchingLocation = false);
+      return;
+    }
+
+    try {
+      // 2. Reverse Geocoding
       Map<String, String> addressDetails = {};
       try {
         addressDetails = await _apiService.reverseGeocodeWithRadar(
@@ -296,6 +543,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         debugPrint("Geocoding error: $e");
       }
 
+      // 3. Update UI
       if (mounted) {
         setState(() {
           _capturedLocation = position;
@@ -313,6 +561,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
             _selectedRegion = addressDetails['region'];
           }
         });
+        
+        // Save fetched data to disk
+        _saveDrafts();
+
         scaffoldMessenger.showSnackBar(
           const SnackBar(
             content: Text("Location & Address Updated"),
@@ -364,12 +616,20 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   Future<void> _handleCheckIn() async {
+    // 1. Save drafts before opening camera
+    await _saveDrafts();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pending_camera_action', 'check_in'); // Mark intention
+
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     setState(() => _isUploadingImage = true);
+    
     try {
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
+      
+      // 2. Pick Image
       final pickedFile = await _imagePicker.pickImage(
         source: ImageSource.camera,
         imageQuality: 60,
@@ -393,6 +653,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           _latitudeController.text = position.latitude.toStringAsFixed(6);
           _longitudeController.text = position.longitude.toStringAsFixed(6);
         });
+        
+        // Clear camera action flag
+        await prefs.remove('pending_camera_action');
+        
         scaffoldMessenger.showSnackBar(
           const SnackBar(
             content: Text('Checked-In successfully.'),
@@ -415,10 +679,19 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   Future<void> _pickSitePhoto() async {
+    // 1. Save drafts
+    await _saveDrafts();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('pending_camera_action', 'site_photo');
+
     final pickedFile = await _imagePicker.pickImage(
       source: ImageSource.camera,
       imageQuality: 60,
     );
+    
+    // Clear flag
+    await prefs.remove('pending_camera_action');
+
     if (pickedFile != null) {
       setState(() {
         _sitePhotoFile = File(pickedFile.path);
@@ -454,6 +727,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       setState(() {
         _supplyDate = picked;
       });
+      _saveDrafts();
     }
   }
 
@@ -506,7 +780,9 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       final remaining = minMinutes - difference.inMinutes;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Minimum $minMinutes mins required. Wait $remaining minute(s)."),
+          content: Text(
+            "Minimum $minMinutes mins required. Wait $remaining minute(s).",
+          ),
           backgroundColor: Colors.orange,
           duration: const Duration(seconds: 4),
         ),
@@ -543,8 +819,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     if (_selectedCustomerType != null &&
         _selectedCustomerType!.contains("Dealer") &&
         _selectedDealer != null &&
-        (_selectedDealer!.latitude != 0.0 || _selectedDealer!.longitude != 0.0)) {
-      
+        (_selectedDealer!.latitude != 0.0 ||
+            _selectedDealer!.longitude != 0.0)) {
       double distanceInMeters = Geolocator.distanceBetween(
         _capturedLocation!.latitude,
         _capturedLocation!.longitude,
@@ -749,6 +1025,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       );
 
       await _apiService.createTvr(tvrReport);
+      
+      await _clearDrafts(); // CLEAR SAVED DATA ON SUCCESS
 
       scaffoldMessenger.showSnackBar(
         const SnackBar(
@@ -815,8 +1093,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                       label: 'Type of Customer',
                       value: _selectedCustomerType,
                       items: _customerTypeOptions,
-                      onChanged: (v) =>
-                          setState(() => _selectedCustomerType = v),
+                      onChanged: (v) {
+                         setState(() => _selectedCustomerType = v);
+                         _saveDrafts();
+                      },
                       isRequired: true,
                     ),
                     const SizedBox(height: 24),
@@ -981,7 +1261,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Visit Type',
           value: _selectedVisitType,
           items: ['Site Visit', 'Service', 'Complaint', 'Influencer Meet'],
-          onChanged: (v) => setState(() => _selectedVisitType = v),
+          onChanged: (v) {
+             setState(() => _selectedVisitType = v);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
         const SizedBox(height: 16),
@@ -989,7 +1272,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Site Visit Type',
           value: _selectedSiteVisitType,
           items: ['Planned', 'Unplanned'],
-          onChanged: (v) => setState(() => _selectedSiteVisitType = v),
+          onChanged: (v) {
+             setState(() => _selectedSiteVisitType = v);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
         const SizedBox(height: 16),
@@ -997,7 +1283,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Visit Category',
           value: _selectedVisitCategory,
           items: _visitCategoryOptions,
-          onChanged: (v) => setState(() => _selectedVisitCategory = v),
+          onChanged: (v) {
+             setState(() => _selectedVisitCategory = v);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
         const SizedBox(height: 16),
@@ -1031,7 +1320,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 label: 'Region',
                 value: _selectedRegion,
                 items: _regionOptions,
-                onChanged: (v) => setState(() => _selectedRegion = v),
+                onChanged: (v) {
+                   setState(() => _selectedRegion = v);
+                   _saveDrafts();
+                },
                 isRequired: true,
               ),
             ),
@@ -1105,7 +1397,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 label: 'Stage',
                 value: _selectedStage,
                 items: _stageOptions,
-                onChanged: (v) => setState(() => _selectedStage = v),
+                onChanged: (v) {
+                   setState(() => _selectedStage = v);
+                   _saveDrafts();
+                },
                 isRequired: true,
               ),
             ),
@@ -1116,7 +1411,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Brands in Use',
           selectedValues: _selectedBrandsInUse,
           items: _brandOptions,
-          onChanged: (list) => setState(() => _selectedBrandsInUse = list),
+          onChanged: (list) {
+             setState(() => _selectedBrandsInUse = list);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
         const SizedBox(height: 16),
@@ -1164,7 +1462,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         _buildFintechSwitch(
           label: "Is Converted?",
           value: _isConverted,
-          onChanged: (v) => setState(() => _isConverted = v),
+          onChanged: (v) {
+             setState(() => _isConverted = v);
+             _saveDrafts();
+          },
         ),
         if (_isConverted) ...[
           const SizedBox(height: 12),
@@ -1172,7 +1473,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
             label: 'Conversion Type',
             value: _selectedConversionType,
             items: ['New', 'Retention'],
-            onChanged: (v) => setState(() => _selectedConversionType = v),
+            onChanged: (v) {
+               setState(() => _selectedConversionType = v);
+               _saveDrafts();
+            },
             isRequired: true,
           ),
           const SizedBox(height: 16),
@@ -1180,7 +1484,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
             label: 'From Brand',
             value: _selectedConversionFromBrand,
             items: _brandOptions,
-            onChanged: (v) => setState(() => _selectedConversionFromBrand = v),
+            onChanged: (v) {
+               setState(() => _selectedConversionFromBrand = v);
+               _saveDrafts();
+            },
             isRequired: true,
           ),
           const SizedBox(height: 16),
@@ -1200,7 +1507,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                   label: 'Unit',
                   value: _selectedConversionUnit,
                   items: ['Bags', 'MT'],
-                  onChanged: (v) => setState(() => _selectedConversionUnit = v),
+                  onChanged: (v) {
+                     setState(() => _selectedConversionUnit = v);
+                     _saveDrafts();
+                  },
                   isRequired: true,
                 ),
               ),
@@ -1211,7 +1521,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         _buildFintechSwitch(
           label: "Tech Service Given?",
           value: _isTechService,
-          onChanged: (v) => setState(() => _isTechService = v),
+          onChanged: (v) {
+             setState(() => _isTechService = v);
+             _saveDrafts();
+          },
         ),
         if (_isTechService) ...[
           const SizedBox(height: 12),
@@ -1219,7 +1532,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
             label: 'Service Type',
             value: _selectedServiceType,
             items: _serviceTypeOptions,
-            onChanged: (v) => setState(() => _selectedServiceType = v),
+            onChanged: (v) {
+               setState(() => _selectedServiceType = v);
+               _saveDrafts();
+            },
             isRequired: true,
           ),
           const SizedBox(height: 16),
@@ -1227,7 +1543,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
             label: 'Type of Technical Activity',
             value: _selectedTechActivity,
             items: _techActivityOptions,
-            onChanged: (v) => setState(() => _selectedTechActivity = v),
+            onChanged: (v) {
+               setState(() => _selectedTechActivity = v);
+               _saveDrafts();
+            },
             isRequired: true,
           ),
           const SizedBox(height: 16),
@@ -1278,7 +1597,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Influencer Type',
           value: _selectedInfluencerType,
           items: _influencerTypeOptions,
-          onChanged: (v) => setState(() => _selectedInfluencerType = v),
+          onChanged: (v) {
+             setState(() => _selectedInfluencerType = v);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
         const SizedBox(height: 16),
@@ -1304,7 +1626,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         _buildFintechSwitch(
           label: "Enrolled in Scheme?",
           value: _isSchemeEnrolled,
-          onChanged: (v) => setState(() => _isSchemeEnrolled = v),
+          onChanged: (v) {
+             setState(() => _isSchemeEnrolled = v);
+             _saveDrafts();
+          },
         ),
         _buildSectionHeader("REMARKS"),
         _buildFintechInput(
@@ -1375,7 +1700,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Visit Category',
           value: _selectedVisitCategory,
           items: _visitCategoryOptions,
-          onChanged: (v) => setState(() => _selectedVisitCategory = v),
+          onChanged: (v) {
+             setState(() => _selectedVisitCategory = v);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
         const SizedBox(height: 16),
@@ -1383,7 +1711,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Influencer Type',
           value: _selectedInfluencerType,
           items: const ['Dealer', 'Sub-Dealer'],
-          onChanged: (v) => setState(() => _selectedInfluencerType = v),
+          onChanged: (v) {
+             setState(() => _selectedInfluencerType = v);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
         _buildSectionHeader("LOCATION & REGION"),
@@ -1394,7 +1725,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 label: 'Region',
                 value: _selectedRegion,
                 items: _regionOptions,
-                onChanged: (v) => setState(() => _selectedRegion = v),
+                onChanged: (v) {
+                   setState(() => _selectedRegion = v);
+                   _saveDrafts();
+                },
                 isRequired: true,
               ),
             ),
@@ -1456,7 +1790,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Brands in Use/Selling',
           selectedValues: _selectedBrandsInUse,
           items: _brandOptions,
-          onChanged: (list) => setState(() => _selectedBrandsInUse = list),
+          onChanged: (list) {
+             setState(() => _selectedBrandsInUse = list);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
 
@@ -1468,6 +1805,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           onChanged: (v) => setState(() {
             _isBagPicked = v;
             _isConverted = v; // Auto-set conversion status
+            _saveDrafts();
           }),
         ),
 
@@ -1489,7 +1827,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                   label: 'Unit',
                   value: _selectedConversionUnit,
                   items: ['Bags', 'MT'],
-                  onChanged: (v) => setState(() => _selectedConversionUnit = v),
+                  onChanged: (v) {
+                     setState(() => _selectedConversionUnit = v);
+                     _saveDrafts();
+                  },
                   isRequired: true,
                 ),
               ),
@@ -1581,7 +1922,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Influencer Type',
           value: _selectedInfluencerType,
           items: ['Mason', 'Head Mason', 'Contractor', 'Engineer', 'Architect'],
-          onChanged: (v) => setState(() => _selectedInfluencerType = v),
+          onChanged: (v) {
+             setState(() => _selectedInfluencerType = v);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
         const SizedBox(height: 16),
@@ -1606,7 +1950,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Visit Category',
           value: _selectedVisitCategory,
           items: _visitCategoryOptions,
-          onChanged: (v) => setState(() => _selectedVisitCategory = v),
+          onChanged: (v) {
+             setState(() => _selectedVisitCategory = v);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
         const SizedBox(height: 16),
@@ -1624,7 +1971,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 label: 'Region',
                 value: _selectedRegion,
                 items: _regionOptions,
-                onChanged: (v) => setState(() => _selectedRegion = v),
+                onChanged: (v) {
+                   setState(() => _selectedRegion = v);
+                   _saveDrafts();
+                },
                 isRequired: true,
               ),
             ),
@@ -1657,39 +2007,21 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Preferred Brands',
           selectedValues: _selectedBrandsInUse,
           items: _brandOptions,
-          onChanged: (list) => setState(() => _selectedBrandsInUse = list),
+          onChanged: (list) {
+             setState(() => _selectedBrandsInUse = list);
+             _saveDrafts();
+          },
           isRequired: true,
         ),
         const SizedBox(height: 16),
         _buildFintechSwitch(
           label: "Enrolled in Scheme?",
           value: _isSchemeEnrolled,
-          onChanged: (v) => setState(() => _isSchemeEnrolled = v),
+          onChanged: (v) {
+             setState(() => _isSchemeEnrolled = v);
+             _saveDrafts();
+          },
         ),
-
-        // _buildSectionHeader("TECHNICAL (Optional)"),
-        // _buildFintechSwitch(
-        //   label: "Tech Service Given?",
-        //   value: _isTechService,
-        //   onChanged: (v) => setState(() => _isTechService = v),
-        // ),
-        // if (_isTechService) ...[
-        //   const SizedBox(height: 12),
-        //   _buildFintechDropdown(
-        //     label: 'Service Type',
-        //     value: _selectedServiceType,
-        //     items: _serviceTypeOptions,
-        //     onChanged: (v) => setState(() => _selectedServiceType = v),
-        //     isRequired: true,
-        //   ),
-        //   const SizedBox(height: 16),
-        //   _buildFintechInput(
-        //     controller: _serviceDescController,
-        //     label: 'Description',
-        //     maxLines: 2,
-        //     isRequired: true,
-        //   ),
-        // ],
 
         _buildSectionHeader("REMARKS"),
         _buildFintechInput(
@@ -1794,6 +2126,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           readOnly: readOnly,
           style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
           validator: isRequired ? (v) => v!.isEmpty ? 'Required' : null : null,
+          onChanged: (v) => _saveDrafts(), // Auto-save on change
           decoration: InputDecoration(
             filled: true,
             fillColor: readOnly ? Colors.grey[200] : _inputFill,
