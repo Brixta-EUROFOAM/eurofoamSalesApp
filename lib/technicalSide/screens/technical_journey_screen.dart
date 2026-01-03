@@ -83,12 +83,15 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   // Journey State
   bool _isJourneyActive = false;
 
+  // 🔒 Anti-Spam Flag
+  bool _hasArrived = false;
+
   // Stream Subscriptions
   StreamSubscription? _distanceSub;
   StreamSubscription? _posSub;
   StreamSubscription? _eventSub;
 
-  // Data Holding State (Simplified: No complex Site/Dealer objects)
+  // Data Holding State
   Pjp? _currentPjp;
   bool _isSiteVisit = true;
 
@@ -122,14 +125,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
     final modeController = AppKernel.instance.feature<JourneyModeController>();
 
-    // 1. INITIALIZE DATA IMMEDIATELY
     if (widget.initialJourneyData != null) {
-      debugPrint("📦 [TechnicalJourneyScreen] Found initialJourneyData!");
       _processInitialDataSynchronously(widget.initialJourneyData!);
     } else {
-      debugPrint(
-        "⚠️ [TechnicalJourneyScreen] No initialJourneyData found. Defaulting mode.",
-      );
       _journeyMode = modeController.defaultMode(hasPjp: false).mode;
     }
 
@@ -151,9 +149,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     }
   }
 
-  // --- 🔄 MANUAL RESET (Clear Button) ---
   void _resetScreenState() async {
-    // 1. Clear UI & State
     setState(() {
       _isJourneyActive = false;
       _currentPjp = null;
@@ -163,11 +159,11 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       _currentGeoTrackingDbId = null;
       _totalDistanceTravelled = 0.0;
       _lastRecordedLocation = null;
+      _hasArrived = false;
 
       _destinationController.clear();
       _distanceDisplay = "Select Destination";
 
-      // Reset Mode to Default
       final modeController = AppKernel.instance
           .feature<JourneyModeController>();
       _journeyMode = modeController.defaultMode(hasPjp: false).mode;
@@ -176,45 +172,28 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       _routeTaken.clear();
     });
 
-    // 2. Clean Map
     await _removeRouteLine();
     await _removeDestinationMarker();
-
-    // 3. Re-center Map on User
     await _determinePositionAndMoveCamera();
   }
 
-  // 🔥 ADDED: LISTENS FOR UPDATES FROM NAV SCREEN
   @override
   void didUpdateWidget(TechnicalJourneyScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-
-    // If the Nav Screen passes new data (e.g., user clicked "Start" on a new PJP)
     if (widget.initialJourneyData != null &&
         widget.initialJourneyData != oldWidget.initialJourneyData) {
-      debugPrint(
-        "🔄 [TechnicalJourneyScreen] didUpdateWidget: New Data Received!",
-      );
       _processNewJourneyData(widget.initialJourneyData!);
-
-      // Notify parent to clear data so we don't re-process it loopily
       widget.onDestinationConsumed?.call();
     }
   }
 
   void _processInitialDataSynchronously(Map<String, dynamic> data) {
-    debugPrint(
-      "⚙️ [TechnicalJourneyScreen] Processing Initial Data Synchronously...",
-    );
     _journeyMode = JourneyMode.planned;
     _currentPjp = data['pjp'];
     _destinationLocation = data['destination'];
     _destinationController.text = data['displayName'] ?? "";
     _isSiteVisit = data['isSite'] ?? true;
     _distanceDisplay = "Loading Map...";
-
-    debugPrint("   -> PJP ID: ${_currentPjp?.id}");
-    debugPrint("   -> Destination: $_destinationLocation");
   }
 
   @override
@@ -226,24 +205,16 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   void _onMapStyleLoaded() async {
-    debugPrint(
-      "🗺️ [TechnicalJourneyScreen] Map Style Loaded Callback Triggered",
-    );
     if (!flags.journeyMap) return;
 
     if (_destinationLocation != null) {
-      debugPrint(
-        "📍 [TechnicalJourneyScreen] Adding destination marker at $_destinationLocation",
-      );
+      // 🔥 Draw the pointer immediately on load
       _addDestinationMarker(_destinationLocation!);
     }
 
     await _determinePositionAndMoveCamera();
 
     if (_destinationLocation != null && _currentUserLocation != null) {
-      debugPrint(
-        "🛣️ [TechnicalJourneyScreen] Both User & Dest location known. Fetching Route...",
-      );
       await Future.delayed(const Duration(milliseconds: 100));
       await _getDirectionsAndDrawRoute();
       _fitBounds();
@@ -251,12 +222,10 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       if (mounted) setState(() => _distanceDisplay = "Ready to start");
     }
 
-    // Call consumer callback to clear parent state if needed
     widget.onDestinationConsumed?.call();
   }
 
   void _processNewJourneyData(Map<String, dynamic> journeyData) async {
-    debugPrint("⚙️ [TechnicalJourneyScreen] _processNewJourneyData (Update)");
     final Pjp? pjp = journeyData['pjp'] as Pjp?;
     final LatLng? destination = journeyData['destination'] as LatLng?;
     final String? displayName = journeyData['displayName'] as String?;
@@ -276,7 +245,11 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     _routeTaken.clear();
     await _removeRouteLine();
 
-    // If map isn't ready or user location unknown, try to find it
+    // 🔥 Update the visual pointer when new data comes in
+    if (destination != null) {
+      _addDestinationMarker(destination);
+    }
+
     if (_currentUserLocation == null) {
       await _determinePositionAndMoveCamera();
     }
@@ -310,6 +283,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         _distanceDisplay = "Select Destination";
       });
       await _removeRouteLine();
+      await _removeDestinationMarker(); // Remove pointer in unplanned mode initially
     } else {
       if (_backupPlannedPjp != null) {
         setState(() {
@@ -318,6 +292,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
           _destinationController.text = _resolveName(_currentPjp!);
         });
         if (_destinationLocation != null) {
+          _addDestinationMarker(_destinationLocation!); // Restore pointer
           _getDirectionsAndDrawRoute();
         }
       }
@@ -333,6 +308,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       _currentPjp = null;
       _distanceDisplay = "Calculating Route...";
     });
+
+    // 🔥 Add pointer for unplanned destination
+    await _addDestinationMarker(result.destination);
 
     try {
       if (_currentUserLocation == null) {
@@ -369,9 +347,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _startJourney() async {
-    debugPrint("🚀 [TechnicalJourneyScreen] _startJourney triggered");
-
-    // 1. Permission & Validation
     final hasPermission = await _ensureJourneyPermission();
     if (!hasPermission) return;
 
@@ -380,18 +355,17 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       return;
     }
 
-    // 2. Initialize State
     setState(() {
       _distanceDisplay = "Initializing...";
       _totalDistanceTravelled = 0.0;
       _lastRecordedLocation = null;
+      _hasArrived = false;
     });
 
     try {
       final tracking = AppKernel.instance.feature<JourneyTrackingController>();
       final api = ApiService();
 
-      // 3. Handle Unplanned PJP Creation (If needed)
       if (_currentPjp == null && _journeyMode == JourneyMode.unplanned) {
         final employeeId = int.parse(widget.employee.id);
         final newPjp = Pjp(
@@ -418,10 +392,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         _currentPjp = await api.createPjp(newPjp);
       }
 
-      if (_currentPjp == null)
-        throw Exception("Failed to initialize visit record");
+      if (_currentPjp == null) throw Exception("Failed to initialize visit");
 
-      // 4. 🔥 CREATE START RECORD (Matching your Model)
       final startPoint = GeoTrackingPoint(
         userId: int.parse(widget.employee.id),
         journeyId:
@@ -430,25 +402,19 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         longitude: _currentUserLocation?.longitude ?? 0.0,
         destLat: _destinationLocation?.latitude,
         destLng: _destinationLocation?.longitude,
-        // Pass IDs based on visit type
         siteId: _isSiteVisit ? _currentPjp?.siteId : null,
         dealerId: !_isSiteVisit ? _currentPjp?.dealerId : null,
         isActive: true,
         locationType: 'JOURNEY_START',
-        // Optional: Add extra fields if your model expects them initialized
         totalDistanceTravelled: 0.0,
       );
 
-      // 5. SEND TO API & SAVE ID
       _currentGeoTrackingDbId = await api.sendGeoTrackingPoint(startPoint);
-      debugPrint("✅ Journey Started on DB: $_currentGeoTrackingDbId");
 
-      // 6. Update PJP Status
       if (_currentPjp?.id != null) {
         await api.updatePjp(_currentPjp!.id, {'status': 'IN_PROGRESS'});
       }
 
-      // 7. Start Visual Stream
       await tracking.startJourney(
         pjp: _currentPjp!,
         userId: int.parse(widget.employee.id),
@@ -462,7 +428,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         _routeTaken.clear();
       });
 
-      // 8. Listeners to calculate distance for the final PATCH
       _distanceSub = tracking.distanceStream.listen((dist) {
         if (mounted)
           setState(
@@ -471,7 +436,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       });
 
       _posSub = tracking.positionStream.listen((latLng) {
-        // Accumulate distance manually for the stop request
         if (_lastRecordedLocation != null) {
           final dist = Geolocator.distanceBetween(
             _lastRecordedLocation!.latitude,
@@ -490,7 +454,10 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       });
 
       _eventSub = tracking.eventStream.listen((event) {
-        if (event == JourneyTrackingEvent.arrived) _showArrivalDialog();
+        if (event == JourneyTrackingEvent.arrived && !_hasArrived) {
+          _hasArrived = true;
+          _showArrivalDialog();
+        }
       });
     } catch (e) {
       _showError("Failed to start: $e");
@@ -504,11 +471,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     final api = ApiService();
     final checkInTime = DateTime.now();
 
-    // 1. 🔥 EXECUTE PATCH REQUEST (Exactly like Old Code)
     if (_currentGeoTrackingDbId != null && _currentUserLocation != null) {
       try {
-        debugPrint("🛑 Patching Journey End: $_currentGeoTrackingDbId");
-
         final updateData = {
           'isActive': false,
           'totalDistanceTravelled': (_totalDistanceTravelled / 1000.0)
@@ -516,31 +480,26 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
           'latitude': _currentUserLocation!.latitude,
           'longitude': _currentUserLocation!.longitude,
           'locationType': 'JOURNEY_END',
-          // Note: Sending checkOutTime in the map as per old logic
           'checkOutTime': checkInTime.toIso8601String(),
         };
 
         await api.updateGeoTrackingPoint(_currentGeoTrackingDbId!, updateData);
-        debugPrint("✅ Journey Patched Successfully");
       } catch (e) {
         debugPrint("⚠️ Failed to patch journey end: $e");
       }
     }
 
-    // 2. Update PJP Status
     if (_currentPjp?.id != null) {
       try {
         await api.updatePjp(_currentPjp!.id, {'status': 'COMPLETED'});
       } catch (_) {}
     }
 
-    // 3. Stop Internal Tracking
     try {
       final tracking = AppKernel.instance.feature<JourneyTrackingController>();
       await tracking.stopJourney();
     } catch (_) {}
 
-    // 4. Trigger Cleanup & Screen Reset
     _handleJourneyCleanup();
   }
 
@@ -555,19 +514,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _getDirectionsAndDrawRoute() async {
-    debugPrint(
-      "🛣️ [TechnicalJourneyScreen] _getDirectionsAndDrawRoute called",
-    );
-    if (_currentUserLocation == null || _destinationLocation == null) {
-      debugPrint(
-        "⚠️ [TechnicalJourneyScreen] Cannot draw route. Missing location data.",
-      );
-      return;
-    }
-    if (_radarApiKey == null) {
-      debugPrint("⚠️ [TechnicalJourneyScreen] Missing Radar API Key.");
-      return;
-    }
+    if (_currentUserLocation == null || _destinationLocation == null) return;
+    if (_radarApiKey == null) return;
 
     try {
       final start =
@@ -578,10 +526,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         'https://api.radar.io/v1/route/directions?locations=$start|$end&mode=car&units=metric&geometry=polyline5',
       );
 
-      debugPrint(
-        "📡 [TechnicalJourneyScreen] Fetching route from Radar: $start -> $end",
-      );
-
       final response = await http.get(
         uri,
         headers: {'Authorization': _radarApiKey},
@@ -590,9 +534,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['routes'] != null && (data['routes'] as List).isNotEmpty) {
-          debugPrint(
-            "✅ [TechnicalJourneyScreen] Route found. Parsing geometry...",
-          );
           final geometry = data['routes'][0]['geometry']['polyline'];
           final points = PolylineCodec.decode(geometry);
           final coordinates = points.map((p) => [p[1], p[0]]).toList();
@@ -634,36 +575,27 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
             ),
           );
           _isRouteLineLayerAdded = true;
-          debugPrint("🎨 [TechnicalJourneyScreen] Route line drawn on map.");
         }
-      } else {
-        debugPrint(
-          "❌ [TechnicalJourneyScreen] Radar API Error: ${response.statusCode} - ${response.body}",
-        );
       }
     } catch (e) {
-      debugPrint("❌ [TechnicalJourneyScreen] Route Exception: $e");
+      debugPrint("❌ Route Exception: $e");
     } finally {
       if (mounted) setState(() {});
     }
   }
 
-  // --- 🛑 PLAY STORE SAFEGUARD: PERMISSION HANDLER ---
   Future<bool> _ensureJourneyPermission() async {
     bool serviceEnabled;
     LocationPermission permission;
 
-    // 1. Check GPS
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       _showError("Location services are disabled. Please enable GPS.");
       return false;
     }
 
-    // 2. Check Permission
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
-      // 🛑 SHOW PROMINENT DISCLOSURE (Mandatory for Journey Tracking)
       if (!mounted) return false;
       final bool userAgreed = await _showJourneyDisclosureDialog();
 
@@ -684,25 +616,21 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       return false;
     }
 
-    return true; // Permission Granted
+    return true;
   }
 
-  // --- 📢 PROMINENT DISCLOSURE (BACKGROUND LOCATION) ---
-  // --- 📢 PROMINENT DISCLOSURE (BACKGROUND LOCATION) ---
   Future<bool> _showJourneyDisclosureDialog() async {
     return await showDialog(
           context: context,
           barrierDismissible: false,
           builder: (context) => AlertDialog(
             title: Row(
-              // 🔴 REMOVED 'const' from here because _cardNavy is a variable
               children: [
                 Icon(Icons.map, color: _cardNavy),
                 const SizedBox(width: 8),
-                const Expanded(child: Text("Start Journey Tracking?")),
+                const Expanded(child: Text("Allow Location Permissions")),
               ],
             ),
-            // 🔥 THIS TEXT IS REQUIRED BY GOOGLE PLAY FOR BACKGROUND TRACKING
             content: const Text(
               "This app collects location data to enable [Salesman Route Tracking] "
               "and [Distance Calculation] even when the app is closed or not in use.",
@@ -753,8 +681,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
   Future<void> _determinePositionAndMoveCamera() async {
     try {
-      // 1. SAFE PERMISSION CHECK
-      // We check this BEFORE calling the controller to ensure the UI dialog appears first.
       final hasPermission = await _ensureJourneyPermission();
       if (!hasPermission) return;
 
@@ -764,9 +690,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       if (result.event == JourneyLocationEvent.granted &&
           result.location != null) {
         _currentUserLocation = result.location;
-        debugPrint(
-          "📍 [TechnicalJourneyScreen] User Location Resolved: $_currentUserLocation",
-        );
 
         if (mounted && !_isJourneyActive) {
           if (_distanceDisplay.contains("Waiting") ||
@@ -784,15 +707,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
           );
         }
         _drawUserLocationPointer(_currentUserLocation!);
-      } else {
-        debugPrint(
-          "⚠️ [TechnicalJourneyScreen] User Location NOT resolved. Event: ${result.event}",
-        );
       }
     } catch (e) {
-      debugPrint(
-        "❌ [TechnicalJourneyScreen] _determinePositionAndMoveCamera Exception: $e",
-      );
+      debugPrint("❌ _determinePositionAndMoveCamera Exception: $e");
     }
   }
 
@@ -829,31 +746,64 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     } catch (_) {}
   }
 
+  // 🔥 UPDATED: POINTER VISUALS (Red/White Target)
   Future<void> _addDestinationMarker(LatLng point) async {
     try {
       final controller = await _controllerCompleter.future;
-      await controller.addCircleLayer(
+
+      // Cleanup first
+      try {
+        await controller.removeLayer('dest-layer-inner');
+        await controller.removeLayer('dest-layer-outer');
+        await controller.removeSource('dest-source');
+      } catch (_) {}
+
+      await controller.addSource(
         'dest-source',
-        'dest-layer',
-        const CircleLayerProperties(
-          circleColor: '#0F172A',
-          circleRadius: 10,
-          circleStrokeWidth: 2,
-          circleStrokeColor: '#FFFFFF',
+        GeojsonSourceProperties(
+          data: {
+            'type': 'FeatureCollection',
+            'features': [
+              {
+                'type': 'Feature',
+                'geometry': {
+                  'type': 'Point',
+                  'coordinates': [point.longitude, point.latitude],
+                },
+              },
+            ],
+          },
         ),
       );
-      await controller.setGeoJsonSource('dest-source', {
-        'type': 'FeatureCollection',
-        'features': [
-          {
-            'type': 'Feature',
-            'geometry': {
-              'type': 'Point',
-              'coordinates': [point.longitude, point.latitude],
-            },
-          },
-        ],
-      });
+
+      // 1. Outer Ring (White with Navy Stroke)
+      await controller.addCircleLayer(
+        'dest-source',
+        'dest-layer-outer',
+        const CircleLayerProperties(
+          circleColor: '#FFFFFF',
+          circleRadius: 10,
+          circleStrokeWidth: 2,
+          circleStrokeColor: '#0F172A',
+        ),
+      );
+
+      // 2. Inner Dot (Red)
+      await controller.addCircleLayer(
+        'dest-source',
+        'dest-layer-inner',
+        const CircleLayerProperties(circleColor: '#EF4444', circleRadius: 6),
+      );
+    } catch (_) {}
+  }
+
+  // Helper to remove both layers
+  Future<void> _removeDestinationMarker() async {
+    final controller = await _controllerCompleter.future;
+    try {
+      await controller.removeLayer('dest-layer-inner');
+      await controller.removeLayer('dest-layer-outer');
+      await controller.removeSource('dest-source');
     } catch (_) {}
   }
 
@@ -861,7 +811,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     _cancelJourneySubscriptions();
     final checkInTime = DateTime.now();
 
-    // 1. Pass Data to Parent (For Forms/Next Screen)
     if (widget.onJourneyCompleted != null && _currentPjp != null) {
       widget.onJourneyCompleted!(
         _currentPjp!,
@@ -871,17 +820,13 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       );
     }
 
-    // 2. 🔄 FULL STATE RESET (Back to "Normal")
     if (mounted) {
-      // Get default mode to reset the toggle switch
       final modeController = AppKernel.instance
           .feature<JourneyModeController>();
       final defaultMode = modeController.defaultMode(hasPjp: false).mode;
 
       setState(() {
         _isJourneyActive = false;
-
-        // Reset Logic Vars
         _currentPjp = null;
         _destinationLocation = null;
         _backupPlannedPjp = null;
@@ -889,33 +834,20 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         _currentGeoTrackingDbId = null;
         _totalDistanceTravelled = 0.0;
         _lastRecordedLocation = null;
+        _hasArrived = false;
 
-        // Reset UI Elements
-        _destinationController.clear(); // Wipes the text box
-        _distanceDisplay = "Select Destination"; // Resets big header
-        _journeyMode = defaultMode; // Resets toggle to Planned
+        _destinationController.clear();
+        _distanceDisplay = "Select Destination";
+        _journeyMode = defaultMode;
         _isSelectionMode = false;
 
-        // Clear Route Data
         _routeTaken.clear();
       });
 
-      // 3. Clean Map Visuals
       await _removeRouteLine();
       await _removeDestinationMarker();
-
-      // Optional: Re-center camera to user to look "fresh"
       await _determinePositionAndMoveCamera();
     }
-  }
-
-  // Helper to remove the destination dot
-  Future<void> _removeDestinationMarker() async {
-    final controller = await _controllerCompleter.future;
-    try {
-      await controller.removeLayer('dest-layer');
-      await controller.removeSource('dest-source');
-    } catch (_) {}
   }
 
   String _resolveName(Pjp pjp) {
@@ -1125,7 +1057,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
                   if (!_controllerCompleter.isCompleted)
                     _controllerCompleter.complete(c);
                 },
-                onStyleLoadedCallback: _onMapStyleLoaded, // 🔥 CRITICAL FIX
+                onStyleLoadedCallback: _onMapStyleLoaded,
                 trackCameraPosition: true,
                 myLocationEnabled: false,
               );
@@ -1139,8 +1071,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
             right: 16,
             child: Card(
               elevation: 4,
+              shadowColor: Colors.black.withOpacity(0.2),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(16),
               ),
               child: TextField(
                 controller: _searchController,
@@ -1148,10 +1081,11 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
                 onSubmitted: _performSearch,
                 decoration: InputDecoration(
                   hintText: "Search area (e.g., Guwahati)",
+                  hintStyle: const TextStyle(color: Color(0xFF64748B)),
                   filled: true,
                   fillColor: Colors.white,
                   prefixIcon: IconButton(
-                    icon: const Icon(Icons.arrow_back),
+                    icon: const Icon(Icons.arrow_back, color: Color(0xFF0F172A)),
                     onPressed: () {
                       setState(() {
                         _isSelectionMode = false;
@@ -1165,7 +1099,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : IconButton(
-                          icon: const Icon(Icons.search),
+                          icon: const Icon(Icons.search, color: Color(0xFF0F172A)),
                           onPressed: () =>
                               _performSearch(_searchController.text),
                         ),
@@ -1300,7 +1234,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
                     isPlanned ? "PLANNED AREA" : "UNPLANNED VISIT",
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
-                      color: _textGrey,
+                      color: const Color(0xFF1E293B),
                       fontSize: 12,
                       letterSpacing: 1.1,
                     ),
@@ -1345,22 +1279,21 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
             child: TextField(
               controller: _destinationController,
               readOnly: true,
-              style: TextStyle(color: _textDark, fontWeight: FontWeight.w600),
+              style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w600),
               decoration: InputDecoration(
                 prefixIcon: Icon(
                   isPlanned ? Icons.explore : Icons.location_on_outlined,
-                  color: _textGrey,
+                  color: Color(0xFF0F172A),
                 ),
                 hintText: isPlanned
                     ? "Planned Area"
                     : "Waiting for destination...",
+                hintStyle: const TextStyle(color: Color(0xFF64748B)),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 14,
                 ),
-                // 🔥 ADDED: Refresh Button Logic
-                // Only shows when text is not empty (i.e. something is selected)
                 suffixIcon: _destinationController.text.isNotEmpty
                     ? IconButton(
                         icon: Icon(Icons.refresh_rounded, color: _dangerRed),
@@ -1437,20 +1370,35 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
                   ],
                 ),
               ),
-              InkWell(
+              // 🔥 UPDATED: NAVIGATE BUTTON (Google Maps)
+              GestureDetector(
                 onTap: _launchGoogleMapsNavigation,
-                borderRadius: BorderRadius.circular(50),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white12,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.near_me_rounded,
-                    color: Colors.white,
-                    size: 28,
-                  ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white12,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.directions,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      "NAVIGATE",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],

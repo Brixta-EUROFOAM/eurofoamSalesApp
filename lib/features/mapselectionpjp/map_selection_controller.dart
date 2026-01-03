@@ -215,6 +215,7 @@ class _MapPickerScreenState extends State<_MapPickerScreen> {
                 controller: _searchController,
                 textInputAction: TextInputAction.search,
                 onSubmitted: _searchLocation,
+                style: const TextStyle(color: Color(0xFF0F172A)),
                 decoration: InputDecoration(
                   hintText: "Search area...",
                   prefixIcon: IconButton(
@@ -223,7 +224,7 @@ class _MapPickerScreenState extends State<_MapPickerScreen> {
                   ),
                   suffixIcon: _isSearching
                       ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2))
-                      : IconButton(icon: const Icon(Icons.search), onPressed: () => _searchLocation(_searchController.text)),
+                      : IconButton(icon: const Icon(Icons.search, color: Color(0xFF0F172A)), onPressed: () => _searchLocation(_searchController.text)),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),

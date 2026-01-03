@@ -1,6 +1,7 @@
 // lib/technicalSide/screens/forms/create_tvr_form.dart
 import 'dart:io';
 import 'dart:async';
+import 'dart:convert'; // Added for Object Serialization (RAM Recovery)
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
 import 'package:salesmanapp/models/employee_model.dart';
@@ -12,7 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // Added for RAM Recovery
+import 'package:shared_preferences/shared_preferences.dart';
 
 class CreateTvrScreen extends StatefulWidget {
   final Employee employee;
@@ -224,6 +225,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     // Save Controllers
     await prefs.setString('tvr_party_name', _associatedPartyNameController.text);
     await prefs.setString('tvr_phone', _phoneNoController.text);
+    await prefs.setString('tvr_whatsapp', _whatsappNoController.text);
     await prefs.setString('tvr_address', _siteAddressController.text);
     await prefs.setString('tvr_area', _areaController.text);
     await prefs.setString('tvr_remarks', _salespersonRemarksController.text);
@@ -235,16 +237,37 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     await prefs.setString('tvr_site_stock', _siteStockController.text);
     await prefs.setString('tvr_qty', _conversionQuantityValueController.text);
 
-    // Save Dropdowns
+    // Save Dropdowns & Dates
     if (_selectedCustomerType != null) await prefs.setString('tvr_cust_type', _selectedCustomerType!);
     if (_selectedVisitCategory != null) await prefs.setString('tvr_visit_cat', _selectedVisitCategory!);
     if (_selectedVisitType != null) await prefs.setString('tvr_visit_type', _selectedVisitType!);
+    if (_selectedSiteVisitType != null) await prefs.setString('tvr_site_visit_type', _selectedSiteVisitType!);
     if (_selectedRegion != null) await prefs.setString('tvr_region', _selectedRegion!);
     if (_selectedStage != null) await prefs.setString('tvr_stage', _selectedStage!);
+    if (_selectedInfluencerType != null) await prefs.setString('tvr_influencer_type', _selectedInfluencerType!);
+    if (_selectedServiceType != null) await prefs.setString('tvr_service_type', _selectedServiceType!);
+    if (_selectedTechActivity != null) await prefs.setString('tvr_tech_activity', _selectedTechActivity!);
+    if (_supplyDate != null) await prefs.setString('tvr_supply_date', _supplyDate!.toIso8601String());
+
+    // Save Objects (JSON) - Crucial for recovery
+    if (_selectedSite != null) {
+      await prefs.setString('tvr_selected_site_obj', jsonEncode(_selectedSite!.toJson()));
+    }
+    if (_selectedMason != null) {
+      await prefs.setString('tvr_selected_mason_obj', jsonEncode(_selectedMason!.toJson()));
+    }
+    if (_selectedDealer != null) {
+      await prefs.setString('tvr_selected_dealer_obj', jsonEncode(_selectedDealer!.toJson()));
+    }
+
+    // Save Lists
+    await prefs.setStringList('tvr_brands_in_use', _selectedBrandsInUse);
     
     // Save Booleans
     await prefs.setBool('tvr_is_converted', _isConverted);
     await prefs.setBool('tvr_is_bag_picked', _isBagPicked);
+    await prefs.setBool('tvr_is_tech_service', _isTechService);
+    await prefs.setBool('tvr_is_scheme_enrolled', _isSchemeEnrolled);
   }
 
   // 2. Load state from disk
@@ -254,8 +277,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     // Only load if we have data to avoid overwriting init logic
     if (prefs.containsKey('tvr_party_name')) {
       setState(() {
+        // Restore Controllers
         _associatedPartyNameController.text = prefs.getString('tvr_party_name') ?? "";
         _phoneNoController.text = prefs.getString('tvr_phone') ?? "";
+        _whatsappNoController.text = prefs.getString('tvr_whatsapp') ?? "";
         _siteAddressController.text = prefs.getString('tvr_address') ?? "";
         _areaController.text = prefs.getString('tvr_area') ?? "";
         _salespersonRemarksController.text = prefs.getString('tvr_remarks') ?? "";
@@ -267,14 +292,48 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         _siteStockController.text = prefs.getString('tvr_site_stock') ?? "";
         _conversionQuantityValueController.text = prefs.getString('tvr_qty') ?? "";
 
+        // Restore Dropdowns
         _selectedCustomerType = prefs.getString('tvr_cust_type');
         _selectedVisitCategory = prefs.getString('tvr_visit_cat');
         _selectedVisitType = prefs.getString('tvr_visit_type');
+        _selectedSiteVisitType = prefs.getString('tvr_site_visit_type');
         _selectedRegion = prefs.getString('tvr_region');
         _selectedStage = prefs.getString('tvr_stage');
+        _selectedInfluencerType = prefs.getString('tvr_influencer_type');
+        _selectedServiceType = prefs.getString('tvr_service_type');
+        _selectedTechActivity = prefs.getString('tvr_tech_activity');
 
+        if (prefs.containsKey('tvr_supply_date')) {
+          _supplyDate = DateTime.tryParse(prefs.getString('tvr_supply_date')!);
+        }
+
+        // Restore Objects
+        if (prefs.containsKey('tvr_selected_site_obj')) {
+          try {
+            final json = jsonDecode(prefs.getString('tvr_selected_site_obj')!);
+            _selectedSite = TechnicalSite.fromJson(json);
+          } catch (e) { debugPrint("Error restoring site: $e"); }
+        }
+        if (prefs.containsKey('tvr_selected_mason_obj')) {
+          try {
+            final json = jsonDecode(prefs.getString('tvr_selected_mason_obj')!);
+            _selectedMason = Mason.fromJson(json);
+          } catch (e) { debugPrint("Error restoring mason: $e"); }
+        }
+        if (prefs.containsKey('tvr_selected_dealer_obj')) {
+          try {
+             final json = jsonDecode(prefs.getString('tvr_selected_dealer_obj')!);
+             _selectedDealer = Dealer.fromJson(json); 
+          } catch (e) { debugPrint("Error restoring dealer: $e"); }
+        }
+
+        _selectedBrandsInUse = prefs.getStringList('tvr_brands_in_use') ?? [];
+
+        // Restore Booleans
         _isConverted = prefs.getBool('tvr_is_converted') ?? false;
         _isBagPicked = prefs.getBool('tvr_is_bag_picked') ?? false;
+        _isTechService = prefs.getBool('tvr_is_tech_service') ?? false;
+        _isSchemeEnrolled = prefs.getBool('tvr_is_scheme_enrolled') ?? false;
       });
     }
   }
@@ -290,8 +349,9 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     final LostDataResponse response = await _imagePicker.retrieveLostData();
     if (response.isEmpty) return;
     
+    final prefs = await SharedPreferences.getInstance();
+
     if (response.file != null) {
-      final prefs = await SharedPreferences.getInstance();
       final action = prefs.getString('pending_camera_action');
 
       setState(() {
@@ -300,8 +360,11 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           _handleRecoveryCheckIn(); // Auto upload and fetch GPS
         } else if (action == 'site_photo') {
           _sitePhotoFile = File(response.file!.path);
+          showSnack("Site photo restored.", backgroundColor: _accentGreen);
         }
       });
+      // Clear the flag so we don't process it again
+      await prefs.remove('pending_camera_action');
     }
   }
 
@@ -635,8 +698,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         imageQuality: 60,
       );
 
+      // If user cancels, clear flag
       if (pickedFile == null) {
         if (mounted) setState(() => _isUploadingImage = false);
+        await prefs.remove('pending_camera_action');
         return;
       }
 
@@ -654,7 +719,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           _longitudeController.text = position.longitude.toStringAsFixed(6);
         });
         
-        // Clear camera action flag
+        // Clear camera action flag on success
         await prefs.remove('pending_camera_action');
         
         scaffoldMessenger.showSnackBar(
@@ -689,13 +754,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       imageQuality: 60,
     );
     
-    // Clear flag
-    await prefs.remove('pending_camera_action');
-
-    if (pickedFile != null) {
-      setState(() {
-        _sitePhotoFile = File(pickedFile.path);
-      });
+    // Clear flag if user canceled or returned
+    if (pickedFile == null) {
+       await prefs.remove('pending_camera_action');
+       return;
     }
   }
 
@@ -1094,8 +1156,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                       value: _selectedCustomerType,
                       items: _customerTypeOptions,
                       onChanged: (v) {
-                         setState(() => _selectedCustomerType = v);
-                         _saveDrafts();
+                          setState(() => _selectedCustomerType = v);
+                          _saveDrafts();
                       },
                       isRequired: true,
                     ),
@@ -1262,8 +1324,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           value: _selectedVisitType,
           items: ['Site Visit', 'Service', 'Complaint', 'Influencer Meet'],
           onChanged: (v) {
-             setState(() => _selectedVisitType = v);
-             _saveDrafts();
+              setState(() => _selectedVisitType = v);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -1273,8 +1335,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           value: _selectedSiteVisitType,
           items: ['Planned', 'Unplanned'],
           onChanged: (v) {
-             setState(() => _selectedSiteVisitType = v);
-             _saveDrafts();
+              setState(() => _selectedSiteVisitType = v);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -1284,8 +1346,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           value: _selectedVisitCategory,
           items: _visitCategoryOptions,
           onChanged: (v) {
-             setState(() => _selectedVisitCategory = v);
-             _saveDrafts();
+              setState(() => _selectedVisitCategory = v);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -1295,10 +1357,11 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: 'Purpose of Visit',
           isRequired: true,
         ),
+        //AUTOFILL LATER
         const SizedBox(height: 16),
         _buildFintechInput(
           controller: _associatedPartyNameController,
-          label: 'Associated Party Name',
+          label: 'Site Owner Name',
           isRequired: true,
         ),
         const SizedBox(height: 16),
@@ -1321,8 +1384,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 value: _selectedRegion,
                 items: _regionOptions,
                 onChanged: (v) {
-                   setState(() => _selectedRegion = v);
-                   _saveDrafts();
+                    setState(() => _selectedRegion = v);
+                    _saveDrafts();
                 },
                 isRequired: true,
               ),
@@ -1398,8 +1461,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 value: _selectedStage,
                 items: _stageOptions,
                 onChanged: (v) {
-                   setState(() => _selectedStage = v);
-                   _saveDrafts();
+                    setState(() => _selectedStage = v);
+                    _saveDrafts();
                 },
                 isRequired: true,
               ),
@@ -1412,8 +1475,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           selectedValues: _selectedBrandsInUse,
           items: _brandOptions,
           onChanged: (list) {
-             setState(() => _selectedBrandsInUse = list);
-             _saveDrafts();
+              setState(() => _selectedBrandsInUse = list);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -1425,7 +1488,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 controller: _currentBrandPriceController,
                 label: 'Current Price',
                 keyboardType: TextInputType.number,
-                isRequired: true,
+                isRequired: false,
               ),
             ),
             const SizedBox(width: 12),
@@ -1450,7 +1513,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         _buildFintechInput(
           controller: _supplyingDealerNameController,
           label: 'Supplying Dealer',
-          isRequired: true,
+          isRequired: false,
         ),
         const SizedBox(height: 16),
         _buildFintechInput(
@@ -1463,8 +1526,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: "Is Converted?",
           value: _isConverted,
           onChanged: (v) {
-             setState(() => _isConverted = v);
-             _saveDrafts();
+              setState(() => _isConverted = v);
+              _saveDrafts();
           },
         ),
         if (_isConverted) ...[
@@ -1506,10 +1569,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 child: _buildFintechDropdown(
                   label: 'Unit',
                   value: _selectedConversionUnit,
-                  items: ['Bags', 'MT'],
+                  items: ['Bags'],
                   onChanged: (v) {
-                     setState(() => _selectedConversionUnit = v);
-                     _saveDrafts();
+                      setState(() => _selectedConversionUnit = v);
+                      _saveDrafts();
                   },
                   isRequired: true,
                 ),
@@ -1522,8 +1585,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: "Tech Service Given?",
           value: _isTechService,
           onChanged: (v) {
-             setState(() => _isTechService = v);
-             _saveDrafts();
+              setState(() => _isTechService = v);
+              _saveDrafts();
           },
         ),
         if (_isTechService) ...[
@@ -1547,7 +1610,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                setState(() => _selectedTechActivity = v);
                _saveDrafts();
             },
-            isRequired: true,
+            isRequired: false,
           ),
           const SizedBox(height: 16),
           _buildFintechInput(
@@ -1561,7 +1624,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         _buildFintechInput(
           controller: _qualityComplaintController,
           label: 'Quality Complaint',
-          isRequired: true,
+          isRequired: false,
         ),
         _buildSectionHeader("INFLUENCER / MASON"),
         InkWell(
@@ -1598,8 +1661,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           value: _selectedInfluencerType,
           items: _influencerTypeOptions,
           onChanged: (v) {
-             setState(() => _selectedInfluencerType = v);
-             _saveDrafts();
+              setState(() => _selectedInfluencerType = v);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -1627,8 +1690,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: "Enrolled in Scheme?",
           value: _isSchemeEnrolled,
           onChanged: (v) {
-             setState(() => _isSchemeEnrolled = v);
-             _saveDrafts();
+              setState(() => _isSchemeEnrolled = v);
+              _saveDrafts();
           },
         ),
         _buildSectionHeader("REMARKS"),
@@ -1701,8 +1764,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           value: _selectedVisitCategory,
           items: _visitCategoryOptions,
           onChanged: (v) {
-             setState(() => _selectedVisitCategory = v);
-             _saveDrafts();
+              setState(() => _selectedVisitCategory = v);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -1712,8 +1775,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           value: _selectedInfluencerType,
           items: const ['Dealer', 'Sub-Dealer'],
           onChanged: (v) {
-             setState(() => _selectedInfluencerType = v);
-             _saveDrafts();
+              setState(() => _selectedInfluencerType = v);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -1726,8 +1789,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 value: _selectedRegion,
                 items: _regionOptions,
                 onChanged: (v) {
-                   setState(() => _selectedRegion = v);
-                   _saveDrafts();
+                    setState(() => _selectedRegion = v);
+                    _saveDrafts();
                 },
                 isRequired: true,
               ),
@@ -1767,7 +1830,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                   child: Text(
                     _sitePhotoFile != null
                         ? "Photo Selected"
-                        : "Capture Dealer Photo",
+                        : "Capture Dealer Photo(optional)",
                     style: TextStyle(
                       color: _sitePhotoFile != null ? _textDark : _textGrey,
                     ),
@@ -1791,8 +1854,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           selectedValues: _selectedBrandsInUse,
           items: _brandOptions,
           onChanged: (list) {
-             setState(() => _selectedBrandsInUse = list);
-             _saveDrafts();
+              setState(() => _selectedBrandsInUse = list);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -1826,10 +1889,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 child: _buildFintechDropdown(
                   label: 'Unit',
                   value: _selectedConversionUnit,
-                  items: ['Bags', 'MT'],
+                  items: ['Bags'],
                   onChanged: (v) {
-                     setState(() => _selectedConversionUnit = v);
-                     _saveDrafts();
+                      setState(() => _selectedConversionUnit = v);
+                      _saveDrafts();
                   },
                   isRequired: true,
                 ),
@@ -1860,7 +1923,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                   Text(
                     _supplyDate != null
                         ? DateFormat('dd MMM yyyy').format(_supplyDate!)
-                        : "Select Date of Supply *",
+                        : "Select Date of Supply (of Bags)",
                     style: TextStyle(
                       color: _supplyDate != null ? _textDark : _textGrey,
                       fontWeight: FontWeight.w600,
@@ -1923,8 +1986,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           value: _selectedInfluencerType,
           items: ['Mason', 'Head Mason', 'Contractor', 'Engineer', 'Architect'],
           onChanged: (v) {
-             setState(() => _selectedInfluencerType = v);
-             _saveDrafts();
+              setState(() => _selectedInfluencerType = v);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -1951,8 +2014,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           value: _selectedVisitCategory,
           items: _visitCategoryOptions,
           onChanged: (v) {
-             setState(() => _selectedVisitCategory = v);
-             _saveDrafts();
+              setState(() => _selectedVisitCategory = v);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -1972,8 +2035,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                 value: _selectedRegion,
                 items: _regionOptions,
                 onChanged: (v) {
-                   setState(() => _selectedRegion = v);
-                   _saveDrafts();
+                    setState(() => _selectedRegion = v);
+                    _saveDrafts();
                 },
                 isRequired: true,
               ),
@@ -2008,8 +2071,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           selectedValues: _selectedBrandsInUse,
           items: _brandOptions,
           onChanged: (list) {
-             setState(() => _selectedBrandsInUse = list);
-             _saveDrafts();
+              setState(() => _selectedBrandsInUse = list);
+              _saveDrafts();
           },
           isRequired: true,
         ),
@@ -2018,8 +2081,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           label: "Enrolled in Scheme?",
           value: _isSchemeEnrolled,
           onChanged: (v) {
-             setState(() => _isSchemeEnrolled = v);
-             _saveDrafts();
+              setState(() => _isSchemeEnrolled = v);
+              _saveDrafts();
           },
         ),
 
