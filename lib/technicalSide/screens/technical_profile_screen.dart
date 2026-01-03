@@ -184,41 +184,41 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                   children: [
                     Row(
                       children: [
-                        _buildStatCard(
-                          title: "Active Sites",
-                          value: stats.activeSites.toString(),
-                          icon: Icons.apartment,
-                          iconColor: Colors.blueAccent,
-                          iconBg: const Color(0xFFEFF6FF),
-                        ),
-                        const SizedBox(width: 16),
-                        _buildStatCard(
-                          title: "Visits Today",
-                          value: stats.upcomingVisits.toString(),
-                          icon: Icons.map,
-                          iconColor: Colors.orange,
-                          iconBg: const Color(0xFFFFF7ED),
-                        ),
+                        // _buildStatCard(
+                        //   title: "Active Sites",
+                        //   value: stats.activeSites.toString(),
+                        //   icon: Icons.apartment,
+                        //   iconColor: Colors.blueAccent,
+                        //   iconBg: const Color(0xFFEFF6FF),
+                        // ),
+                        // const SizedBox(width: 16),
+                        // _buildStatCard(
+                        //   title: "Visits Today",
+                        //   value: stats.upcomingVisits.toString(),
+                        //   icon: Icons.map,
+                        //   iconColor: Colors.orange,
+                        //   iconBg: const Color(0xFFFFF7ED),
+                        // ),
                       ],
                     ),
                     const SizedBox(height: 16),
                     Row(
                       children: [
-                        _buildStatCard(
-                          title: "TVRs Done",
-                          value: stats.pendingTvrs.toString(),
-                          icon: Icons.assignment_turned_in,
-                          iconColor: Colors.purple,
-                          iconBg: const Color(0xFFFAF5FF),
-                        ),
-                        const SizedBox(width: 16),
-                        _buildStatCard(
-                          title: "Tasks Done",
-                          value: stats.completedTasks.toString(),
-                          icon: Icons.check_circle,
-                          iconColor: Colors.green,
-                          iconBg: const Color(0xFFF0FDF4),
-                        ),
+                        // _buildStatCard(
+                        //   title: "TVRs Done",
+                        //   value: stats.pendingTvrs.toString(),
+                        //   icon: Icons.assignment_turned_in,
+                        //   iconColor: Colors.purple,
+                        //   iconBg: const Color(0xFFFAF5FF),
+                        // ),
+                        // const SizedBox(width: 16),
+                        // _buildStatCard(
+                        //   title: "Tasks Done",
+                        //   value: stats.completedTasks.toString(),
+                        //   icon: Icons.check_circle,
+                        //   iconColor: Colors.green,
+                        //   iconBg: const Color(0xFFF0FDF4),
+                        // ),
                       ],
                     ),
                   ],

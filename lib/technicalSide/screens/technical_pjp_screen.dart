@@ -1,18 +1,24 @@
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/technicalSide/models/sites_model.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/create_technical_pjp_form.dart';
 import 'package:salesmanapp/technicalSide/screens/bulk_technical_pjp_wizard_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
-import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:provider/provider.dart';
+// Added for LatLng
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+import 'package:salesmanapp/core/app_kernel.dart';
+import 'package:salesmanapp/features/technicalPjpcreate/pjp_create_controller.dart';
+import 'package:salesmanapp/features/technicalPjpcreate/pjp_create_results.dart';
+import 'package:salesmanapp/features/technicalPjpshowcreateOptions/create_option_controller.dart';
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart';
 
-
+// 🔥 Feature Imports for Robust Journey Start
+import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_controller.dart';
+import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_result.dart';
+import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_capabilities.dart';
 
 class TechnicalPjpScreen extends StatefulWidget {
   final Employee employee;
@@ -47,8 +53,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   void initState() {
     final flags = context.read<TechnicalFlags>();
     super.initState();
-    if(flags.createPjp)
-    refreshPjpList();
+    if (flags.createPjp) refreshPjpList();
   }
 
   void refreshPjpList() {
@@ -70,317 +75,334 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   }
 
   void _showCreateOptions() {
-    final flags = context.read<TechnicalFlags>();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16.0),
+    try {
+      final controller = AppKernel.instance.feature<CreateOptionController>();
+      final options = controller.getOptions();
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Theme.of(context).cardColor,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (_) {
+          return SafeArea(
             child: Wrap(
-              children: <Widget>[
+              children: [
                 Padding(
-                  padding: const EdgeInsets.only(left: 16, bottom: 8),
+                  padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
                   child: Text(
                     "Plan Visit",
                     style: TextStyle(
-                      color: _textDark,
-                      fontWeight: FontWeight.bold,
                       fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
                     ),
                   ),
                 ),
-                if (flags.createPjp)
-                ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: _bgLight,
-                      borderRadius: BorderRadius.circular(8),
+
+                ...options.map((option) {
+                  return ListTile(
+                    leading: Icon(option.icon, color: option.iconColor),
+                    title: Text(
+                      option.title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white : const Color(0xFF111827),
+                      ),
                     ),
-                    child: Icon(Icons.add_location_alt, color: _cardNavy),
-                  ),
-                  title: Text(
-                    'Add Single Visit',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: _textDark,
+                    subtitle: Text(
+                      option.subtitle,
+                      style: TextStyle(
+                        color: isDark
+                            ? Colors.white70
+                            : const Color(0xFF6B7280),
+                      ),
                     ),
-                  ),
-                  subtitle: Text(
-                    "For specific date",
-                    style: TextStyle(color: _textGrey),
-                  ),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _showSingleCreateForm();
-                  },
-                ),
-                if(flags.createPjp)
-                ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: _bgLight,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(Icons.calendar_month, color: _accentGreen),
-                  ),
-                  title: Text(
-                    'Bulk Monthly Plan',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: _textDark,
-                    ),
-                  ),
-                  subtitle: Text(
-                    "Auto-schedule multiple sites",
-                    style: TextStyle(color: _textGrey),
-                  ),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _showBulkWizard();
-                  },
-                ),
+                    onTap: () {
+                      Navigator.pop(context);
+
+                      switch (option.mode) {
+                        case PjpCreateMode.single:
+                          _showSingleCreateForm();
+                          break;
+
+                        case PjpCreateMode.bulk:
+                          _showBulkWizard();
+                          break;
+                      }
+                    },
+                  );
+                }),
               ],
             ),
-          ),
-        );
-      },
-    );
+          );
+        },
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   void _showSingleCreateForm() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => CreateTechnicalPjpForm(
-        employee: widget.employee,
-        onPjpCreated: refreshPjpList,
-      ),
-    );
+    try {
+      final controller = AppKernel.instance.feature<PjpCreateController>();
+
+      final result = controller.startSingle();
+
+      if (result.mode == PjpCreateMode.single) {
+        showModalBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          backgroundColor: Colors.transparent,
+          builder: (_) => CreateTechnicalPjpForm(
+            employee: widget.employee,
+            onPjpCreated: refreshPjpList,
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
   void _showBulkWizard() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => BulkTechnicalPjpWizardScreen(
-          employee: widget.employee,
-          onPjpCreated: refreshPjpList,
-        ),
-      ),
-    );
+    try {
+      final controller = AppKernel.instance.feature<PjpCreateController>();
+
+      final result = controller.startBulk();
+
+      if (result.mode == PjpCreateMode.bulk) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => BulkTechnicalPjpWizardScreen(
+              employee: widget.employee,
+              onPjpCreated: refreshPjpList,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
   }
 
-  // --- Handles both Site and Dealer logic ---
+  // 🔥 CORE FIX: ROBUST START JOURNEY LOGIC USING PJP CONTROLLER
   Future<void> _startJourney(Pjp pjp) async {
-    final flags = context.read<TechnicalFlags>();
-    // 1. Block Pending
-    if (pjp.status.toUpperCase() == 'PENDING') 
-    if(flags.pjpjourney){
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Cannot start a Pending plan. Please wait for approval."),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
+    // DEBUG: Start of Method
+    debugPrint("🚀 [TechnicalPjpScreen] _startJourney initiated for PJP ID: ${pjp.id}");
+    debugPrint("📝 [TechnicalPjpScreen] Raw AreaToBeVisited: '${pjp.areaToBeVisited}'");
+
+    // 1. Show Loading Indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (c) => const Center(child: CircularProgressIndicator()),
+    );
 
     try {
-      // --- CASE A: SITE VISIT ---
-      if (pjp.siteId != null && pjp.siteId!.isNotEmpty) {
-        final TechnicalSite site = await _apiService.fetchTechnicalSiteById(pjp.siteId!);
-        
-        widget.onStartJourney({
-          'pjp': pjp,
-          'site': site,
-          'isSite': true,
-          'displayName': site.siteName,
-          'destination': LatLng(site.latitude, site.longitude),
-        });
-        return;
-      } 
+      // 2. Initialize the Controller
+      final flags = context.read<TechnicalFlags>();
+      final caps = PjpJourneyCapabilities.fromFlags(flags);
+      final controller = PjpJourneyController(
+        api: _apiService,
+        caps: caps,
+      );
+
+      debugPrint("⚙️ [TechnicalPjpScreen] Controller initialized. Caps enabled: ${caps.enabled}");
+
+      // 3. Resolve Location (Parses "Area|Lat|Lng", checks Status, fetches Site/Dealer Coords)
+      debugPrint("⏳ [TechnicalPjpScreen] Calling controller.start(pjp)...");
+      final PjpJourneyResult result = await controller.start(pjp);
+
+      debugPrint("✅ [TechnicalPjpScreen] Controller returned result:");
+      debugPrint("   -> DisplayName: ${result.displayName}");
+      debugPrint("   -> Destination: ${result.destination}");
+      debugPrint("   -> IsSite: ${result.isSite}");
+      debugPrint("   -> Entity Type: ${result.entity.runtimeType}");
+
+      // 4. Dismiss Loading Indicator
+      if (mounted) Navigator.pop(context);
+
+      // 5. Navigate with PRECISE data
+      debugPrint("🚀 [TechnicalPjpScreen] Calling widget.onStartJourney callback...");
       
-      // --- CASE B: DEALER VISIT ---
-      if (pjp.dealerId != null && pjp.dealerId!.isNotEmpty) {
-        final Dealer dealer = await _apiService.fetchDealerById(pjp.dealerId!);
+      widget.onStartJourney({
+        'pjp': pjp,
+        'displayName': result.displayName, // Clean name from controller
+        'destination': result.destination, // Precise LatLng from controller
+        'journeyMode': JourneyMode.planned,
+        'isSite': result.isSite,
         
-        if (dealer.latitude == null || dealer.longitude == null) {
-           throw "Dealer has no location data saved.";
-        }
-
-        widget.onStartJourney({
-          'pjp': pjp,
-          'dealer': dealer,
-          'isSite': false,
-          'displayName': dealer.name,
-          'destination': LatLng(dealer.latitude!, dealer.longitude!),
-        });
-        return;
-      }
-
-      // --- CASE C: NEITHER (Error) ---
-      throw "Invalid PJP: Missing both Site ID and Dealer ID";
+        // Explicitly NULL entities as requested (Just the area to be visited)
+        'site': null,
+        'dealer': null,
+      });
 
     } catch (e) {
+      // Dismiss loader on error
+      if (mounted) Navigator.pop(context);
+      
+      debugPrint("❌ [TechnicalPjpScreen] Error starting journey: $e");
+
+      String msg = e.toString();
+      // Remove "Exception: " prefix if present for cleaner UI
+      if (msg.startsWith('Exception: ')) {
+        msg = msg.substring(11);
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("Failed to start journey: $e"),
-          backgroundColor: Colors.redAccent,
+          content: Text(msg), 
+          backgroundColor: Colors.red
         ),
       );
     }
   }
 
   @override
-@override
-Widget build(BuildContext context) {
-  final flags = context.read<TechnicalFlags>();
-  final displayDate = DateFormat('d MMMM, yyyy').format(_selectedDate);
-  final displayDay = DateFormat('EEEE').format(_selectedDate);
-  final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
+  Widget build(BuildContext context) {
+    final flags = context.read<TechnicalFlags>();
+    final displayDate = DateFormat('d MMMM, yyyy').format(_selectedDate);
+    final displayDay = DateFormat('EEEE').format(_selectedDate);
+    final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
 
-  return Scaffold(
-    backgroundColor: _bgLight,
-
-    appBar: AppBar(
+    return Scaffold(
       backgroundColor: _bgLight,
-      elevation: 0,
-      automaticallyImplyLeading: false,
-      centerTitle: false,
-      toolbarHeight: 70,
-      title: Padding(
-        padding: const EdgeInsets.only(left: 8.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              isToday ? "My Visits (Today)" : "Visits",
-              style: TextStyle(
-                color: _textDark,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                letterSpacing: -0.5,
-              ),
-            ),
-            Text(
-              "$displayDay, $displayDate",
-              style: TextStyle(
-                color: _textGrey,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        if (flags.createPjp)
-          Padding(
-            padding: const EdgeInsets.only(right: 20.0),
-            child: InkWell(
-              onTap: _showCreateOptions,
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: _cardNavy,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _cardNavy.withOpacity(0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.add, color: Colors.white, size: 18),
-                    SizedBox(width: 4),
-                    Text(
-                      "Plan Visit",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
+
+      appBar: AppBar(
+        backgroundColor: _bgLight,
+        elevation: 0,
+        automaticallyImplyLeading: false,
+        centerTitle: false,
+        toolbarHeight: 70,
+        title: Padding(
+          padding: const EdgeInsets.only(left: 8.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                isToday ? "My Visits (Today)" : "Visits",
+                style: TextStyle(
+                  color: _textDark,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
                 ),
               ),
-            ),
+              Text(
+                "$displayDay, $displayDate",
+                style: TextStyle(
+                  color: _textGrey,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
           ),
-      ],
-    ),
-
-    body: Column(
-      children: [
-        if (flags.visits) _buildDateSelector(),
-        const SizedBox(height: 10),
-
-        Expanded(
-          child: flags.pjpjourney
-              ? RefreshIndicator(
-                  onRefresh: () async => refreshPjpList(),
-                  color: _cardNavy,
-                  backgroundColor: Colors.white,
-                  child: FutureBuilder<List<Pjp>>(
-                    future: _pjpFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState ==
-                          ConnectionState.waiting) {
-                        return Center(
-                          child: CircularProgressIndicator(
-                            color: _cardNavy,
-                          ),
-                        );
-                      }
-
-                      if (!snapshot.hasData ||
-                          snapshot.data!.isEmpty) {
-                        return _buildEmptyState();
-                      }
-
-                      final pjps = snapshot.data!
-                          .where((p) => p.status != 'COMPLETED')
-                          .toList();
-
-                      if (pjps.isEmpty) {
-                        return _buildEmptyState();
-                      }
-
-                      return ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(
-                            20, 10, 20, 80),
-                        itemCount: pjps.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 12),
-                        itemBuilder: (context, index) {
-                          return _buildVisitCard(pjps[index]);
-                        },
-                      );
-                    },
-                  ),
-                )
-              : const SizedBox.shrink(),
         ),
-      ],
-    ),
-  );
-}
+        actions: [
+          if (flags.createPjp)
+            Padding(
+              padding: const EdgeInsets.only(right: 20.0),
+              child: InkWell(
+                onTap: _showCreateOptions,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _cardNavy,
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _cardNavy.withOpacity(0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.add, color: Colors.white, size: 18),
+                      SizedBox(width: 4),
+                      Text(
+                        "Plan Visit",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+
+      body: Column(
+        children: [
+          if (flags.visits) _buildDateSelector(),
+          const SizedBox(height: 10),
+
+          Expanded(
+            child: flags.pjpjourney
+                ? RefreshIndicator(
+                    onRefresh: () async => refreshPjpList(),
+                    color: _cardNavy,
+                    backgroundColor: Colors.white,
+                    child: FutureBuilder<List<Pjp>>(
+                      future: _pjpFuture,
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return Center(
+                            child: CircularProgressIndicator(color: _cardNavy),
+                          );
+                        }
+
+                        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                          return _buildEmptyState();
+                        }
+
+                        final pjps = snapshot.data!
+                            .where((p) => p.status != 'COMPLETED')
+                            .toList();
+
+                        if (pjps.isEmpty) {
+                          return _buildEmptyState();
+                        }
+
+                        return ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(20, 10, 20, 80),
+                          itemCount: pjps.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            return _buildVisitCard(pjps[index]);
+                          },
+                        );
+                      },
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildDateSelector() {
     return Container(
@@ -478,35 +500,14 @@ Widget build(BuildContext context) {
         ? "PENDING"
         : (isInProgress ? "IN PROGRESS" : "APPROVED");
 
-    // 2. Name Resolution Logic
-    String displayName = "Unknown Visit";
-    String displayType = "General Visit";
+    String displayName = "Planned Area Visit";
 
-    if (pjp.siteName != null && pjp.siteName!.isNotEmpty) {
-      displayName = pjp.siteName!;
-      displayType = "Site Visit";
-    } else if (pjp.dealerName != null && pjp.dealerName!.isNotEmpty) {
-      displayName = pjp.dealerName!;
-      displayType = "Dealer Visit";
-    } else if (pjp.description != null && pjp.description!.isNotEmpty) {
-      displayName = pjp.description!;
-      displayType = "Remark";
-    } else {
-      // Fallback
-      try {
-        final rawInfo = pjp.areaToBeVisited.split('|').first; 
-        if (rawInfo.isNotEmpty) {
-          if (rawInfo.contains(',')) {
-            displayName = rawInfo.split(',').first.trim();
-          } else {
-            displayName = rawInfo;
-          }
-          displayType = "Scheduled Visit";
-        }
-      } catch (e) {
-        // Keep defaults
+    try {
+      final parts = pjp.areaToBeVisited.split('|');
+      if (parts.isNotEmpty && parts.first.trim().isNotEmpty) {
+        displayName = parts.first.trim(); // ✅ AREA NAME
       }
-    }
+    } catch (_) {}
 
     // 3. Address Resolution
     String displayAddress = "";
@@ -515,7 +516,7 @@ Widget build(BuildContext context) {
     } catch (_) {}
 
     return Slidable(
-      enabled: flags.pjpjourney &&!isPending, 
+      enabled: flags.pjpjourney && !isPending,
       startActionPane: ActionPane(
         motion: const StretchMotion(),
         children: [
@@ -546,7 +547,7 @@ Widget build(BuildContext context) {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
-            onTap: () => flags.journey ? () => _startJourney(pjp) :null,
+            onTap: () => flags.journey ? () => _startJourney(pjp) : null,
             borderRadius: BorderRadius.circular(20),
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -592,7 +593,7 @@ Widget build(BuildContext context) {
                         ),
 
                         Text(
-                          displayName, 
+                          displayName,
                           style: TextStyle(
                             color: _textDark,
                             fontWeight: FontWeight.bold,
@@ -601,9 +602,9 @@ Widget build(BuildContext context) {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        
+
                         Text(
-                          displayType,
+                          displayAddress,
                           style: TextStyle(
                             color: _textGrey,
                             fontWeight: FontWeight.w500,
@@ -645,8 +646,8 @@ Widget build(BuildContext context) {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: isPending 
-                          ? Colors.grey.withOpacity(0.15) 
+                      color: isPending
+                          ? Colors.grey.withOpacity(0.15)
                           : _accentGreen.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
@@ -709,19 +710,22 @@ Widget build(BuildContext context) {
           ),
           const SizedBox(height: 24),
           if (flags.createPjp)
-          OutlinedButton.icon(
-            onPressed: _showCreateOptions,
-            icon: const Icon(Icons.add),
-            label: const Text("Create Plan"),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _cardNavy,
-              side: BorderSide(color: _cardNavy),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+            OutlinedButton.icon(
+              onPressed: _showCreateOptions,
+              icon: const Icon(Icons.add),
+              label: const Text("Create Plan"),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _cardNavy,
+                side: BorderSide(color: _cardNavy),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
               ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
-          ),
         ],
       ),
     );

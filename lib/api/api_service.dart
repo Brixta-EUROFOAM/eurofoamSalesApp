@@ -539,8 +539,26 @@ class ApiService {
     }
   }
 
-  Future<Pjp> createPjp(Pjp pjp) async {
-    return _post('pjp', pjp.toJson(), (json) => Pjp.fromJson(json));
+Future<Pjp> createPjp(Pjp pjp) async {
+    final Map<String, dynamic> payload = Map<String, dynamic>.from(
+      pjp.toJson(),
+    );
+    payload.remove('id');
+    payload.remove('createdAt');
+    payload.remove('updatedAt');
+    payload.remove('diversionReason');
+    payload.remove('siteName');
+    payload.remove('dealerName');
+
+    // ✅ NORMALIZE EMPTY STRINGS → null
+    payload.updateAll((key, value) {
+      if (value is String && value.trim().isEmpty) {
+        return null;
+      }
+      return value;
+    });
+
+    return _post('pjp', payload, (json) => Pjp.fromJson(json));
   }
 
   Future<Map<String, dynamic>> createBulkPjp({
@@ -553,17 +571,29 @@ class ApiService {
     required String areaToBeVisited,
     String? description,
     String status = 'PENDING',
+    int plannedNewSiteVisits = 0,
+    int plannedFollowUpSiteVisits = 0,
+    int plannedNewDealerVisits = 0,
+    int plannedInfluencerVisits = 0,
+    int noOfConvertedBags = 0,
+    int noOfMasonPcSchemes = 0,
   }) async {
     final body = {
       'userId': userId,
       'createdById': createdById,
-      if (dealerIds != null) 'dealerIds': dealerIds,
-      if (siteIds != null) 'siteIds': siteIds,
+      'dealerIds': dealerIds, 
+      'siteIds': siteIds,
       'baseDate': baseDate.toIso8601String().split('T').first,
       'batchSizePerDay': batchSizePerDay,
       'areaToBeVisited': areaToBeVisited,
       'description': description,
       'status': status,
+      'plannedNewSiteVisits': plannedNewSiteVisits,
+      'plannedFollowUpSiteVisits': plannedFollowUpSiteVisits,
+      'plannedNewDealerVisits': plannedNewDealerVisits,
+      'plannedInfluencerVisits': plannedInfluencerVisits,
+      'noOfConvertedBags': noOfConvertedBags,
+      'noOfMasonPcSchemes': noOfMasonPcSchemes,
     };
     body.removeWhere((key, value) => value == null);
     final url = Uri.parse('$_baseUrl/api/bulkpjp');

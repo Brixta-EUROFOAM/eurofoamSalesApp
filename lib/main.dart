@@ -5,8 +5,36 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-
+//kernel
+import 'package:salesmanapp/core/app_kernel.dart';
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_capabilities.dart';
+import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_controller.dart';
+import 'package:salesmanapp/features/technicalPjpcreate/pjp_create_controller.dart';
+import 'package:salesmanapp/features/technicalPjpcreate/pjp_create_capabilities.dart';
+import 'package:salesmanapp/features/technicalPjpshowcreateOptions/create_option_controller.dart';
+import 'package:salesmanapp/features/technicalPjpshowcreateOptions/create_option_capabilities.dart';
+import 'package:salesmanapp/features/journeytracking/journey_tracking_capabilities.dart';
+import 'package:salesmanapp/features/journeytracking/journey_tracking_controller.dart';
+import 'package:salesmanapp/features/launchgooglemapsJourneyscreen/googlemaps_controller.dart';
+import 'package:salesmanapp/features/launchgooglemapsJourneyscreen/googlemaps_capabilities.dart';
+import 'package:salesmanapp/features/journeylocation/journeylocation_capabilities.dart';
+import 'package:salesmanapp/features/journeylocation/journeylocation_controller.dart';
+import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_capabilities.dart';
+import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_controller.dart';
+import 'package:salesmanapp/features/mapselectionpjp/map_selection_capabilities.dart';
+import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
+import 'package:salesmanapp/features/technicalBulkPjp/bulk_pjp_capabilities.dart';
+import 'package:salesmanapp/features/technicalBulkPjp/bulk_pjp_controller.dart';
+import 'package:salesmanapp/features/planedAreaJourney/planed_capabilities.dart';
+import 'package:salesmanapp/features/planedAreaJourney/planed_controller.dart';
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_controller.dart';
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_capabilities.dart';
+import 'package:salesmanapp/features/journey_bootstrap/journey_bootstrap_controller.dart';
+import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_capabilities.dart';
+import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_controller.dart';
 
 // --- WIDGETS & THEMES ---
 import 'package:salesmanapp/widgets/app_theme.dart';
@@ -33,9 +61,107 @@ final GlobalKey<NavigatorState> globalNavigatorKey =
     GlobalKey<NavigatorState>();
 
 Future<void> main() async {
+  final flags = TechnicalFlags.dev;
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   debugPrint("Firebase Initialized Successfully.");
+  final kernel = AppKernel.instance;
+  //KERNEL REGISTRATION
+  //
+  //NIGGA
+  //..............
+
+  kernel.registerIf<PjpJourneyController>(
+    flags.pjpjourney,
+    () => PjpJourneyController(
+      api: ApiService(),
+      caps: PjpJourneyCapabilities.fromFlags(flags),
+    ),
+  );
+
+  kernel.registerIf<UnplannedJourneyController>(
+    flags.journey,
+    () => UnplannedJourneyController(
+      caps: UnplannedJourneyCapabilities.fromFlags(flags),
+    ),
+  );
+
+  kernel.registerIf<JourneyModeController>(
+    flags.journey,
+    () => JourneyModeController(caps: JourneyModeCapabilities.fromFlags(flags)),
+  );
+
+  kernel.registerIf<JourneyBootstrapController>(
+    flags.journeyStartStop, // or a new flag if you want later
+    () => JourneyBootstrapController(),
+  );
+  kernel.registerIf<JourneyTrackingController>(
+    flags.journeyTracking,
+    () => JourneyTrackingController(
+      caps: JourneyTrackingCapabilities.fromFlags(flags),
+      notifications: FlutterLocalNotificationsPlugin(),
+      api: ApiService(),
+    ),
+  );
+
+  kernel.registerIf<PjpCreateController>(
+    flags.createPjp,
+    () => PjpCreateController(
+      api: ApiService(),
+      caps: PjpCreateCapabilities.fromFlags(flags),
+    ),
+  );
+
+  kernel.registerIf<BulkPjpController>(
+    flags.createPjp,
+    () => BulkPjpController(
+      api: ApiService(),
+      caps: BulkPjpCapabilities.fromFlags(flags),
+    ),
+  );
+
+  kernel.registerIf<CreateOptionController>(
+    flags.createPjp,
+    () =>
+        CreateOptionController(caps: CreateOptionCapabilities.fromFlags(flags)),
+  );
+  kernel.registerIf<PlannedAreaJourneyController>(
+    flags.pjpjourney,
+    () => PlannedAreaJourneyController(
+      caps: PlannedAreaJourneyCapabilities.fromFlags(flags),
+    ),
+  );
+
+  kernel.registerIf<JourneyLocationController>(
+    flags.journeyMap || flags.journeyTracking,
+    () => JourneyLocationController(
+      caps: JourneyLocationCapabilities.fromFlags(flags),
+    ),
+  );
+  kernel.registerIf<MapSelectionController>(
+    flags.journeyMap, // Using your new flag
+    () =>
+        MapSelectionController(caps: MapSelectionCapabilities.fromFlags(flags)),
+  );
+
+  kernel.registerIf<JourneyNavigationController>(
+    flags.journeyMap,
+    () => JourneyNavigationController(
+      caps: JourneyNavigationCapabilities.fromFlags(flags),
+    ),
+  );
+
+  kernel.registerIf<JourneyMapStyleController>(
+    flags.journeyMap,
+    () => JourneyMapStyleController(
+      caps: JourneyMapStyleCapabilities.fromFlags(flags),
+    ),
+  );
+
+  //KENEL REGISTRATION
+  //
+  //NIGGA
+  //......
 
   await NotificationService().init();
   debugPrint("NOTIFICATIONS INITIALIZED.");
@@ -51,24 +177,20 @@ Future<void> main() async {
     debugPrint("ERROR: RADAR_PUBLISHABLE_KEY not found in .env file.");
   }
 
-runApp(
-  MultiProvider(
-    providers: [
-      // 🔥 FEATURE FLAGS (control plane)
-      Provider<TechnicalFlags>.value(
-        value: TechnicalFlags.dev,
-      ),
+  runApp(
+    MultiProvider(
+      providers: [
+        // 🔥 FEATURE FLAGS (control plane)
+        Provider<TechnicalFlags>.value(value: TechnicalFlags.dev),
 
-      // 🎨 THEME PROVIDER (already used by MyApp)
-      ChangeNotifierProvider<ThemeProvider>(
-        create: (_) => ThemeProvider(),
-      ),
-    ],
-    child: const MyApp(),
-  ),
-);
-
+        // 🎨 THEME PROVIDER (already used by MyApp)
+        ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
+
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
 

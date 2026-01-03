@@ -1,32 +1,48 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' as dev;
-
-import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/geotracking_data_model.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
-import 'package:salesmanapp/technicalSide/models/sites_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
-import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:polyline_codec/polyline_codec.dart';
 import 'package:slide_to_act/slide_to_act.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:salesmanapp/models/geotracking_data_model.dart';
+
+// Core & Models
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+import 'package:salesmanapp/core/app_kernel.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
+
+// Features
+import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
+import 'package:salesmanapp/features/mapselectionpjp/map_selection_result.dart';
+import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_result.dart';
+import 'package:salesmanapp/features/journeytracking/journey_tracking_controller.dart';
+import 'package:salesmanapp/features/journeytracking/journey_tracking_result.dart';
+import 'package:salesmanapp/features/launchgooglemapsJourneyscreen/googlemaps_controller.dart';
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart';
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_controller.dart';
+import 'package:salesmanapp/features/journeylocation/journeylocation_controller.dart';
+import 'package:salesmanapp/features/journeylocation/journeylocation_results.dart';
+import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_controller.dart';
 
 class TechnicalJourneyScreen extends StatefulWidget {
   final Employee employee;
   final Map<String, dynamic>? initialJourneyData;
   final VoidCallback? onDestinationConsumed;
-  final Function(Pjp pjp, dynamic locationEntity, bool isSite, DateTime checkInTime)? onJourneyCompleted;
+  final Function(
+    Pjp pjp,
+    dynamic locationEntity,
+    bool isSite,
+    DateTime checkInTime,
+  )?
+  onJourneyCompleted;
 
   const TechnicalJourneyScreen({
     super.key,
@@ -44,29 +60,41 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   late final TechnicalFlags flags;
   final Completer<MapLibreMapController> _controllerCompleter = Completer();
   late Future<String> _styleFuture;
+  late final MapSelectionController _mapSelectionController = AppKernel.instance
+      .feature<MapSelectionController>();
+
+  final _searchController = TextEditingController();
+  bool _isSearching = false;
+  String? _currentGeoTrackingDbId;
+  double _totalDistanceTravelled = 0.0;
+  LatLng? _lastRecordedLocation;
 
   // UI State
-  String _distanceDisplay = "Waiting for PJP...";
+  String _distanceDisplay = "Initializing...";
   final _destinationController = TextEditingController();
+  late JourneyMode _journeyMode;
+  bool _isSelectionMode = false;
 
   final String? _stadiaApiKey = dotenv.env['STADIA_API_KEY'];
   final String? _radarApiKey = dotenv.env['RADAR_API_KEY'];
-  final ApiService _apiService = ApiService();
+  Pjp? _backupPlannedPjp;
+  LatLng? _backupDestination;
 
   // Journey State
   bool _isJourneyActive = false;
-  double _totalDistanceTravelled = 0.0;
-  Position? _lastRecordedPosition;
-  String? _currentJourneyId;
-  String? _currentGeoTrackingDbId;
+
+  // 🔒 Anti-Spam Flag
+  bool _hasArrived = false;
+
+  // Stream Subscriptions
+  StreamSubscription? _distanceSub;
+  StreamSubscription? _posSub;
+  StreamSubscription? _eventSub;
 
   // Data Holding State
   Pjp? _currentPjp;
-  TechnicalSite? _currentSite;
-  Dealer? _currentDealer; 
   bool _isSiteVisit = true;
 
-  String? _currentPjpId;
   LatLng? _currentUserLocation;
   LatLng? _destinationLocation;
   final List<LatLng> _routeTaken = [];
@@ -75,13 +103,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   bool _isUserLocationLayerAdded = false;
   bool _isRouteLineLayerAdded = false;
   bool _isTravelledLineLayerAdded = false;
-
-  // Notifications & Radar
-  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-      FlutterLocalNotificationsPlugin();
-  bool _isNearDestinationNotified = false;
-  StreamSubscription<Position>? _positionStreamSubscription;
-  Timer? _radarArrivalCheckTimer;
 
   static const _initialCameraPosition = CameraPosition(
     target: LatLng(26.1445, 91.7362),
@@ -99,329 +120,811 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   @override
   void initState() {
     super.initState();
+    debugPrint("🚀 [TechnicalJourneyScreen] initState called");
     flags = context.read<TechnicalFlags>();
-    if(flags.journeyNotifications){
-    _initializeNotifications();
+
+    final modeController = AppKernel.instance.feature<JourneyModeController>();
+
+    if (widget.initialJourneyData != null) {
+      _processInitialDataSynchronously(widget.initialJourneyData!);
+    } else {
+      _journeyMode = modeController.defaultMode(hasPjp: false).mode;
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       Radar.setUserId(widget.employee.id);
       Radar.setDescription(widget.employee.displayName);
-      if(flags.journeyTracking){
-      _setupRadarListeners();
-      }
 
-      if(flags.journeyMap){
-      _determinePositionAndMoveCamera();
-      }
-      if(flags.journeyTracking){
-      _startLocationStream();
-      }
-
-      if (widget.initialJourneyData != null && flags.journeyStartStop) {
-        _processNewJourneyData(widget.initialJourneyData!);
+      if (flags.journeyNotifications) {
+        try {
+          await AppKernel.instance
+              .feature<JourneyTrackingController>()
+              .initNotifications();
+        } catch (_) {}
       }
     });
-if(flags.journeyMap){
-    _styleFuture = _readStyle();
+
+    if (flags.journeyMap) {
+      _styleFuture = _readStyle();
+    }
   }
-}
+
+  void _resetScreenState() async {
+    setState(() {
+      _isJourneyActive = false;
+      _currentPjp = null;
+      _destinationLocation = null;
+      _backupPlannedPjp = null;
+      _backupDestination = null;
+      _currentGeoTrackingDbId = null;
+      _totalDistanceTravelled = 0.0;
+      _lastRecordedLocation = null;
+      _hasArrived = false;
+
+      _destinationController.clear();
+      _distanceDisplay = "Select Destination";
+
+      final modeController = AppKernel.instance
+          .feature<JourneyModeController>();
+      _journeyMode = modeController.defaultMode(hasPjp: false).mode;
+      _isSelectionMode = false;
+
+      _routeTaken.clear();
+    });
+
+    await _removeRouteLine();
+    await _removeDestinationMarker();
+    await _determinePositionAndMoveCamera();
+  }
 
   @override
-  void didUpdateWidget(covariant TechnicalJourneyScreen oldWidget) {
+  void didUpdateWidget(TechnicalJourneyScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.initialJourneyData != oldWidget.initialJourneyData &&
-        widget.initialJourneyData != null) {
+    if (widget.initialJourneyData != null &&
+        widget.initialJourneyData != oldWidget.initialJourneyData) {
       _processNewJourneyData(widget.initialJourneyData!);
+      widget.onDestinationConsumed?.call();
     }
+  }
+
+  void _processInitialDataSynchronously(Map<String, dynamic> data) {
+    _journeyMode = JourneyMode.planned;
+    _currentPjp = data['pjp'];
+    _destinationLocation = data['destination'];
+    _destinationController.text = data['displayName'] ?? "";
+    _isSiteVisit = data['isSite'] ?? true;
+    _distanceDisplay = "Loading Map...";
   }
 
   @override
   void dispose() {
+    _cancelJourneySubscriptions();
     _destinationController.dispose();
-    _positionStreamSubscription?.cancel();
-    _radarArrivalCheckTimer?.cancel();
+    _searchController.dispose();
     super.dispose();
   }
 
-  // --- Handles both Site and Dealer Data ---
-  void _processNewJourneyData(Map<String, dynamic> journeyData) async {
-    dev.log("🔐 LOCKING IN JOURNEY DATA...", name: 'TechJourney');
-    
-    final Pjp? pjp = journeyData['pjp'] as Pjp?;
-    final LatLng? destination = journeyData['destination'] as LatLng?;
-    final String? displayName = journeyData['displayName'] as String?;
-    final bool isSite = journeyData['isSite'] ?? true; // Default to true if missing
+  void _onMapStyleLoaded() async {
+    if (!flags.journeyMap) return;
 
-    // Extraction
-    final TechnicalSite? site = journeyData['site'] as TechnicalSite?;
-    final Dealer? dealer = journeyData['dealer'] as Dealer?;
-
-    // Validation Logic
-    bool isDataValid = false;
-    if (destination != null && displayName != null && pjp != null) {
-      if (isSite && site != null) {
-        isDataValid = true;
-      } else if (!isSite && dealer != null) {
-        isDataValid = true;
-      }
+    if (_destinationLocation != null) {
+      // 🔥 Draw the pointer immediately on load
+      _addDestinationMarker(_destinationLocation!);
     }
 
-    if (!isDataValid) {
-      _showError('Error: Missing Site/Dealer Data for PJP.');
-      return;
+    await _determinePositionAndMoveCamera();
+
+    if (_destinationLocation != null && _currentUserLocation != null) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      await _getDirectionsAndDrawRoute();
+      _fitBounds();
+
+      if (mounted) setState(() => _distanceDisplay = "Ready to start");
     }
 
-    // Assign State
-    _currentPjpId = pjp!.id;
-    _currentPjp = pjp;
-    _isSiteVisit = isSite;
-    _destinationLocation = destination;
-    
-    // Clear opposite data to avoid confusion
-    if (isSite) {
-      _currentSite = site;
-      _currentDealer = null;
-    } else {
-      _currentSite = null;
-      _currentDealer = dealer;
-    }
-
-    if (mounted) {
-      setState(() {
-        _destinationController.text = displayName!;
-        _distanceDisplay = "Ready to start";
-      });
-    }
-
-    _routeTaken.clear();
-    _isRouteLineLayerAdded = false;
-
-    final controller = await _controllerCompleter.future;
-    try {
-      await controller.removeLayer('route-line');
-      await controller.removeSource('route-source');
-    } catch (_) {}
-
-    await _getDirectionsAndDrawRoute();
     widget.onDestinationConsumed?.call();
   }
 
+  void _processNewJourneyData(Map<String, dynamic> journeyData) async {
+    final Pjp? pjp = journeyData['pjp'] as Pjp?;
+    final LatLng? destination = journeyData['destination'] as LatLng?;
+    final String? displayName = journeyData['displayName'] as String?;
+    final bool isSite = journeyData['isSite'] ?? true;
+
+    if (mounted) {
+      setState(() {
+        _journeyMode = JourneyMode.planned;
+        _currentPjp = pjp;
+        _isSiteVisit = isSite;
+        _destinationLocation = destination;
+        _destinationController.text = displayName ?? "";
+        _distanceDisplay = "Calculating Route...";
+      });
+    }
+
+    _routeTaken.clear();
+    await _removeRouteLine();
+
+    // 🔥 Update the visual pointer when new data comes in
+    if (destination != null) {
+      _addDestinationMarker(destination);
+    }
+
+    if (_currentUserLocation == null) {
+      await _determinePositionAndMoveCamera();
+    }
+
+    if (_destinationLocation != null && _currentUserLocation != null) {
+      await _getDirectionsAndDrawRoute();
+      _fitBounds();
+    }
+
+    if (mounted) {
+      setState(() => _distanceDisplay = "Ready to start");
+    }
+  }
+
+  void _toggleJourneyMode() async {
+    final modeController = AppKernel.instance.feature<JourneyModeController>();
+
+    setState(() {
+      _journeyMode = modeController.switchMode(_journeyMode).mode;
+    });
+
+    if (_journeyMode == JourneyMode.unplanned) {
+      if (_currentPjp != null) {
+        _backupPlannedPjp = _currentPjp;
+        _backupDestination = _destinationLocation;
+      }
+      setState(() {
+        _currentPjp = null;
+        _destinationLocation = null;
+        _destinationController.text = "";
+        _distanceDisplay = "Select Destination";
+      });
+      await _removeRouteLine();
+      await _removeDestinationMarker(); // Remove pointer in unplanned mode initially
+    } else {
+      if (_backupPlannedPjp != null) {
+        setState(() {
+          _currentPjp = _backupPlannedPjp;
+          _destinationLocation = _backupDestination;
+          _destinationController.text = _resolveName(_currentPjp!);
+        });
+        if (_destinationLocation != null) {
+          _addDestinationMarker(_destinationLocation!); // Restore pointer
+          _getDirectionsAndDrawRoute();
+        }
+      }
+    }
+  }
+
+  Future<void> _loadUnplannedJourney(UnplannedJourneyResult result) async {
+    setState(() {
+      _journeyMode = JourneyMode.unplanned;
+      _destinationLocation = result.destination;
+      _destinationController.text = result.displayName;
+      _isSiteVisit = result.type == UnplannedEntityType.site;
+      _currentPjp = null;
+      _distanceDisplay = "Calculating Route...";
+    });
+
+    // 🔥 Add pointer for unplanned destination
+    await _addDestinationMarker(result.destination);
+
+    try {
+      if (_currentUserLocation == null) {
+        await _determinePositionAndMoveCamera();
+      }
+
+      if (_currentUserLocation != null) {
+        if (_radarApiKey != null) {
+          await _getDirectionsAndDrawRoute();
+        }
+        _fitBounds();
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) {
+        setState(() {
+          _distanceDisplay = "Ready to start";
+        });
+      }
+    }
+  }
+
+  Future<void> _performSearch(String query) async {
+    if (query.trim().isEmpty) return;
+    setState(() => _isSearching = true);
+    final LatLng? result = await _mapSelectionController.searchLocation(query);
+    if (result != null) {
+      final controller = await _controllerCompleter.future;
+      controller.animateCamera(CameraUpdate.newLatLngZoom(result, 16));
+    } else {
+      _showError("Location not found");
+    }
+    if (mounted) setState(() => _isSearching = false);
+  }
+
   Future<void> _startJourney() async {
-    if (_isJourneyActive || _destinationLocation == null || _currentPjp == null) {
-      _showError("Cannot start: Data not loaded.");
+    final hasPermission = await _ensureJourneyPermission();
+    if (!hasPermission) return;
+
+    if (_isJourneyActive || _destinationLocation == null) {
+      _showError("Cannot start: No destination selected.");
       return;
     }
 
-    _isNearDestinationNotified = false;
-    _routeTaken.clear();
-    _isTravelledLineLayerAdded = false;
-    _currentGeoTrackingDbId = null; 
-
-    final controller = await _controllerCompleter.future;
-    try {
-      await controller.removeLayer('rt-line');
-      await controller.removeSource('rt-source');
-    } catch (_) {}
+    setState(() {
+      _distanceDisplay = "Initializing...";
+      _totalDistanceTravelled = 0.0;
+      _lastRecordedLocation = null;
+      _hasArrived = false;
+    });
 
     try {
-      Position initialPosition = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      _lastRecordedPosition = initialPosition;
-      _routeTaken.add(LatLng(initialPosition.latitude, initialPosition.longitude));
+      final tracking = AppKernel.instance.feature<JourneyTrackingController>();
+      final api = ApiService();
 
-      // live loc updates sent to radar
-      await Radar.startTracking('responsive');
+      if (_currentPjp == null && _journeyMode == JourneyMode.unplanned) {
+        final employeeId = int.parse(widget.employee.id);
+        final newPjp = Pjp(
+          id: '',
+          planDate: DateTime.now(),
+          userId: employeeId,
+          createdById: employeeId,
+          status: 'APPROVED',
+          verificationStatus: 'VERIFIED',
+          areaToBeVisited:
+              "${_destinationController.text}|${_destinationLocation!.latitude}|${_destinationLocation!.longitude}",
+          route: _destinationController.text,
+          description: "Unplanned / Ad-hoc Visit",
+          plannedNewSiteVisits: 0,
+          plannedFollowUpSiteVisits: 0,
+          plannedNewDealerVisits: 0,
+          plannedInfluencerVisits: 0,
+          noOfConvertedBags: 0,
+          noOfMasonPcSchemes: 0,
+          activityType: 'Unplanned',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+        _currentPjp = await api.createPjp(newPjp);
+      }
 
-      _currentJourneyId = 'JRN-TECH-${widget.employee.id}-${DateTime.now().millisecondsSinceEpoch}';
-
-      _showTrackingNotification();
-      setState(() {
-        _isJourneyActive = true;
-        _totalDistanceTravelled = 0.0;
-        _distanceDisplay = "0.00 km";
-      });
-      _showError("Journey Tracking Started!");
+      if (_currentPjp == null) throw Exception("Failed to initialize visit");
 
       final startPoint = GeoTrackingPoint(
         userId: int.parse(widget.employee.id),
-        journeyId: _currentJourneyId!,
-        latitude: initialPosition.latitude,
-        longitude: initialPosition.longitude,
+        journeyId:
+            'JRN-${widget.employee.id}-${DateTime.now().millisecondsSinceEpoch}',
+        latitude: _currentUserLocation?.latitude ?? 0.0,
+        longitude: _currentUserLocation?.longitude ?? 0.0,
         destLat: _destinationLocation?.latitude,
         destLng: _destinationLocation?.longitude,
-        
-        // Conditional ID assignment
-        siteId: _isSiteVisit ? _currentSite?.id : null,
-        dealerId: !_isSiteVisit ? _currentDealer?.id : null,
-        
+        siteId: _isSiteVisit ? _currentPjp?.siteId : null,
+        dealerId: !_isSiteVisit ? _currentPjp?.dealerId : null,
         isActive: true,
         locationType: 'JOURNEY_START',
+        totalDistanceTravelled: 0.0,
       );
 
-      _currentGeoTrackingDbId = await _apiService.sendGeoTrackingPoint(startPoint);
-      dev.log("Journey Started. DB ID: $_currentGeoTrackingDbId", name: 'TechJourney');
+      _currentGeoTrackingDbId = await api.sendGeoTrackingPoint(startPoint);
 
-      if (_currentPjpId != null) {
-        await _apiService.updatePjp(_currentPjpId!, {'status': 'IN_PROGRESS'});
+      if (_currentPjp?.id != null) {
+        await api.updatePjp(_currentPjp!.id, {'status': 'IN_PROGRESS'});
       }
 
-      _radarArrivalCheckTimer?.cancel();
-      _radarArrivalCheckTimer = Timer.periodic(
-        const Duration(seconds: 30),
-        (_) => _performRadarArrivalCheck(),
+      await tracking.startJourney(
+        pjp: _currentPjp!,
+        userId: int.parse(widget.employee.id),
+        destination: _destinationLocation!,
+        isSite: _isSiteVisit,
       );
+
+      setState(() {
+        _isJourneyActive = true;
+        _distanceDisplay = "0.00 km";
+        _routeTaken.clear();
+      });
+
+      _distanceSub = tracking.distanceStream.listen((dist) {
+        if (mounted)
+          setState(
+            () => _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km",
+          );
+      });
+
+      _posSub = tracking.positionStream.listen((latLng) {
+        if (_lastRecordedLocation != null) {
+          final dist = Geolocator.distanceBetween(
+            _lastRecordedLocation!.latitude,
+            _lastRecordedLocation!.longitude,
+            latLng.latitude,
+            latLng.longitude,
+          );
+          _totalDistanceTravelled += dist;
+        }
+        _lastRecordedLocation = latLng;
+        _currentUserLocation = latLng;
+
+        _routeTaken.add(latLng);
+        _drawUserLocationPointer(latLng);
+        _updateTravelledPolyline();
+      });
+
+      _eventSub = tracking.eventStream.listen((event) {
+        if (event == JourneyTrackingEvent.arrived && !_hasArrived) {
+          _hasArrived = true;
+          _showArrivalDialog();
+        }
+      });
     } catch (e) {
-      _showError("Failed to start journey: $e");
+      _showError("Failed to start: $e");
       setState(() => _isJourneyActive = false);
     }
   }
 
   Future<void> _stopJourney() async {
-    dev.log("🛑 STOPPING JOURNEY...", name: 'TechJourney');
-    _radarArrivalCheckTimer?.cancel();
-    _cancelTrackingNotification();
-
-    // stop sending live loc updates to radar
-    await Radar.stopTracking();
-
     if (!_isJourneyActive) return;
 
-    final DateTime checkInTime = DateTime.now();
+    final api = ApiService();
+    final checkInTime = DateTime.now();
 
-    // 1. PATCH Tracking Record
-    if (_currentGeoTrackingDbId != null && _lastRecordedPosition != null) {
+    if (_currentGeoTrackingDbId != null && _currentUserLocation != null) {
       try {
         final updateData = {
           'isActive': false,
-          'totalDistanceTravelled': (_totalDistanceTravelled / 1000.0).toStringAsFixed(3),
-          'latitude': _lastRecordedPosition!.latitude,
-          'longitude': _lastRecordedPosition!.longitude,
+          'totalDistanceTravelled': (_totalDistanceTravelled / 1000.0)
+              .toStringAsFixed(3),
+          'latitude': _currentUserLocation!.latitude,
+          'longitude': _currentUserLocation!.longitude,
           'locationType': 'JOURNEY_END',
           'checkOutTime': checkInTime.toIso8601String(),
         };
 
-        await _apiService.updateGeoTrackingPoint(_currentGeoTrackingDbId!, updateData);
+        await api.updateGeoTrackingPoint(_currentGeoTrackingDbId!, updateData);
       } catch (e) {
-        dev.log("⚠️ GeoTracking PATCH Failed: $e", name: 'TechJourney');
+        debugPrint("⚠️ Failed to patch journey end: $e");
       }
     }
 
-    // 2. Update PJP Status
-    if (_currentPjpId != null) {
+    if (_currentPjp?.id != null) {
       try {
-        await _apiService.updatePjp(_currentPjpId!, {'status': 'COMPLETED'});
-      } catch (e) {
-        dev.log("❌ PJP Update Failed", name: 'TechJourney');
-      }
+        await api.updatePjp(_currentPjp!.id, {'status': 'COMPLETED'});
+      } catch (_) {}
     }
 
-    // 3. Proceed to Form (Handle both types)
-    if (widget.onJourneyCompleted != null && _currentPjp != null) {
-      final dynamic locationEntity = _isSiteVisit ? _currentSite : _currentDealer;
-      
-      if (locationEntity != null) {
-         widget.onJourneyCompleted!(_currentPjp!, locationEntity, _isSiteVisit, checkInTime);
-      } else {
-         _showError("Critical Error: Entity lost during journey.");
-      }
-    }
+    try {
+      final tracking = AppKernel.instance.feature<JourneyTrackingController>();
+      await tracking.stopJourney();
+    } catch (_) {}
 
-    // 4. Cleanup
+    _handleJourneyCleanup();
+  }
+
+  Future<void> _removeRouteLine() async {
+    if (!_isRouteLineLayerAdded) return;
     final controller = await _controllerCompleter.future;
     try {
       await controller.removeLayer('route-line');
       await controller.removeSource('route-source');
-      await controller.removeLayer('rt-line');
-      await controller.removeSource('rt-source');
+      _isRouteLineLayerAdded = false;
     } catch (_) {}
+  }
 
-    _isRouteLineLayerAdded = false;
-    _isTravelledLineLayerAdded = false;
+  Future<void> _getDirectionsAndDrawRoute() async {
+    if (_currentUserLocation == null || _destinationLocation == null) return;
+    if (_radarApiKey == null) return;
+
+    try {
+      final start =
+          '${_currentUserLocation!.latitude},${_currentUserLocation!.longitude}';
+      final end =
+          '${_destinationLocation!.latitude},${_destinationLocation!.longitude}';
+      final uri = Uri.parse(
+        'https://api.radar.io/v1/route/directions?locations=$start|$end&mode=car&units=metric&geometry=polyline5',
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {'Authorization': _radarApiKey},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (data['routes'] != null && (data['routes'] as List).isNotEmpty) {
+          final geometry = data['routes'][0]['geometry']['polyline'];
+          final points = PolylineCodec.decode(geometry);
+          final coordinates = points.map((p) => [p[1], p[0]]).toList();
+
+          final geoJson = {
+            'type': 'FeatureCollection',
+            'features': [
+              {
+                'type': 'Feature',
+                'geometry': {'type': 'LineString', 'coordinates': coordinates},
+                'properties': {},
+              },
+            ],
+          };
+
+          final controller = await _controllerCompleter.future;
+
+          if (_isRouteLineLayerAdded) {
+            try {
+              await controller.removeLayer('route-line');
+              await controller.removeSource('route-source');
+            } catch (_) {}
+            _isRouteLineLayerAdded = false;
+          }
+
+          await controller.addSource(
+            'route-source',
+            GeojsonSourceProperties(data: geoJson),
+          );
+          await controller.addLineLayer(
+            'route-source',
+            'route-line',
+            const LineLayerProperties(
+              lineColor: '#0B4AA8',
+              lineWidth: 5.0,
+              lineOpacity: 0.8,
+              lineCap: 'round',
+              lineJoin: 'round',
+            ),
+          );
+          _isRouteLineLayerAdded = true;
+        }
+      }
+    } catch (e) {
+      debugPrint("❌ Route Exception: $e");
+    } finally {
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<bool> _ensureJourneyPermission() async {
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _showError("Location services are disabled. Please enable GPS.");
+      return false;
+    }
+
+    permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      if (!mounted) return false;
+      final bool userAgreed = await _showJourneyDisclosureDialog();
+
+      if (!userAgreed) {
+        _showError("Location is required to track your journey.");
+        return false;
+      }
+
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        _showError("Location permission denied.");
+        return false;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) _showSettingsDialog();
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<bool> _showJourneyDisclosureDialog() async {
+    return await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.map, color: _cardNavy),
+                const SizedBox(width: 8),
+                const Expanded(child: Text("Allow Location Permissions")),
+              ],
+            ),
+            content: const Text(
+              "This app collects location data to enable [Salesman Route Tracking] "
+              "and [Distance Calculation] even when the app is closed or not in use.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("DENY", style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _cardNavy),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text(
+                  "ACCEPT",
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Permission Required"),
+        content: const Text(
+          "Journey tracking requires location permission. Please enable it in Settings.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("CANCEL"),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Geolocator.openAppSettings();
+            },
+            child: const Text("OPEN SETTINGS"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _determinePositionAndMoveCamera() async {
+    try {
+      final hasPermission = await _ensureJourneyPermission();
+      if (!hasPermission) return;
+
+      final location = AppKernel.instance.feature<JourneyLocationController>();
+      final result = await location.resolveCurrentLocation();
+
+      if (result.event == JourneyLocationEvent.granted &&
+          result.location != null) {
+        _currentUserLocation = result.location;
+
+        if (mounted && !_isJourneyActive) {
+          if (_distanceDisplay.contains("Waiting") ||
+              _distanceDisplay.contains("Map")) {
+            setState(() => _distanceDisplay = "My Location");
+          }
+        }
+
+        if (_destinationLocation == null) {
+          final controller = await _controllerCompleter.future;
+          await controller.animateCamera(
+            CameraUpdate.newCameraPosition(
+              CameraPosition(target: _currentUserLocation!, zoom: 15.0),
+            ),
+          );
+        }
+        _drawUserLocationPointer(_currentUserLocation!);
+      }
+    } catch (e) {
+      debugPrint("❌ _determinePositionAndMoveCamera Exception: $e");
+    }
+  }
+
+  Future<void> _fitBounds() async {
+    try {
+      final controller = await _controllerCompleter.future;
+      final bounds = LatLngBounds(
+        southwest: LatLng(
+          _currentUserLocation!.latitude < _destinationLocation!.latitude
+              ? _currentUserLocation!.latitude
+              : _destinationLocation!.latitude,
+          _currentUserLocation!.longitude < _destinationLocation!.longitude
+              ? _currentUserLocation!.longitude
+              : _destinationLocation!.longitude,
+        ),
+        northeast: LatLng(
+          _currentUserLocation!.latitude > _destinationLocation!.latitude
+              ? _currentUserLocation!.latitude
+              : _destinationLocation!.latitude,
+          _currentUserLocation!.longitude > _destinationLocation!.longitude
+              ? _currentUserLocation!.longitude
+              : _destinationLocation!.longitude,
+        ),
+      );
+      await controller.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          bounds,
+          left: 80,
+          top: 80,
+          right: 80,
+          bottom: 80,
+        ),
+      );
+    } catch (_) {}
+  }
+
+  // 🔥 UPDATED: POINTER VISUALS (Red/White Target)
+  Future<void> _addDestinationMarker(LatLng point) async {
+    try {
+      final controller = await _controllerCompleter.future;
+
+      // Cleanup first
+      try {
+        await controller.removeLayer('dest-layer-inner');
+        await controller.removeLayer('dest-layer-outer');
+        await controller.removeSource('dest-source');
+      } catch (_) {}
+
+      await controller.addSource(
+        'dest-source',
+        GeojsonSourceProperties(
+          data: {
+            'type': 'FeatureCollection',
+            'features': [
+              {
+                'type': 'Feature',
+                'geometry': {
+                  'type': 'Point',
+                  'coordinates': [point.longitude, point.latitude],
+                },
+              },
+            ],
+          },
+        ),
+      );
+
+      // 1. Outer Ring (White with Navy Stroke)
+      await controller.addCircleLayer(
+        'dest-source',
+        'dest-layer-outer',
+        const CircleLayerProperties(
+          circleColor: '#FFFFFF',
+          circleRadius: 10,
+          circleStrokeWidth: 2,
+          circleStrokeColor: '#0F172A',
+        ),
+      );
+
+      // 2. Inner Dot (Red)
+      await controller.addCircleLayer(
+        'dest-source',
+        'dest-layer-inner',
+        const CircleLayerProperties(circleColor: '#EF4444', circleRadius: 6),
+      );
+    } catch (_) {}
+  }
+
+  // Helper to remove both layers
+  Future<void> _removeDestinationMarker() async {
+    final controller = await _controllerCompleter.future;
+    try {
+      await controller.removeLayer('dest-layer-inner');
+      await controller.removeLayer('dest-layer-outer');
+      await controller.removeSource('dest-source');
+    } catch (_) {}
+  }
+
+  void _handleJourneyCleanup() async {
+    _cancelJourneySubscriptions();
+    final checkInTime = DateTime.now();
+
+    if (widget.onJourneyCompleted != null && _currentPjp != null) {
+      widget.onJourneyCompleted!(
+        _currentPjp!,
+        _currentPjp,
+        _isSiteVisit,
+        checkInTime,
+      );
+    }
 
     if (mounted) {
+      final modeController = AppKernel.instance
+          .feature<JourneyModeController>();
+      final defaultMode = modeController.defaultMode(hasPjp: false).mode;
+
       setState(() {
         _isJourneyActive = false;
-        _currentJourneyId = null;
         _currentPjp = null;
-        _currentSite = null;
-        _currentDealer = null;
-        _currentPjpId = null;
         _destinationLocation = null;
-        _distanceDisplay = "Visit Completed";
-        _routeTaken.clear();
+        _backupPlannedPjp = null;
+        _backupDestination = null;
         _currentGeoTrackingDbId = null;
+        _totalDistanceTravelled = 0.0;
+        _lastRecordedLocation = null;
+        _hasArrived = false;
+
+        _destinationController.clear();
+        _distanceDisplay = "Select Destination";
+        _journeyMode = defaultMode;
+        _isSelectionMode = false;
+
+        _routeTaken.clear();
       });
+
+      await _removeRouteLine();
+      await _removeDestinationMarker();
+      await _determinePositionAndMoveCamera();
     }
   }
 
-  // ... [Keep _startLocationStream, _onPositionUpdate, _drawUserLocationPointer as they were] ...
-  // ... [Keep _updateTravelledPolyline, _getDirectionsAndDrawRoute, Notification logic as they were] ...
-  // ... [Keep _readStyle, _launchGoogleMapsNavigation, _showError as they were] ...
-  
-  // (Abbreviated helper methods for brevity - paste your existing implementations here for map drawing/location/radar)
-
-  // --- LOCATION LOGIC ---
-  void _startLocationStream() {
-    const LocationSettings locationSettings = LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 10);
-    _positionStreamSubscription = Geolocator.getPositionStream(locationSettings: locationSettings)
-        .listen(_onPositionUpdate, onError: (e) => dev.log("Loc Error: $e"));
+  String _resolveName(Pjp pjp) {
+    try {
+      if (pjp.areaToBeVisited.contains('|')) {
+        return pjp.areaToBeVisited.split('|').first;
+      }
+      return pjp.areaToBeVisited;
+    } catch (_) {
+      return "Planned Visit";
+    }
   }
 
-  void _onPositionUpdate(Position position) {
-    _currentUserLocation = LatLng(position.latitude, position.longitude);
-    if (mounted) _drawUserLocationPointer(_currentUserLocation!);
-
-    if (!_isJourneyActive) return;
-
-    if (_lastRecordedPosition != null) {
-      final double movement = Geolocator.distanceBetween(
-        _lastRecordedPosition!.latitude, _lastRecordedPosition!.longitude,
-        position.latitude, position.longitude,
-      );
-      if (movement > 2.0) {
-        _totalDistanceTravelled += movement;
-        _lastRecordedPosition = position;
-        _routeTaken.add(_currentUserLocation!);
-        _updateTravelledPolyline();
-      }
-    } else {
-      _lastRecordedPosition = position;
-    }
-
-    if (_destinationLocation != null && !_isNearDestinationNotified) {
-      final double dist = Geolocator.distanceBetween(
-        position.latitude, position.longitude,
-        _destinationLocation!.latitude, _destinationLocation!.longitude,
-      );
-      if (dist < 500) {
-        _showNearArrivalNotification();
-        _isNearDestinationNotified = true;
-      }
-    }
-
-    if (mounted) {
-      setState(() => _distanceDisplay = "${(_totalDistanceTravelled / 1000.0).toStringAsFixed(2)} km");
-    }
+  void _showArrivalDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('SITE REACHED'),
+        content: const Text('You have arrived at your destination.'),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _handleJourneyCleanup();
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _drawUserLocationPointer(LatLng point) async {
     final controller = await _controllerCompleter.future;
     final data = {
       'type': 'FeatureCollection',
-      'features': [{'type': 'Feature', 'properties': {}, 'geometry': {'type': 'Point', 'coordinates': [point.longitude, point.latitude]}}],
+      'features': [
+        {
+          'type': 'Feature',
+          'properties': {},
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [point.longitude, point.latitude],
+          },
+        },
+      ],
     };
 
     if (_isUserLocationLayerAdded) {
-      try { await controller.setGeoJsonSource('user-loc-s', data); } catch (_) {}
+      try {
+        await controller.setGeoJsonSource('user-loc-s', data);
+      } catch (_) {}
     } else {
       try {
-        await controller.addSource('user-loc-s', GeojsonSourceProperties(data: data));
-        await controller.addCircleLayer('user-loc-s', 'user-loc-c-o', const CircleLayerProperties(circleColor: '#FFFFFF', circleRadius: 12.0));
-        await controller.addCircleLayer('user-loc-s', 'user-loc-c-i', const CircleLayerProperties(circleColor: '#0B4AA8', circleRadius: 8.0));
+        await controller.addSource(
+          'user-loc-s',
+          GeojsonSourceProperties(data: data),
+        );
+        await controller.addCircleLayer(
+          'user-loc-s',
+          'user-loc-c-o',
+          const CircleLayerProperties(
+            circleColor: '#FFFFFF',
+            circleRadius: 12.0,
+          ),
+        );
+        await controller.addCircleLayer(
+          'user-loc-s',
+          'user-loc-c-i',
+          const CircleLayerProperties(
+            circleColor: '#0B4AA8',
+            circleRadius: 8.0,
+          ),
+        );
         _isUserLocationLayerAdded = true;
-      } catch (_) { _isUserLocationLayerAdded = true; }
+      } catch (_) {}
     }
   }
 
@@ -430,137 +933,115 @@ if(flags.journeyMap){
     final controller = await _controllerCompleter.future;
     final data = {
       'type': 'FeatureCollection',
-      'features': [{'type': 'Feature', 'properties': {}, 'geometry': {'type': 'LineString', 'coordinates': _routeTaken.map((p) => [p.longitude, p.latitude]).toList()}}],
+      'features': [
+        {
+          'type': 'Feature',
+          'properties': {},
+          'geometry': {
+            'type': 'LineString',
+            'coordinates': _routeTaken
+                .map((p) => [p.longitude, p.latitude])
+                .toList(),
+          },
+        },
+      ],
     };
 
     if (_isTravelledLineLayerAdded) {
       await controller.setGeoJsonSource('rt-source', data);
     } else {
       try {
-        await controller.addSource('rt-source', GeojsonSourceProperties(data: data));
-        await controller.addLineLayer('rt-source', 'rt-line', const LineLayerProperties(lineColor: '#EF4444', lineWidth: 6.0));
+        await controller.addSource(
+          'rt-source',
+          GeojsonSourceProperties(data: data),
+        );
+        await controller.addLineLayer(
+          'rt-source',
+          'rt-line',
+          const LineLayerProperties(lineColor: '#EF4444', lineWidth: 6.0),
+        );
         _isTravelledLineLayerAdded = true;
-      } catch (_) { _isTravelledLineLayerAdded = true; }
+      } catch (_) {}
     }
   }
 
-  Future<void> _getDirectionsAndDrawRoute() async {
-    if (_currentUserLocation == null || _destinationLocation == null) {
-      if (_currentUserLocation == null) await _determinePositionAndMoveCamera();
-      if (_currentUserLocation == null) return;
-    }
-    final locations = '${_currentUserLocation!.latitude},${_currentUserLocation!.longitude}|${_destinationLocation!.latitude},${_destinationLocation!.longitude}';
-    final url = Uri.parse('https://api.radar.io/v1/route/directions?locations=$locations&mode=car&units=metric&geometry=polyline5');
+  Future<String> _resolveAddress(LatLng pos) async {
     try {
-      final response = await http.get(url, headers: {'Authorization': _radarApiKey!});
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final polyline = PolylineCodec.decode(data['routes'][0]['geometry']['polyline']);
-        final routePoints = polyline.map((p) => LatLng(p[0].toDouble(), p[1].toDouble())).toList();
-        final controller = await _controllerCompleter.future;
-        final geoJson = {
-          'type': 'FeatureCollection',
-          'features': [{'type': 'Feature', 'properties': {}, 'geometry': {'type': 'LineString', 'coordinates': routePoints.map((p) => [p.longitude, p.latitude]).toList()}}],
-        };
-        if (_isRouteLineLayerAdded) {
-          await controller.setGeoJsonSource('route-source', geoJson);
-        } else {
-          await controller.addSource('route-source', GeojsonSourceProperties(data: geoJson));
-          await controller.addLineLayer('route-source', 'route-line', const LineLayerProperties(lineColor: '#0B4AA8', lineWidth: 5.0, lineOpacity: 0.8));
-          _isRouteLineLayerAdded = true;
-        }
+      final marks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (marks.isNotEmpty) {
+        final p = marks.first;
+        return "${p.subLocality ?? p.name}, ${p.locality}";
       }
-    } catch (e) { dev.log("Route Error: $e"); }
+    } catch (_) {}
+    return "Selected Location";
   }
 
-  void _initializeNotifications() async {
-    const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/launcher_icon');
-    await flutterLocalNotificationsPlugin.initialize(const InitializationSettings(android: androidSettings, iOS: DarwinInitializationSettings()));
-  }
-
-  Future<void> _showNearArrivalNotification() async {
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails('near_arrival_channel', 'Near Arrival', importance: Importance.max, priority: Priority.high);
-    await flutterLocalNotificationsPlugin.show(0, 'Approaching Site', 'You are close to the site.', const NotificationDetails(android: androidDetails));
-  }
-
-  Future<void> _showTrackingNotification() async {
-    const AndroidNotificationDetails androidDetails = AndroidNotificationDetails('tracking_channel', 'Tracking', importance: Importance.low, priority: Priority.low, ongoing: true, autoCancel: false);
-    await flutterLocalNotificationsPlugin.show(1, 'Journey Active', 'Tracking location...', const NotificationDetails(android: androidDetails));
-  }
-
-  Future<void> _cancelTrackingNotification() async {
-    await flutterLocalNotificationsPlugin.cancel(1);
-  }
-
-  void _setupRadarListeners() {
-    Radar.onEvents((result) {
-      if (!_isJourneyActive || _currentPjpId == null) return;
-      final events = result['events'] as List<dynamic>?;
-      if (events == null) return;
-      final arrivalEvent = events.firstWhere((event) => event['type'] == 'user.entered_geofence' && event['geofence']['externalId'] == _currentPjpId, orElse: () => null);
-      if (arrivalEvent != null) _showDestinationArrivalNotification();
-    });
-  }
-
-  void _performRadarArrivalCheck() async {
-    if (_isJourneyActive) await Radar.trackOnce();
-  }
-
-  void _showDestinationArrivalNotification() {
-    if (!mounted || !_isJourneyActive) return;
-    _stopJourney();
-    showDialog(
-      context: context, barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: const Text('SITE REACHED'), content: const Text('You have arrived.'),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
-      ),
-    );
-  }
-
-  Future<void> _determinePositionAndMoveCamera() async {
-    setState(() => _distanceDisplay = "Checking permissions...");
+  Future<void> _confirmSelection() async {
+    setState(() => _distanceDisplay = "Processing...");
     try {
-      String? status = await Radar.getPermissionsStatus();
-      if (status == 'DENIED' || status == 'NOT_DETERMINED') status = await Radar.requestPermissions(true);
-      if (status != 'GRANTED_BACKGROUND' && status != 'GRANTED_FOREGROUND') {
-        setState(() => _distanceDisplay = 'Permission Denied');
-        return;
-      }
-      setState(() => _distanceDisplay = "Fetching location...");
-      Position position = await Geolocator.getCurrentPosition();
-      _currentUserLocation = LatLng(position.latitude, position.longitude);
-      if (mounted && !_isJourneyActive) setState(() => _distanceDisplay = "My Location");
       final controller = await _controllerCompleter.future;
-      await controller.animateCamera(CameraUpdate.newCameraPosition(CameraPosition(target: _currentUserLocation!, zoom: 15.0)));
-      _drawUserLocationPointer(_currentUserLocation!);
-    } catch (e) { if (mounted) setState(() => _distanceDisplay = "Loc Error"); }
+      final target = controller.cameraPosition?.target;
+      if (target == null) return;
+      final address = await _resolveAddress(target);
+      final selection = MapSelectionResult(
+        position: target,
+        address: address,
+        isCancelled: false,
+      );
+      setState(() {
+        _isSelectionMode = false;
+        _searchController.clear();
+      });
+      await _loadUnplannedJourney(
+        UnplannedJourneyResult(
+          destination: selection.position,
+          displayName: selection.address,
+          type: UnplannedEntityType.site,
+        ),
+      );
+    } catch (e) {
+      setState(() {
+        _isSelectionMode = false;
+        _distanceDisplay = "Selection Failed";
+      });
+    }
   }
 
   Future<String> _readStyle() async {
-    if (_stadiaApiKey == null) throw Exception("API Key Missing");
-    return jsonEncode({
-      "version": 8,
-      "sources": {"stadia": {"type": "raster", "tiles": ["https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}@2x.png?api_key=$_stadiaApiKey"], "tileSize": 256}},
-      "layers": [{"id": "stadia-layer", "source": "stadia", "type": "raster", "minzoom": 0, "maxzoom": 22}],
-    });
+    final style = AppKernel.instance.feature<JourneyMapStyleController>();
+    final result = style.loadStyle(_stadiaApiKey!);
+    return result.styleJson;
   }
 
-  Future<void> _launchGoogleMapsNavigation() async {
+  void _launchGoogleMapsNavigation() async {
     if (_destinationLocation == null) return;
-    final url = Uri.parse('google.navigation:q=${_destinationLocation!.latitude},${_destinationLocation!.longitude}');
-    if (await canLaunchUrl(url)) await launchUrl(url);
+    try {
+      final nav = AppKernel.instance.feature<JourneyNavigationController>();
+      await nav.launchGoogleMaps(_destinationLocation!);
+    } catch (_) {}
   }
 
   void _showError(String message) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  void _cancelJourneySubscriptions() {
+    _distanceSub?.cancel();
+    _posSub?.cancel();
+    _eventSub?.cancel();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Validate if either Site or Dealer is present
-    final bool hasData = _currentSite != null || _currentDealer != null;
-    final bool canStartJourney = _destinationLocation != null && !_isJourneyActive && hasData;
+    final bool canStartJourney =
+        !_isJourneyActive &&
+        (_journeyMode == JourneyMode.planned ||
+            (_journeyMode == JourneyMode.unplanned &&
+                _destinationLocation != null));
 
     return Stack(
       children: [
@@ -573,84 +1054,286 @@ if(flags.journeyMap){
                 styleString: snap.data!,
                 initialCameraPosition: _initialCameraPosition,
                 onMapCreated: (c) {
-                  if (!_controllerCompleter.isCompleted) _controllerCompleter.complete(c);
+                  if (!_controllerCompleter.isCompleted)
+                    _controllerCompleter.complete(c);
                 },
+                onStyleLoadedCallback: _onMapStyleLoaded,
+                trackCameraPosition: true,
+                myLocationEnabled: false,
               );
             },
           ),
         ),
-        Positioned(
-          top: 50, right: 16,
-          child: Container(
-            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-            child: IconButton(icon: Icon(Icons.my_location, color: _cardNavy), onPressed: _determinePositionAndMoveCamera),
-          ),
-        ),
-
-        DraggableScrollableSheet(
-          initialChildSize: 0.32, minChildSize: 0.32, maxChildSize: 0.5,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: BoxDecoration(color: _surfaceWhite, borderRadius: const BorderRadius.vertical(top: Radius.circular(30.0))),
-              child: ListView(
-                controller: scrollController,
-                padding: const EdgeInsets.all(24.0),
-                children: [
-                  Center(child: Container(width: 40, height: 5, margin: const EdgeInsets.only(bottom: 24.0), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(12)))),
-
-                  _isJourneyActive ? _buildActiveJourneyPanel(context) : _buildIdleJourneyPanel(context),
-
-                  const SizedBox(height: 24),
-
-                  _StartJourneySlider(
-                    key: ValueKey(_isJourneyActive),
-                    isJourneyActive: _isJourneyActive,
-                    onSlideAction: _isJourneyActive ? _stopJourney : _startJourney,
-                    canStart: canStartJourney,
-                    cardNavy: _cardNavy,
-                    dangerRed: _dangerRed,
-                  ),
-                ],
+        if (_isSelectionMode) ...[
+          Positioned(
+            top: 50,
+            left: 16,
+            right: 16,
+            child: Card(
+              elevation: 4,
+              shadowColor: Colors.black.withOpacity(0.2),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-            );
-          },
-        ),
+              child: TextField(
+                controller: _searchController,
+                textInputAction: TextInputAction.search,
+                onSubmitted: _performSearch,
+                decoration: InputDecoration(
+                  hintText: "Search area (e.g., Guwahati)",
+                  hintStyle: const TextStyle(color: Color(0xFF64748B)),
+                  filled: true,
+                  fillColor: Colors.white,
+                  prefixIcon: IconButton(
+                    icon: const Icon(Icons.arrow_back, color: Color(0xFF0F172A)),
+                    onPressed: () {
+                      setState(() {
+                        _isSelectionMode = false;
+                        _searchController.clear();
+                      });
+                    },
+                  ),
+                  suffixIcon: _isSearching
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : IconButton(
+                          icon: const Icon(Icons.search, color: Color(0xFF0F172A)),
+                          onPressed: () =>
+                              _performSearch(_searchController.text),
+                        ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 14,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 35),
+              child: Icon(Icons.location_on, size: 50, color: _cardNavy),
+            ),
+          ),
+          Positioned(
+            bottom: 40,
+            left: 20,
+            right: 20,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _cardNavy,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                elevation: 4,
+              ),
+              onPressed: _confirmSelection,
+              child: const Text(
+                "CONFIRM THIS LOCATION",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.1,
+                ),
+              ),
+            ),
+          ),
+        ],
+        if (!_isSelectionMode) ...[
+          Positioned(
+            top: 50,
+            right: 16,
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: Icon(Icons.my_location, color: _cardNavy),
+                onPressed: _determinePositionAndMoveCamera,
+              ),
+            ),
+          ),
+          DraggableScrollableSheet(
+            initialChildSize: 0.32,
+            minChildSize: 0.32,
+            maxChildSize: 0.5,
+            builder: (context, scrollController) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: _surfaceWhite,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(30.0),
+                  ),
+                ),
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(24.0),
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 5,
+                        margin: const EdgeInsets.only(bottom: 24.0),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    _isJourneyActive
+                        ? _buildActiveJourneyPanel(context)
+                        : _buildIdleJourneyPanel(context),
+                    const SizedBox(height: 24),
+                    _StartJourneySlider(
+                      key: ValueKey(_isJourneyActive),
+                      isJourneyActive: _isJourneyActive,
+                      onSlideAction: _isJourneyActive
+                          ? _stopJourney
+                          : _startJourney,
+                      canStart: canStartJourney,
+                      cardNavy: _cardNavy,
+                      dangerRed: _dangerRed,
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildIdleJourneyPanel(BuildContext context) {
+    final modeController = AppKernel.instance.feature<JourneyModeController>();
+    final bool canSwitch = modeController.caps.allowUnplanned;
+    final bool isPlanned = _journeyMode == JourneyMode.planned;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(Icons.business, color: _textGrey, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              "SELECTED ${_isSiteVisit ? 'SITE' : 'DEALER'}",
-              style: TextStyle(fontWeight: FontWeight.w900, color: _textGrey, fontSize: 12),
+            Icon(
+              isPlanned ? Icons.map_outlined : Icons.business,
+              color: _textGrey,
+              size: 20,
             ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isPlanned ? "PLANNED AREA" : "UNPLANNED VISIT",
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: const Color(0xFF1E293B),
+                      fontSize: 12,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  Text(
+                    isPlanned
+                        ? "Free roam • Multiple check-ins"
+                        : "Flexible destination • Ad-hoc",
+                    style: TextStyle(
+                      color: _textGrey.withOpacity(0.7),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (canSwitch)
+              TextButton.icon(
+                onPressed: _toggleJourneyMode,
+                icon: const Icon(Icons.swap_horiz, size: 16),
+                label: Text(isPlanned ? "UNPLANNED" : "PLANNED"),
+                style: TextButton.styleFrom(
+                  foregroundColor: _cardNavy,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  textStyle: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
           ],
         ),
         const SizedBox(height: 16),
         Container(
-          height: 56, padding: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(color: _bgLight, borderRadius: BorderRadius.circular(16)),
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: _bgLight,
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Center(
             child: TextField(
               controller: _destinationController,
               readOnly: true,
-              style: TextStyle(color: _textDark, fontWeight: FontWeight.w600),
+              style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w600),
               decoration: InputDecoration(
-                prefixIcon: Icon(Icons.lock_outline, color: _textGrey),
-                hintText: "Waiting for PJP...",
+                prefixIcon: Icon(
+                  isPlanned ? Icons.explore : Icons.location_on_outlined,
+                  color: Color(0xFF0F172A),
+                ),
+                hintText: isPlanned
+                    ? "Planned Area"
+                    : "Waiting for destination...",
+                hintStyle: const TextStyle(color: Color(0xFF64748B)),
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+                suffixIcon: _destinationController.text.isNotEmpty
+                    ? IconButton(
+                        icon: Icon(Icons.refresh_rounded, color: _dangerRed),
+                        tooltip: "Reset Screen",
+                        onPressed: _resetScreenState,
+                      )
+                    : null,
               ),
             ),
           ),
         ),
+        if (!isPlanned)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.add_location_alt_outlined),
+              label: const Text("SET DESTINATION"),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _cardNavy,
+                side: BorderSide(color: _cardNavy),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+              onPressed: () async {
+                setState(() {
+                  _isSelectionMode = true;
+                });
+                if (_currentUserLocation != null) {
+                  try {
+                    final controller = await _controllerCompleter.future;
+                    controller.animateCamera(
+                      CameraUpdate.newLatLngZoom(_currentUserLocation!, 16),
+                    );
+                  } catch (_) {}
+                }
+              },
+            ),
+          ),
       ],
     );
   }
@@ -660,7 +1343,10 @@ if(flags.journeyMap){
       children: [
         Container(
           padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(color: _cardNavy, borderRadius: BorderRadius.circular(24)),
+          decoration: BoxDecoration(
+            color: _cardNavy,
+            borderRadius: BorderRadius.circular(24),
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -668,19 +1354,51 @@ if(flags.journeyMap){
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text("DISTANCE", style: TextStyle(color: Colors.white60, fontSize: 10)),
+                    Text(
+                      "DISTANCE",
+                      style: TextStyle(color: Colors.white60, fontSize: 10),
+                    ),
                     const SizedBox(height: 8),
-                    Text(_distanceDisplay, style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold)),
+                    Text(
+                      _distanceDisplay,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
               ),
-              InkWell(
+              // 🔥 UPDATED: NAVIGATE BUTTON (Google Maps)
+              GestureDetector(
                 onTap: _launchGoogleMapsNavigation,
-                borderRadius: BorderRadius.circular(50),
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: Colors.white12, shape: BoxShape.circle),
-                  child: const Icon(Icons.near_me_rounded, color: Colors.white, size: 28),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white12,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.directions,
+                        color: Colors.white,
+                        size: 28,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      "NAVIGATE",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -694,8 +1412,13 @@ if(flags.journeyMap){
             Expanded(
               child: Text(
                 _destinationController.text.toUpperCase(),
-                style: TextStyle(fontWeight: FontWeight.bold, color: _textDark, fontSize: 12),
-                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: _textDark,
+                  fontSize: 12,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -712,24 +1435,47 @@ class _StartJourneySlider extends StatelessWidget {
   final Color cardNavy;
   final Color dangerRed;
 
-  const _StartJourneySlider({super.key, required this.isJourneyActive, required this.onSlideAction, required this.canStart, required this.cardNavy, required this.dangerRed});
+  const _StartJourneySlider({
+    super.key,
+    required this.isJourneyActive,
+    required this.onSlideAction,
+    required this.canStart,
+    required this.cardNavy,
+    required this.dangerRed,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final String slideText = isJourneyActive ? 'SLIDE TO END VISIT' : 'SLIDE TO START';
+    final String slideText = isJourneyActive
+        ? 'SLIDE TO END VISIT'
+        : 'SLIDE TO START';
     final Color outerColor = isJourneyActive ? dangerRed : cardNavy;
-    final Icon sliderIcon = isJourneyActive ? Icon(Icons.stop_rounded, color: dangerRed) : Icon(Icons.arrow_forward_rounded, color: cardNavy);
+    final Icon sliderIcon = isJourneyActive
+        ? Icon(Icons.stop_rounded, color: dangerRed)
+        : Icon(Icons.arrow_forward_rounded, color: cardNavy);
     final bool isEnabled = canStart || isJourneyActive;
 
     return SlideAction(
-      onSubmit: isEnabled ? () async { await onSlideAction(); return null; } : null,
+      onSubmit: isEnabled
+          ? () async {
+              await onSlideAction();
+              return null;
+            }
+          : null,
       innerColor: Colors.white,
       outerColor: isEnabled ? outerColor : Colors.grey[300],
       sliderButtonIcon: sliderIcon,
       text: isEnabled ? slideText : 'LOADING DATA...',
       enabled: isEnabled,
-      textStyle: TextStyle(color: isEnabled ? Colors.white : Colors.grey[500], fontSize: 14, fontWeight: FontWeight.w900, letterSpacing: 1.0),
-      borderRadius: 20, elevation: 0, height: 64,
+      textStyle: TextStyle(
+        color: isEnabled ? Colors.white : Colors.grey[500],
+        fontSize: 14,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.0,
+      ),
+      borderRadius: 20,
+      elevation: 0,
+      height: 64,
     );
   }
 }

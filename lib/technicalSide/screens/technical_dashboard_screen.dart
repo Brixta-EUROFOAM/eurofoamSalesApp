@@ -69,19 +69,22 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       _checkAttendanceStatus();
     }
   }
+
   void _toast(String message, {bool isError = false}) {
     if (!mounted) return;
-    
+
     // ⚡ Clear previous snackbars so the new one feels instant
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
           message,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
-        backgroundColor: isError ? Colors.redAccent : const Color(0xFF10B981), // Emerald for success
+        backgroundColor: isError
+            ? Colors.redAccent
+            : const Color(0xFF10B981), // Emerald for success
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -132,23 +135,125 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     return image == null ? null : File(image.path);
   }
 
+  // --- 📢 PROMINENT DISCLOSURE DIALOG ---
+  Future<bool> _showLocationDisclosureDialog() async {
+    return await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.location_on, color: _cardNavy),
+                const SizedBox(width: 8),
+                const Text("Location Access"),
+              ],
+            ),
+            content: const Text(
+              "To mark your attendance accurately, this app collects location data "
+              "to verify you are at the designated work area.\n\n"
+              "This data is collected only when you tap 'Check In' or 'Check Out'.",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("DENY", style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: _cardNavy),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text(
+                  "ACCEPT",
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false; // Default to false if dismissed
+  }
+
+  // --- ⚙️ SETTINGS DIALOG (If permanently denied) ---
+  void _showSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Permission Required"),
+        content: const Text(
+          "Location permission is permanently denied. Please enable it in App Settings to mark attendance.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("CANCEL"),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Geolocator.openAppSettings();
+            },
+            child: const Text(
+              "OPEN SETTINGS",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<Position?> _getCurrentPosition() async {
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    bool serviceEnabled;
+    LocationPermission permission;
+
+    // 1. Check if GPS is on
+    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _toast(
+        "Location services are disabled. Please enable GPS.",
+        isError: true,
+      );
+      return null;
+    }
+
+    // 2. Check Permission Status
+    permission = await Geolocator.checkPermission();
+
+    if (permission == LocationPermission.denied) {
+      // 🛑 SHOW PROMINENT DISCLOSURE BEFORE REQUESTING (Crucial for Play Store)
       if (!mounted) return null;
-      if (!serviceEnabled) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location services are disabled.')),
-        );
+      final bool userAgreed = await _showLocationDisclosureDialog();
+
+      if (!userAgreed) {
+        _toast("Location is required for Attendance.", isError: true);
         return null;
       }
-      return await Geolocator.getCurrentPosition();
+
+      // 3. Request Permission
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        _toast("Location permission denied.", isError: true);
+        return null;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      // 4. Handle "Don't Ask Again"
+      if (mounted) _showSettingsDialog();
+      return null;
+    }
+
+    // 5. Get Position (High Accuracy for Attendance)
+    try {
+      return await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
     } catch (e) {
+      debugPrint("Error getting position: $e");
       return null;
     }
   }
 
-Future<void> _handleCheckIn() async {
+  Future<void> _handleCheckIn() async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     scaffoldMessenger.removeCurrentSnackBar(); // Instant UI cleanup
 
@@ -161,13 +266,13 @@ Future<void> _handleCheckIn() async {
 
     try {
       // 🚀 THE PARALLEL POWER-MOVE
-      // We start GPS and Upload at the SAME TIME. 
+      // We start GPS and Upload at the SAME TIME.
       // We don't wait for GPS to finish before starting Upload.
       debugPrint("⚡ [Parallel] Starting GPS and Upload simultaneously...");
-      
+
       final results = await Future.wait([
         _getCurrentPosition().timeout(const Duration(seconds: 10)), // Task 0
-        _apiService.uploadImageToR2(imageFile),                    // Task 1
+        _apiService.uploadImageToR2(imageFile), // Task 1
       ]);
 
       final Position? position = results[0] as Position?;
@@ -176,7 +281,7 @@ Future<void> _handleCheckIn() async {
       if (position == null) throw Exception("Location verification failed.");
 
       // 3. OPTIMISTIC FINISH
-      // We have the data. Tell the user it's done NOW, 
+      // We have the data. Tell the user it's done NOW,
       // while the API call finishes in the background.
       final checkInData = {
         'userId': int.parse(widget.employee.id),
@@ -191,27 +296,32 @@ Future<void> _handleCheckIn() async {
 
       // 🔴 Fire and Forget (Background API)
       _apiService.checkIn(checkInData).then((newAtt) {
-         if (mounted) {
-           setState(() {
-             _isCheckedIn = true;
-             _lastCheckInTime = newAtt.createdAt;
-           });
-         }
+        if (mounted) {
+          setState(() {
+            _isCheckedIn = true;
+            _lastCheckInTime = newAtt.createdAt;
+          });
+        }
       });
 
       // UI Feedback is instant
       scaffoldMessenger.showSnackBar(
-        const SnackBar(content: Text('Check-in successful!'), backgroundColor: Colors.green)
+        const SnackBar(
+          content: Text('Check-in successful!'),
+          backgroundColor: Colors.green,
+        ),
       );
-
     } catch (e) {
       debugPrint("🚨 Error: $e");
-      scaffoldMessenger.showSnackBar(SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red));
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
+      );
     } finally {
       if (mounted) setState(() => _isCheckingIn = false);
     }
   }
-Future<void> _handleCheckOut() async {
+
+  Future<void> _handleCheckOut() async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     scaffoldMessenger.removeCurrentSnackBar(); // ⚡ Instant UI Cleanup
 
@@ -219,7 +329,10 @@ Future<void> _handleCheckOut() async {
     if (_lastCheckInTime != null) {
       final difference = DateTime.now().difference(_lastCheckInTime!);
       if (difference.inMinutes < 30) {
-        _toast("Wait ${30 - difference.inMinutes} more minute(s)", isError: true);
+        _toast(
+          "Wait ${30 - difference.inMinutes} more minute(s)",
+          isError: true,
+        );
         return;
       }
     }
@@ -235,7 +348,7 @@ Future<void> _handleCheckOut() async {
 
     try {
       debugPrint("🚀 [OUT-TRACE 2] Starting GPS and Upload in PARALLEL...");
-      
+
       // 💡 CONCURRENCY: We fire both tasks at the exact same time.
       final results = await Future.wait([
         _getCurrentPosition().timeout(
@@ -265,27 +378,36 @@ Future<void> _handleCheckOut() async {
 
       // 🔴 Fire and Forget: Send to API in the background.
       // We don't 'await' this before showing success to the user.
-      _apiService.checkOut(checkOutData).then((_) {
-        if (mounted) setState(() => _isCheckedIn = false);
-        debugPrint("🏁 [OUT-TRACE 4] Backend Persisted.");
-      }).catchError((e) {
-        _toast("Backend Sync Failed: $e", isError: true);
-      });
+      _apiService
+          .checkOut(checkOutData)
+          .then((_) {
+            if (mounted) setState(() => _isCheckedIn = false);
+            debugPrint("🏁 [OUT-TRACE 4] Backend Persisted.");
+          })
+          .catchError((e) {
+            _toast("Backend Sync Failed: $e", isError: true);
+          });
 
       // 🟢 UI FEEDBACK: Show success the moment the heavy work is done
       scaffoldMessenger.showSnackBar(
-        const SnackBar(content: Text('Checked out successfully!'), backgroundColor: Colors.blue),
+        const SnackBar(
+          content: Text('Checked out successfully!'),
+          backgroundColor: Colors.blue,
+        ),
       );
-
     } catch (e) {
       debugPrint("🚨 [OUT-CRITICAL ERROR] $e");
       scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text('Check-out failed: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Check-out failed: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
       if (mounted) setState(() => _isCheckingOut = false);
     }
   }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
