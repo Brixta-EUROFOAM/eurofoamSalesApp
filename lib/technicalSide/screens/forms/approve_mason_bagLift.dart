@@ -10,6 +10,180 @@ import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/technicalSide/models/sites_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:camera/camera.dart'; // 🟢 ADD THIS
+
+// ---------------------------------------------------------------------------
+// 🟢 INTERNAL CAMERA SCREEN (Copy to bottom of technical_dashboard_screen.dart)
+// ---------------------------------------------------------------------------
+class _InlineCameraScreen extends StatefulWidget {
+  const _InlineCameraScreen();
+
+  @override
+  State<_InlineCameraScreen> createState() => _InlineCameraScreenState();
+}
+
+class _InlineCameraScreenState extends State<_InlineCameraScreen> {
+  CameraController? _controller;
+  Future<void>? _initializeControllerFuture;
+  bool _isTakingPicture = false;
+  
+  // ⚡ NEW: Store list of cameras to enable switching
+  List<CameraDescription> _cameras = [];
+  int _selectedCameraIdx = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupCameras();
+  }
+
+  // 1. One-time setup: Get all cameras and find the selfie one
+  Future<void> _setupCameras() async {
+    try {
+      _cameras = await availableCameras();
+      if (_cameras.isEmpty) return;
+
+      // Find the index of the front camera, or default to 0 (back)
+      _selectedCameraIdx = _cameras.indexWhere(
+        (c) => c.lensDirection == CameraLensDirection.front
+      );
+      
+      if (_selectedCameraIdx == -1) _selectedCameraIdx = 0;
+
+      // Initialize the selected camera
+      _initCamera(_cameras[_selectedCameraIdx]);
+    } catch (e) {
+      debugPrint("Camera setup error: $e");
+    }
+  }
+
+  // 2. Init specific camera (Re-used when flipping)
+  Future<void> _initCamera(CameraDescription cameraDescription) async {
+    // If a controller exists, dispose it cleanly before creating a new one
+    if (_controller != null) {
+      await _controller!.dispose();
+    }
+
+    _controller = CameraController(
+      cameraDescription,
+      ResolutionPreset.medium,
+      enableAudio: false,
+    );
+
+    setState(() {
+      _initializeControllerFuture = _controller!.initialize();
+    });
+  }
+
+  // 3. The Flip Logic
+  void _toggleCamera() {
+    if (_cameras.length < 2) return;
+
+    final newIndex = (_selectedCameraIdx + 1) % _cameras.length;
+    _selectedCameraIdx = newIndex;
+    _initCamera(_cameras[_selectedCameraIdx]);
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _takePicture() async {
+    if (_controller == null || !_controller!.value.isInitialized || _isTakingPicture) {
+      return;
+    }
+
+    try {
+      setState(() => _isTakingPicture = true);
+      // Optional: Turn flash off to avoid crashes on some low-end devices
+      await _controller!.setFlashMode(FlashMode.off);
+
+      final image = await _controller!.takePicture();
+      
+      if (!mounted) return;
+      Navigator.pop(context, image.path); 
+    } catch (e) {
+      debugPrint("Capture error: $e");
+    } finally {
+      if (mounted) setState(() => _isTakingPicture = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: FutureBuilder<void>(
+        future: _initializeControllerFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done && _controller != null) {
+            return Stack(
+              children: [
+                // 1. Camera Preview
+                Center(child: CameraPreview(_controller!)),
+                
+                // 2. Controls Overlay
+                SafeArea(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // --- TOP BAR: Close & Flip ---
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Close Button
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                            
+                            // Flip Button (Hidden if only 1 camera exists)
+                            if (_cameras.length > 1)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.flip_camera_ios_outlined, 
+                                  color: Colors.white, 
+                                  size: 30
+                                ),
+                                onPressed: _toggleCamera,
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      // --- BOTTOM BAR: Shutter Button ---
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 30),
+                        child: InkWell(
+                          onTap: _takePicture,
+                          child: Container(
+                            height: 80, 
+                            width: 80,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 4),
+                              color: _isTakingPicture ? Colors.white : Colors.white24,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          } else {
+            return const Center(child: CircularProgressIndicator(color: Colors.white));
+          }
+        },
+      ),
+    );
+  }
+}
 
 class ApproveMasonBagLift extends StatefulWidget {
   final Employee employee;
@@ -62,7 +236,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     // ⚡ RAM RECOVERY: Run after the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadDrafts();
-      // Only check lost data if we have a reviewing ID saved
+      // Only check lost data if we have a reviewing ID saved from a previous session
       if (_reviewingItemId != null && _reviewingItemId!.isNotEmpty) {
         await _checkLostData();
       }
@@ -91,6 +265,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   Future<void> _loadDrafts() async {
     final prefs = await SharedPreferences.getInstance();
     final savedId = prefs.getString('bag_lift_review_id') ?? "";
+    
     if (savedId.isNotEmpty) {
       if (!mounted) return;
       setState(() {
@@ -164,12 +339,14 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
 
   // 📸 FIXED: Robust Lost Data Retrieval
   Future<void> _checkLostData() async {
+    if (!Platform.isAndroid) return;
+    
     try {
       final LostDataResponse response = await _picker.retrieveLostData();
       
-      if (response.isEmpty) return;
+      if (response.isEmpty || response.file == null) return;
 
-      if (response.file != null && _reviewingItemId != null) {
+      if (_reviewingItemId != null) {
         if(mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Restoring camera image..."), backgroundColor: _infoBlue),
@@ -178,11 +355,10 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
 
         setState(() => _recoveredFile = File(response.file!.path));
 
-        // Wait for list to be ready before finding item
+        // Wait for list to be ready before finding item to re-open dialog
         final list = await _futureLifts;
         try {
           final target = list.firstWhere((item) => item.id == _reviewingItemId);
-          // Re-open dialog automatically
           if (mounted) _showVerificationDialog(target);
         } catch (e) {
           debugPrint("Recovery failed: Item no longer in list");
@@ -277,6 +453,19 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   }
 
   void _showVerificationDialog(MasonBagLift item) {
+    // 🛡️ CRITICAL FIX: Stale Draft Protection
+    // If we are opening a NEW item that doesn't match the one in RAM/Disk,
+    // we must clear the old data so the new dialog is fresh.
+    if (_reviewingItemId != null && _reviewingItemId != item.id) {
+       _recoveredFile = null;
+       _bagCountController.clear();
+       _personNameController.clear();
+       _personPhoneController.clear();
+       _memoController.clear();
+       _selectedSite = null;
+       _selectedDealer = null;
+    }
+
     _reviewingItemId = item.id;
 
     if (_bagCountController.text.isEmpty) {
@@ -319,9 +508,9 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
           }
 
           // 2. Auto-Upload Trigger for Recovered File
+          // We use the local flag `_needsAutoUpload` which was initialized from parent state
           if (_needsAutoUpload && _siteImageFile != null) {
             _needsAutoUpload = false; // Run only once
-            // Run after build to avoid state errors
             WidgetsBinding.instance.addPostFrameCallback((_) {
                _handleUpload(_siteImageFile!);
             });
@@ -331,25 +520,26 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
 
           Future<void> _pickNewImage() async {
             try {
-              // This line might kill the app on low-ram devices
-              final XFile? picked = await _picker.pickImage(
-                source: ImageSource.camera,
-                imageQuality: 50, 
+              // 🟢 REPLACED: Use Inline Camera instead of ImagePicker
+              final String? imagePath = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
               );
               
-              if (picked == null) return;
+              // If user cancelled
+              if (imagePath == null) return;
 
-              // If app survives, update state
+              // Update State
               setStateDialog(() {
-                _siteImageFile = File(picked.path);
+                _siteImageFile = File(imagePath);
               });
               
               // Upload immediately
-              await _handleUpload(File(picked.path));
+              await _handleUpload(File(imagePath));
               _saveDrafts();
 
             } catch (e) {
-              debugPrint("Image picker error: $e");
+              debugPrint("Camera error: $e");
             }
           }
 

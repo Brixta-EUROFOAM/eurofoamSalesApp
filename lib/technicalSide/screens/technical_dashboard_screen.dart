@@ -1,4 +1,3 @@
-// lib/technicalSide/screens/technical_dashboard_screen.dart
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -9,6 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+import 'package:shared_preferences/shared_preferences.dart'; // ⚡ ADDED
+import 'package:camera/camera.dart';// CAMERA BY NATIVE DART
 
 // --- FORMS IMPORTS ---
 import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
@@ -18,6 +19,181 @@ import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_kyc.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_rewards.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/add_site_form.dart';
 import 'package:salesmanapp/technicalSide/screens/all_masons_screen.dart';
+
+
+
+// ---------------------------------------------------------------------------
+// 🟢 INTERNAL CAMERA SCREEN (Copy to bottom of technical_dashboard_screen.dart)
+// ---------------------------------------------------------------------------
+class _InlineCameraScreen extends StatefulWidget {
+  const _InlineCameraScreen();
+
+  @override
+  State<_InlineCameraScreen> createState() => _InlineCameraScreenState();
+}
+
+class _InlineCameraScreenState extends State<_InlineCameraScreen> {
+  CameraController? _controller;
+  Future<void>? _initializeControllerFuture;
+  bool _isTakingPicture = false;
+  
+  // ⚡ NEW: Store list of cameras to enable switching
+  List<CameraDescription> _cameras = [];
+  int _selectedCameraIdx = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupCameras();
+  }
+
+  // 1. One-time setup: Get all cameras and find the selfie one
+  Future<void> _setupCameras() async {
+    try {
+      _cameras = await availableCameras();
+      if (_cameras.isEmpty) return;
+
+      // Find the index of the front camera, or default to 0 (back)
+      _selectedCameraIdx = _cameras.indexWhere(
+        (c) => c.lensDirection == CameraLensDirection.front
+      );
+      
+      if (_selectedCameraIdx == -1) _selectedCameraIdx = 0;
+
+      // Initialize the selected camera
+      _initCamera(_cameras[_selectedCameraIdx]);
+    } catch (e) {
+      debugPrint("Camera setup error: $e");
+    }
+  }
+
+  // 2. Init specific camera (Re-used when flipping)
+  Future<void> _initCamera(CameraDescription cameraDescription) async {
+    // If a controller exists, dispose it cleanly before creating a new one
+    if (_controller != null) {
+      await _controller!.dispose();
+    }
+
+    _controller = CameraController(
+      cameraDescription,
+      ResolutionPreset.medium,
+      enableAudio: false,
+    );
+
+    setState(() {
+      _initializeControllerFuture = _controller!.initialize();
+    });
+  }
+
+  // 3. The Flip Logic
+  void _toggleCamera() {
+    if (_cameras.length < 2) return;
+
+    final newIndex = (_selectedCameraIdx + 1) % _cameras.length;
+    _selectedCameraIdx = newIndex;
+    _initCamera(_cameras[_selectedCameraIdx]);
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _takePicture() async {
+    if (_controller == null || !_controller!.value.isInitialized || _isTakingPicture) {
+      return;
+    }
+
+    try {
+      setState(() => _isTakingPicture = true);
+      // Optional: Turn flash off to avoid crashes on some low-end devices
+      await _controller!.setFlashMode(FlashMode.off);
+
+      final image = await _controller!.takePicture();
+      
+      if (!mounted) return;
+      Navigator.pop(context, image.path); 
+    } catch (e) {
+      debugPrint("Capture error: $e");
+    } finally {
+      if (mounted) setState(() => _isTakingPicture = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: FutureBuilder<void>(
+        future: _initializeControllerFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done && _controller != null) {
+            return Stack(
+              children: [
+                // 1. Camera Preview
+                Center(child: CameraPreview(_controller!)),
+                
+                // 2. Controls Overlay
+                SafeArea(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // --- TOP BAR: Close & Flip ---
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Close Button
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                            
+                            // Flip Button (Hidden if only 1 camera exists)
+                            if (_cameras.length > 1)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.flip_camera_ios_outlined, 
+                                  color: Colors.white, 
+                                  size: 30
+                                ),
+                                onPressed: _toggleCamera,
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      // --- BOTTOM BAR: Shutter Button ---
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 30),
+                        child: InkWell(
+                          onTap: _takePicture,
+                          child: Container(
+                            height: 80, 
+                            width: 80,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 4),
+                              color: _isTakingPicture ? Colors.white : Colors.white24,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          } else {
+            return const Center(child: CircularProgressIndicator(color: Colors.white));
+          }
+        },
+      ),
+    );
+  }
+}
 
 class TechnicalDashboardScreen extends StatefulWidget {
   final Employee employee;
@@ -32,6 +208,8 @@ class TechnicalDashboardScreen extends StatefulWidget {
 class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     with WidgetsBindingObserver {
   final ApiService _apiService = ApiService();
+  final ImagePicker _picker = ImagePicker(); // ⚡ Instantiated once
+
   bool _attendanceEnabled(BuildContext context) {
     final flags = context.read<TechnicalFlags>();
     return flags.attendance;
@@ -58,7 +236,48 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     WidgetsBinding.instance.addObserver(this);
     _setGreeting();
     refreshData();
+
+    // 🚀 PROCESS DEATH RECOVERY
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _attemptAttendanceRecovery();
+    });
   }
+
+  // 🛡️ RECOVERY LOGIC
+  Future<void> _attemptAttendanceRecovery() async {
+    if (!Platform.isAndroid) return;
+
+    final LostDataResponse response = await _picker.retrieveLostData();
+    if (response.isEmpty || response.file == null) return;
+
+    final File recoveredImage = File(response.file!.path);
+    
+    // Check what we were doing before the crash
+    final prefs = await SharedPreferences.getInstance();
+    final String? pendingAction = prefs.getString('attendance_pending_action');
+
+    if (pendingAction == 'check_in') {
+      _toast('Recovering Check-In...');
+      _processCheckIn(recoveredImage);
+    } else if (pendingAction == 'check_out') {
+      _toast('Recovering Check-Out...');
+      _processCheckOut(recoveredImage);
+    }
+    
+    // Clear the flag
+    await prefs.remove('attendance_pending_action');
+  }
+
+  // Helper to set the flag before opening camera
+  // Future<void> _setPendingAction(String action) async {
+  //   final prefs = await SharedPreferences.getInstance();
+  //   await prefs.setString('attendance_pending_action', action);
+  // }
+
+  // Future<void> _clearPendingAction() async {
+  //   final prefs = await SharedPreferences.getInstance();
+  //   await prefs.remove('attendance_pending_action');
+  // }
 
   // Simple refresh to update greeting or check status if needed
   void refreshData() {
@@ -72,10 +291,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
 
   void _toast(String message, {bool isError = false}) {
     if (!mounted) return;
-
-    // ⚡ Clear previous snackbars so the new one feels instant
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -84,7 +300,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         ),
         backgroundColor: isError
             ? Colors.redAccent
-            : const Color(0xFF10B981), // Emerald for success
+            : const Color(0xFF10B981),
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -93,24 +309,29 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     );
   }
 
-  // Fetch today's attendance to restore state and timer
-  Future<void> _checkAttendanceStatus() async {
+Future<void> _checkAttendanceStatus() async {
     try {
       final att = await _apiService.fetchTodaysAttendance(
         int.parse(widget.employee.id),
         role: 'TECHNICAL',
       );
+      
       if (mounted) {
         setState(() {
-          // If checkOutTime is null, they are currently checked in
+          // If checkOutTime is null, they are currently Checked In.
           _isCheckedIn = att.checkOutTime == null;
-          // Store the check-in time for the 30-min logic
           _lastCheckInTime = att.createdAt;
         });
       }
     } catch (e) {
-      // 404 or error means likely not checked in today
-      if (mounted) setState(() => _isCheckedIn = false);
+      debugPrint("⚠️ Status Check Note: $e");
+      
+      // ⚡ ONLY reset to false if it's a 404 (Not Found). 
+      // If it's a network error (SocketException), DO NOT reset state, 
+      // or the user will try to check in again and crash.
+      if (e.toString().contains("404")) {
+         if (mounted) setState(() => _isCheckedIn = false);
+      }
     }
   }
 
@@ -123,19 +344,18 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     } else {
       _greeting = 'Good Evening';
     }
-    ;
   }
 
-  Future<File?> _captureImage() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 50,
-    );
-    return image == null ? null : File(image.path);
-  }
+  // Future<File?> _captureImage() async {
+  //   // ⚡ KEY: imageQuality 50 to save RAM
+  //   final XFile? image = await _picker.pickImage(
+  //     source: ImageSource.camera,
+  //     imageQuality: 50, 
+  //   );
+  //   return image == null ? null : File(image.path);
+  // }
 
-  // --- 📢 PROMINENT DISCLOSURE DIALOG ---
+  // ... (Dialogs and Geolocator Helpers remain the same) ...
   Future<bool> _showLocationDisclosureDialog() async {
     return await showDialog(
           context: context,
@@ -169,10 +389,9 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
             ],
           ),
         ) ??
-        false; // Default to false if dismissed
+        false;
   }
 
-  // --- ⚙️ SETTINGS DIALOG (If permanently denied) ---
   void _showSettingsDialog() {
     showDialog(
       context: context,
@@ -205,21 +424,14 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     bool serviceEnabled;
     LocationPermission permission;
 
-    // 1. Check if GPS is on
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      _toast(
-        "Location services are disabled. Please enable GPS.",
-        isError: true,
-      );
+      _toast("Location services are disabled. Please enable GPS.", isError: true);
       return null;
     }
 
-    // 2. Check Permission Status
     permission = await Geolocator.checkPermission();
-
     if (permission == LocationPermission.denied) {
-      // 🛑 SHOW PROMINENT DISCLOSURE BEFORE REQUESTING (Crucial for Play Store)
       if (!mounted) return null;
       final bool userAgreed = await _showLocationDisclosureDialog();
 
@@ -228,7 +440,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         return null;
       }
 
-      // 3. Request Permission
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         _toast("Location permission denied.", isError: true);
@@ -237,12 +448,10 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     }
 
     if (permission == LocationPermission.deniedForever) {
-      // 4. Handle "Don't Ask Again"
       if (mounted) _showSettingsDialog();
       return null;
     }
 
-    // 5. Get Position (High Accuracy for Attendance)
     try {
       return await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -253,26 +462,42 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     }
   }
 
+  // --- 🟢 CHECK IN FLOW ---
+
+  // 1. Trigger (User Click)
   Future<void> _handleCheckIn() async {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    scaffoldMessenger.removeCurrentSnackBar(); // Instant UI cleanup
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
 
-    // 1. Trigger Camera First (User Input)
-    final imageFile = await _captureImage();
-    if (imageFile == null) return;
+    // 🟢 1. Open Inline Camera (App stays alive)
+    final String? imagePath = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
+    );
 
-    // 2. Start "The Engine"
+    // 2. Handle Cancellation
+    if (imagePath == null) return;
+
+    // 3. Process immediately (No need for complicated recovery logic)
+    await _processCheckIn(File(imagePath));
+  }
+
+  // 2. Processing (Called by Normal Flow OR Recovery Flow)
+// 2. Processing (Called by Normal Flow OR Recovery Flow)
+// 2. Processing (Called by Normal Flow OR Recovery Flow)
+  Future<void> _processCheckIn(File imageFile) async {
+    if (!mounted) return;
+    
+    // ⚡ Instant UI Feedback
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
     setState(() => _isCheckingIn = true);
 
     try {
-      // 🚀 THE PARALLEL POWER-MOVE
-      // We start GPS and Upload at the SAME TIME.
-      // We don't wait for GPS to finish before starting Upload.
       debugPrint("⚡ [Parallel] Starting GPS and Upload simultaneously...");
 
+      // 1. Run GPS and Image Upload in Parallel (Speed Boost)
       final results = await Future.wait([
-        _getCurrentPosition().timeout(const Duration(seconds: 10)), // Task 0
-        _apiService.uploadImageToR2(imageFile), // Task 1
+        _getCurrentPosition().timeout(const Duration(seconds: 10)),
+        _apiService.uploadImageToR2(imageFile),
       ]);
 
       final Position? position = results[0] as Position?;
@@ -280,9 +505,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
 
       if (position == null) throw Exception("Location verification failed.");
 
-      // 3. OPTIMISTIC FINISH
-      // We have the data. Tell the user it's done NOW,
-      // while the API call finishes in the background.
       final checkInData = {
         'userId': int.parse(widget.employee.id),
         'role': 'TECHNICAL',
@@ -294,62 +516,79 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         'inTimeImageCaptured': true,
       };
 
-      // 🔴 Fire and Forget (Background API)
-      _apiService.checkIn(checkInData).then((newAtt) {
-        if (mounted) {
-          setState(() {
-            _isCheckedIn = true;
-            _lastCheckInTime = newAtt.createdAt;
-          });
-        }
-      });
+      // 2. Send to API and AWAIT the result to catch errors
+      final newAtt = await _apiService.checkIn(checkInData);
 
-      // UI Feedback is instant
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('Check-in successful!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      // 3. Success Logic
+      if (mounted) {
+        setState(() {
+          _isCheckedIn = true;
+          _lastCheckInTime = newAtt.createdAt;
+        });
+        _toast('Check-in successful!', isError: false);
+      }
+
     } catch (e) {
       debugPrint("🚨 Error: $e");
-      scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red),
-      );
+
+      // 🛑 CRITICAL FIX: Handle "Already Checked In" specific error
+      if (e.toString().toLowerCase().contains("already checked in")) {
+        
+        _toast("Syncing... You are already checked in.");
+        
+        // Optimistically update UI so user can proceed
+        if (mounted) {
+          setState(() {
+            _isCheckedIn = true; 
+          });
+        }
+        
+        // Fetch actual server time to sync up
+        await _checkAttendanceStatus();
+
+      } else {
+        // Genuine Error
+        _toast('Failed: $e', isError: true);
+      }
     } finally {
       if (mounted) setState(() => _isCheckingIn = false);
     }
   }
+  // --- 🔴 CHECK OUT FLOW ---
 
+  // 1. Trigger (User Click)
   Future<void> _handleCheckOut() async {
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    scaffoldMessenger.removeCurrentSnackBar(); // ⚡ Instant UI Cleanup
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
 
-    // 1. --- 30 MINUTE CHECK ---
     if (_lastCheckInTime != null) {
       final difference = DateTime.now().difference(_lastCheckInTime!);
       if (difference.inMinutes < 30) {
-        _toast(
-          "Wait ${30 - difference.inMinutes} more minute(s)",
-          isError: true,
-        );
+        _toast("Wait ${30 - difference.inMinutes} more minute(s)", isError: true);
         return;
       }
     }
 
-    // 2. --- STEP 1: CAMERA (User Interaction) ---
-    // We do this first because it requires the user's attention.
-    debugPrint("📸 [OUT-TRACE 1] Opening Camera...");
-    final imageFile = await _captureImage();
-    if (imageFile == null) return;
+    // 🟢 1. Open Inline Camera
+    final String? imagePath = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
+    );
 
-    // 3. --- STEP 2: START THE ENGINE (Parallel Tasks) ---
+    // 2. Handle Cancellation
+    if (imagePath == null) return;
+
+    // 3. Process
+    await _processCheckOut(File(imagePath));
+  }
+
+  // 2. Processing (Called by Normal Flow OR Recovery Flow)
+  Future<void> _processCheckOut(File imageFile) async {
+    if (!mounted) return;
     setState(() => _isCheckingOut = true);
 
     try {
       debugPrint("🚀 [OUT-TRACE 2] Starting GPS and Upload in PARALLEL...");
 
-      // 💡 CONCURRENCY: We fire both tasks at the exact same time.
       final results = await Future.wait([
         _getCurrentPosition().timeout(
           const Duration(seconds: 10),
@@ -358,14 +597,11 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         _apiService.uploadImageToR2(imageFile),
       ]);
 
-      // Extract results from the list
       final Position? position = results[0] as Position?;
       final String imageUrl = results[1] as String;
 
       if (position == null) throw Exception("GPS returned null.");
-      debugPrint("✅ [OUT-TRACE 3] Parallel Tasks Finished.");
 
-      // 4. --- STEP 3: OPTIMISTIC FINISH ---
       final checkOutData = {
         'userId': int.parse(widget.employee.id),
         'role': 'TECHNICAL',
@@ -376,33 +612,19 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         'outTimeLongitude': position.longitude,
       };
 
-      // 🔴 Fire and Forget: Send to API in the background.
-      // We don't 'await' this before showing success to the user.
       _apiService
           .checkOut(checkOutData)
           .then((_) {
             if (mounted) setState(() => _isCheckedIn = false);
-            debugPrint("🏁 [OUT-TRACE 4] Backend Persisted.");
           })
           .catchError((e) {
             _toast("Backend Sync Failed: $e", isError: true);
           });
 
-      // 🟢 UI FEEDBACK: Show success the moment the heavy work is done
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('Checked out successfully!'),
-          backgroundColor: Colors.blue,
-        ),
-      );
+      _toast('Checked out successfully!', isError: false); // Blue equivalent
     } catch (e) {
       debugPrint("🚨 [OUT-CRITICAL ERROR] $e");
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text('Check-out failed: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _toast('Check-out failed: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isCheckingOut = false);
     }
@@ -425,7 +647,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   void _showMasonActions(BuildContext context) {
     final flags = context.read<TechnicalFlags>();
     if (!flags.masonManagement) return;
-    // (Existing Code Hidden for Brevity)
+    
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -494,7 +716,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                 icon: Icons.groups_rounded,
                 title: "My Masons List",
                 subtitle: "View all linked masons & history",
-                iconBg: const Color(0xFFF0FDF4), // Light Green bg
+                iconBg: const Color(0xFFF0FDF4),
                 iconColor: Colors.teal,
                 onTap: () {
                   Navigator.pop(context);
@@ -508,7 +730,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   }
 
   void _showTechnicalActions(BuildContext context) {
-    // (Existing Code Hidden for Brevity)
     final flags = context.read<TechnicalFlags>();
     if (!flags.technicalOps) return;
     showModalBottomSheet(
@@ -590,7 +811,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     return Scaffold(
       backgroundColor: _bgLight,
       appBar: AppBar(
-        // (AppBar code remains exactly the same)
         backgroundColor: _bgLight,
         elevation: 0,
         automaticallyImplyLeading: false,
@@ -730,7 +950,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                             ),
                             const SizedBox(height: 32),
 
-                            // --- UPDATED GLASSMORPHISM BUTTONS ROW ---
                             Row(
                               children: [
                                 // CHECK IN BUTTON
@@ -739,9 +958,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                                     label: "CHECK IN",
                                     icon: Icons.arrow_downward,
                                     isLoading: _isCheckingIn,
-                                    // If NOT checked in, this is Active (White). If checked in, it becomes Inactive (Glass).
                                     isActive: !_isCheckedIn,
-                                    // If already checked in (or currently loading), disable click
                                     onTap:
                                         (_isCheckedIn ||
                                             _isCheckingIn ||
@@ -758,9 +975,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                                     label: "CHECK OUT",
                                     icon: Icons.arrow_upward,
                                     isLoading: _isCheckingOut,
-                                    // If Checked In, this becomes Active (White).
                                     isActive: _isCheckedIn,
-                                    // If NOT checked in (or currently loading), disable click
                                     onTap:
                                         (!_isCheckedIn ||
                                             _isCheckingIn ||
@@ -771,8 +986,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                                 ),
                               ],
                             ),
-
-                            // --- END UPDATED ROW ---
                           ],
                         ),
                       ),
@@ -847,7 +1060,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            // Logic: If active, White background. If inactive, Glass/Transparent background.
             color: isActive ? Colors.white : Colors.white.withOpacity(0.15),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: Colors.white.withOpacity(0.2)),

@@ -14,6 +14,181 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:camera/camera.dart';
+
+
+// ---------------------------------------------------------------------------
+// 🟢 INTERNAL CAMERA SCREEN (Copy to bottom of technical_dashboard_screen.dart)
+// ---------------------------------------------------------------------------
+class _InlineCameraScreen extends StatefulWidget {
+  const _InlineCameraScreen();
+
+  @override
+  State<_InlineCameraScreen> createState() => _InlineCameraScreenState();
+}
+
+class _InlineCameraScreenState extends State<_InlineCameraScreen> {
+  CameraController? _controller;
+  Future<void>? _initializeControllerFuture;
+  bool _isTakingPicture = false;
+  
+  // ⚡ NEW: Store list of cameras to enable switching
+  List<CameraDescription> _cameras = [];
+  int _selectedCameraIdx = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupCameras();
+  }
+
+  // 1. One-time setup: Get all cameras and find the selfie one
+  Future<void> _setupCameras() async {
+    try {
+      _cameras = await availableCameras();
+      if (_cameras.isEmpty) return;
+
+      // Find the index of the front camera, or default to 0 (back)
+      _selectedCameraIdx = _cameras.indexWhere(
+        (c) => c.lensDirection == CameraLensDirection.front
+      );
+      
+      if (_selectedCameraIdx == -1) _selectedCameraIdx = 0;
+
+      // Initialize the selected camera
+      _initCamera(_cameras[_selectedCameraIdx]);
+    } catch (e) {
+      debugPrint("Camera setup error: $e");
+    }
+  }
+
+  // 2. Init specific camera (Re-used when flipping)
+  Future<void> _initCamera(CameraDescription cameraDescription) async {
+    // If a controller exists, dispose it cleanly before creating a new one
+    if (_controller != null) {
+      await _controller!.dispose();
+    }
+
+    _controller = CameraController(
+      cameraDescription,
+      ResolutionPreset.medium,
+      enableAudio: false,
+    );
+
+    setState(() {
+      _initializeControllerFuture = _controller!.initialize();
+    });
+  }
+
+  // 3. The Flip Logic
+  void _toggleCamera() {
+    if (_cameras.length < 2) return;
+
+    final newIndex = (_selectedCameraIdx + 1) % _cameras.length;
+    _selectedCameraIdx = newIndex;
+    _initCamera(_cameras[_selectedCameraIdx]);
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _takePicture() async {
+    if (_controller == null || !_controller!.value.isInitialized || _isTakingPicture) {
+      return;
+    }
+
+    try {
+      setState(() => _isTakingPicture = true);
+      // Optional: Turn flash off to avoid crashes on some low-end devices
+      await _controller!.setFlashMode(FlashMode.off);
+
+      final image = await _controller!.takePicture();
+      
+      if (!mounted) return;
+      Navigator.pop(context, image.path); 
+    } catch (e) {
+      debugPrint("Capture error: $e");
+    } finally {
+      if (mounted) setState(() => _isTakingPicture = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: FutureBuilder<void>(
+        future: _initializeControllerFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.done && _controller != null) {
+            return Stack(
+              children: [
+                // 1. Camera Preview
+                Center(child: CameraPreview(_controller!)),
+                
+                // 2. Controls Overlay
+                SafeArea(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // --- TOP BAR: Close & Flip ---
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            // Close Button
+                            IconButton(
+                              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                              onPressed: () => Navigator.pop(context),
+                            ),
+                            
+                            // Flip Button (Hidden if only 1 camera exists)
+                            if (_cameras.length > 1)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.flip_camera_ios_outlined, 
+                                  color: Colors.white, 
+                                  size: 30
+                                ),
+                                onPressed: _toggleCamera,
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      // --- BOTTOM BAR: Shutter Button ---
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 30),
+                        child: InkWell(
+                          onTap: _takePicture,
+                          child: Container(
+                            height: 80, 
+                            width: 80,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 4),
+                              color: _isTakingPicture ? Colors.white : Colors.white24,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          } else {
+            return const Center(child: CircularProgressIndicator(color: Colors.white));
+          }
+        },
+      ),
+    );
+  }
+}
 
 class CreateTvrScreen extends StatefulWidget {
   final Employee employee;
@@ -679,33 +854,25 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   Future<void> _handleCheckIn() async {
-    // 1. Save drafts before opening camera
     await _saveDrafts();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pending_camera_action', 'check_in'); // Mark intention
+
+    // 🟢 Use the Internal Camera Class
+    final String? imagePath = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
+    );
+
+    if (imagePath == null) return; // User cancelled
 
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     setState(() => _isUploadingImage = true);
-    
+
     try {
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
-      
-      // 2. Pick Image
-      final pickedFile = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 60,
-      );
 
-      // If user cancels, clear flag
-      if (pickedFile == null) {
-        if (mounted) setState(() => _isUploadingImage = false);
-        await prefs.remove('pending_camera_action');
-        return;
-      }
-
-      final imageFile = File(pickedFile.path);
+      final imageFile = File(imagePath);
       if (mounted) setState(() => _inTimeImageFile = imageFile);
 
       final imageUrl = await _apiService.uploadImageToR2(imageFile);
@@ -718,10 +885,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           _latitudeController.text = position.latitude.toStringAsFixed(6);
           _longitudeController.text = position.longitude.toStringAsFixed(6);
         });
-        
-        // Clear camera action flag on success
-        await prefs.remove('pending_camera_action');
-        
+
         scaffoldMessenger.showSnackBar(
           const SnackBar(
             content: Text('Checked-In successfully.'),
@@ -732,10 +896,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     } catch (e) {
       if (mounted) {
         scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text('Check-In Failed: $e'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Check-In Failed: $e'), backgroundColor: Colors.red),
         );
       }
     } finally {
@@ -744,20 +905,16 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   Future<void> _pickSitePhoto() async {
-    // 1. Save drafts
     await _saveDrafts();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pending_camera_action', 'site_photo');
 
-    final pickedFile = await _imagePicker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 60,
+    // 🟢 Use the Internal Camera Class
+    final String? imagePath = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
     );
-    
-    // Clear flag if user canceled or returned
-    if (pickedFile == null) {
-       await prefs.remove('pending_camera_action');
-       return;
+
+    if (imagePath != null) {
+      setState(() => _sitePhotoFile = File(imagePath));
     }
   }
 
@@ -944,15 +1101,17 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     try {
-      final pickedOutFile = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 60,
-      );
+     // 🟢 REPLACED CHECKOUT CAMERA LOGIC
       String? outTimeImageUrl;
-      if (pickedOutFile != null) {
-        outTimeImageUrl = await _apiService.uploadImageToR2(
-          File(pickedOutFile.path),
-        );
+      
+      // Navigate to our internal camera screen to keep app alive
+      final String? pickedOutPath = await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
+      );
+
+      if (pickedOutPath != null) {
+        outTimeImageUrl = await _apiService.uploadImageToR2(File(pickedOutPath));
       }
 
       String? sitePhotoUrl;
