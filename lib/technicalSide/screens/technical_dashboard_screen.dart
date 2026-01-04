@@ -9,7 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // ⚡ ADDED
-import 'package:camera/camera.dart';// CAMERA BY NATIVE DART
+import 'package:camera/camera.dart'; // CAMERA BY NATIVE DART
 
 // --- FORMS IMPORTS ---
 import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
@@ -19,8 +19,6 @@ import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_kyc.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_rewards.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/add_site_form.dart';
 import 'package:salesmanapp/technicalSide/screens/all_masons_screen.dart';
-
-
 
 // ---------------------------------------------------------------------------
 // 🟢 INTERNAL CAMERA SCREEN (Copy to bottom of technical_dashboard_screen.dart)
@@ -36,7 +34,7 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   bool _isTakingPicture = false;
-  
+
   // ⚡ NEW: Store list of cameras to enable switching
   List<CameraDescription> _cameras = [];
   int _selectedCameraIdx = 0;
@@ -55,9 +53,9 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
 
       // Find the index of the front camera, or default to 0 (back)
       _selectedCameraIdx = _cameras.indexWhere(
-        (c) => c.lensDirection == CameraLensDirection.front
+        (c) => c.lensDirection == CameraLensDirection.front,
       );
-      
+
       if (_selectedCameraIdx == -1) _selectedCameraIdx = 0;
 
       // Initialize the selected camera
@@ -101,7 +99,9 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
   }
 
   Future<void> _takePicture() async {
-    if (_controller == null || !_controller!.value.isInitialized || _isTakingPicture) {
+    if (_controller == null ||
+        !_controller!.value.isInitialized ||
+        _isTakingPicture) {
       return;
     }
 
@@ -111,9 +111,9 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
       await _controller!.setFlashMode(FlashMode.off);
 
       final image = await _controller!.takePicture();
-      
+
       if (!mounted) return;
-      Navigator.pop(context, image.path); 
+      Navigator.pop(context, image.path);
     } catch (e) {
       debugPrint("Capture error: $e");
     } finally {
@@ -128,12 +128,13 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
       body: FutureBuilder<void>(
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done && _controller != null) {
+          if (snapshot.connectionState == ConnectionState.done &&
+              _controller != null) {
             return Stack(
               children: [
                 // 1. Camera Preview
                 Center(child: CameraPreview(_controller!)),
-                
+
                 // 2. Controls Overlay
                 SafeArea(
                   child: Column(
@@ -147,17 +148,21 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
                           children: [
                             // Close Button
                             IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                                size: 30,
+                              ),
                               onPressed: () => Navigator.pop(context),
                             ),
-                            
+
                             // Flip Button (Hidden if only 1 camera exists)
                             if (_cameras.length > 1)
                               IconButton(
                                 icon: const Icon(
-                                  Icons.flip_camera_ios_outlined, 
-                                  color: Colors.white, 
-                                  size: 30
+                                  Icons.flip_camera_ios_outlined,
+                                  color: Colors.white,
+                                  size: 30,
                                 ),
                                 onPressed: _toggleCamera,
                               ),
@@ -171,12 +176,14 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
                         child: InkWell(
                           onTap: _takePicture,
                           child: Container(
-                            height: 80, 
+                            height: 80,
                             width: 80,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(color: Colors.white, width: 4),
-                              color: _isTakingPicture ? Colors.white : Colors.white24,
+                              color: _isTakingPicture
+                                  ? Colors.white
+                                  : Colors.white24,
                             ),
                           ),
                         ),
@@ -187,7 +194,9 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
               ],
             );
           } else {
-            return const Center(child: CircularProgressIndicator(color: Colors.white));
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            );
           }
         },
       ),
@@ -218,6 +227,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   bool _isCheckingIn = false;
   bool _isCheckingOut = false;
   bool _isCheckedIn = false;
+  bool _isDayComplete = false;
 
   DateTime? _lastCheckInTime;
 
@@ -251,7 +261,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     if (response.isEmpty || response.file == null) return;
 
     final File recoveredImage = File(response.file!.path);
-    
+
     // Check what we were doing before the crash
     final prefs = await SharedPreferences.getInstance();
     final String? pendingAction = prefs.getString('attendance_pending_action');
@@ -263,7 +273,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       _toast('Recovering Check-Out...');
       _processCheckOut(recoveredImage);
     }
-    
+
     // Clear the flag
     await prefs.remove('attendance_pending_action');
   }
@@ -298,9 +308,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
           message,
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
-        backgroundColor: isError
-            ? Colors.redAccent
-            : const Color(0xFF10B981),
+        backgroundColor: isError ? Colors.redAccent : const Color(0xFF10B981),
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -309,28 +317,35 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     );
   }
 
-Future<void> _checkAttendanceStatus() async {
+  Future<void> _checkAttendanceStatus() async {
     try {
       final att = await _apiService.fetchTodaysAttendance(
         int.parse(widget.employee.id),
         role: 'TECHNICAL',
       );
-      
+
       if (mounted) {
         setState(() {
-          // If checkOutTime is null, they are currently Checked In.
-          _isCheckedIn = att.checkOutTime == null;
+          // 1. If checkOutTime exists, they are done for the day
+          if (att.checkOutTime != null) {
+            _isCheckedIn = false;
+            _isDayComplete = true;
+          } else {
+            // 2. If no checkOutTime, they are currently checked in
+            _isCheckedIn = true;
+            _isDayComplete = false;
+          }
           _lastCheckInTime = att.createdAt;
         });
       }
     } catch (e) {
-      debugPrint("⚠️ Status Check Note: $e");
-      
-      // ⚡ ONLY reset to false if it's a 404 (Not Found). 
-      // If it's a network error (SocketException), DO NOT reset state, 
-      // or the user will try to check in again and crash.
       if (e.toString().contains("404")) {
-         if (mounted) setState(() => _isCheckedIn = false);
+        if (mounted) {
+          setState(() {
+            _isCheckedIn = false;
+            _isDayComplete = false; // New day, or no record yet
+          });
+        }
       }
     }
   }
@@ -350,7 +365,7 @@ Future<void> _checkAttendanceStatus() async {
   //   // ⚡ KEY: imageQuality 50 to save RAM
   //   final XFile? image = await _picker.pickImage(
   //     source: ImageSource.camera,
-  //     imageQuality: 50, 
+  //     imageQuality: 50,
   //   );
   //   return image == null ? null : File(image.path);
   // }
@@ -426,7 +441,10 @@ Future<void> _checkAttendanceStatus() async {
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      _toast("Location services are disabled. Please enable GPS.", isError: true);
+      _toast(
+        "Location services are disabled. Please enable GPS.",
+        isError: true,
+      );
       return null;
     }
 
@@ -466,7 +484,33 @@ Future<void> _checkAttendanceStatus() async {
 
   // 1. Trigger (User Click)
   Future<void> _handleCheckIn() async {
+    if (_isDayComplete || _isCheckedIn) return;
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
+
+    // 🛑 PRE-FLIGHT CHECK 1: Already Checked In?
+    if (_isCheckedIn) {
+      _toast("You are already checked in.", isError: true);
+      return;
+    }
+
+    // 🛑 PRE-FLIGHT CHECK 2: Already Finished Day?
+    // We call the API one last time to be absolutely sure before opening camera
+    setState(() => _isCheckingIn = true);
+    await _checkAttendanceStatus();
+    setState(() => _isCheckingIn = false);
+
+    if (_isDayComplete) {
+      _toast(
+        "You have already completed your attendance for today.",
+        isError: true,
+      );
+      return;
+    }
+
+    if (_isCheckedIn) {
+      _toast("Syncing: You are already checked in.");
+      return;
+    }
 
     // 🟢 1. Open Inline Camera (App stays alive)
     final String? imagePath = await Navigator.push(
@@ -482,19 +526,15 @@ Future<void> _checkAttendanceStatus() async {
   }
 
   // 2. Processing (Called by Normal Flow OR Recovery Flow)
-// 2. Processing (Called by Normal Flow OR Recovery Flow)
-// 2. Processing (Called by Normal Flow OR Recovery Flow)
   Future<void> _processCheckIn(File imageFile) async {
     if (!mounted) return;
-    
-    // ⚡ Instant UI Feedback
+
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
     setState(() => _isCheckingIn = true);
 
     try {
-      debugPrint("⚡ [Parallel] Starting GPS and Upload simultaneously...");
+      debugPrint("⚡ [Parallel] Starting GPS and Upload...");
 
-      // 1. Run GPS and Image Upload in Parallel (Speed Boost)
       final results = await Future.wait([
         _getCurrentPosition().timeout(const Duration(seconds: 10)),
         _apiService.uploadImageToR2(imageFile),
@@ -516,38 +556,40 @@ Future<void> _checkAttendanceStatus() async {
         'inTimeImageCaptured': true,
       };
 
-      // 2. Send to API and AWAIT the result to catch errors
       final newAtt = await _apiService.checkIn(checkInData);
 
-      // 3. Success Logic
       if (mounted) {
         setState(() {
           _isCheckedIn = true;
+          _isDayComplete = false; // ⚡ ADD THIS LINE: Reset day complete status
           _lastCheckInTime = newAtt.createdAt;
         });
         _toast('Check-in successful!', isError: false);
       }
-
     } catch (e) {
-      debugPrint("🚨 Error: $e");
+      debugPrint("🚨 Check-In Error: $e");
 
-      // 🛑 CRITICAL FIX: Handle "Already Checked In" specific error
-      if (e.toString().toLowerCase().contains("already checked in")) {
-        
-        _toast("Syncing... You are already checked in.");
-        
-        // Optimistically update UI so user can proceed
-        if (mounted) {
-          setState(() {
-            _isCheckedIn = true; 
-          });
-        }
-        
-        // Fetch actual server time to sync up
+      // 🛑 FIXED LOGIC:
+      // Don't blindly set true. Check if the server actually thinks we are IN.
+      if (e.toString().toLowerCase().contains("already checked in") ||
+          e.toString().toLowerCase().contains("exists")) {
+        _toast("Syncing status...");
+
+        // 1. Fetch the TRUTH from the server
         await _checkAttendanceStatus();
 
+        // 2. Only say "Checked In" if the server confirms it
+        if (_isCheckedIn) {
+          _toast("Resumed session: You were already checked in.");
+        } else {
+          // If _checkAttendanceStatus set it to false, it means the user
+          // has already finished their day (Checked In -> Checked Out).
+          _toast(
+            "You have already completed your attendance for today.",
+            isError: true,
+          );
+        }
       } else {
-        // Genuine Error
         _toast('Failed: $e', isError: true);
       }
     } finally {
@@ -558,12 +600,23 @@ Future<void> _checkAttendanceStatus() async {
 
   // 1. Trigger (User Click)
   Future<void> _handleCheckOut() async {
+    if (_isDayComplete || !_isCheckedIn) return;
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
 
+    // 🛑 PRE-FLIGHT CHECK 1: Are they even checked in?
+    if (!_isCheckedIn) {
+      _toast("You cannot check out without checking in first.", isError: true);
+      return;
+    }
+
+    // 1 hr time lock
     if (_lastCheckInTime != null) {
       final difference = DateTime.now().difference(_lastCheckInTime!);
-      if (difference.inMinutes < 30) {
-        _toast("Wait ${30 - difference.inMinutes} more minute(s)", isError: true);
+      if (difference.inMinutes < 60) {
+        _toast(
+          "Wait ${60 - difference.inMinutes} more minute(s)",
+          isError: true,
+        );
         return;
       }
     }
@@ -587,7 +640,7 @@ Future<void> _checkAttendanceStatus() async {
     setState(() => _isCheckingOut = true);
 
     try {
-      debugPrint("🚀 [OUT-TRACE 2] Starting GPS and Upload in PARALLEL...");
+      debugPrint("🚀 [OUT] Starting GPS and Upload...");
 
       final results = await Future.wait([
         _getCurrentPosition().timeout(
@@ -612,19 +665,33 @@ Future<void> _checkAttendanceStatus() async {
         'outTimeLongitude': position.longitude,
       };
 
-      _apiService
-          .checkOut(checkOutData)
-          .then((_) {
-            if (mounted) setState(() => _isCheckedIn = false);
-          })
-          .catchError((e) {
-            _toast("Backend Sync Failed: $e", isError: true);
-          });
+      // ⚡ Await the call so we can catch the error properly
+      await _apiService.checkOut(checkOutData);
 
-      _toast('Checked out successfully!', isError: false); // Blue equivalent
+      if (mounted) {
+        setState(() {
+          _isCheckedIn = false;
+          _isDayComplete = true; // ⚡ ADD THIS LINE: Lock the UI for the day
+        });
+        _toast('Checked out successfully!', isError: false);
+      }
     } catch (e) {
-      debugPrint("🚨 [OUT-CRITICAL ERROR] $e");
-      _toast('Check-out failed: $e', isError: true);
+      debugPrint("🚨 Check-Out Error: $e");
+
+      // 🛑 ZOMBIE STATE FIX:
+      // If server says "Attendance not found" or "Already checked out",
+      // it means the App was wrong to think we were Checked In.
+      // We must force the App to 'Checked Out' state.
+      if (e.toString().toLowerCase().contains("not found") ||
+          e.toString().toLowerCase().contains("no attendance") ||
+          e.toString().toLowerCase().contains("already")) {
+        if (mounted) {
+          setState(() => _isCheckedIn = false);
+        }
+        _toast("Syncing: You are already checked out.");
+      } else {
+        _toast('Check-out failed: $e', isError: true);
+      }
     } finally {
       if (mounted) setState(() => _isCheckingOut = false);
     }
@@ -647,7 +714,7 @@ Future<void> _checkAttendanceStatus() async {
   void _showMasonActions(BuildContext context) {
     final flags = context.read<TechnicalFlags>();
     if (!flags.masonManagement) return;
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -959,12 +1026,26 @@ Future<void> _checkAttendanceStatus() async {
                                     icon: Icons.arrow_downward,
                                     isLoading: _isCheckingIn,
                                     isActive: !_isCheckedIn,
-                                    onTap:
-                                        (_isCheckedIn ||
-                                            _isCheckingIn ||
-                                            _isCheckingOut)
-                                        ? null
-                                        : _handleCheckIn,
+                                    onTap: () {
+                                      if (_isCheckingIn || _isCheckingOut)
+                                        return; // Prevent double taps
+
+                                      if (_isCheckedIn) {
+                                        _toast(
+                                          "You are already checked in.",
+                                          isError: true,
+                                        );
+                                      } else if (_isDayComplete) {
+                                        // ⚡ TRAP: Button looks active, but shows warning instead of camera
+                                        _toast(
+                                          "You have already completed your attendance for today.",
+                                          isError: true,
+                                        );
+                                      } else {
+                                        // Normal flow
+                                        _handleCheckIn();
+                                      }
+                                    },
                                   ),
                                 ),
                                 const SizedBox(width: 12),
@@ -975,9 +1056,10 @@ Future<void> _checkAttendanceStatus() async {
                                     label: "CHECK OUT",
                                     icon: Icons.arrow_upward,
                                     isLoading: _isCheckingOut,
-                                    isActive: _isCheckedIn,
+                                    isActive: _isCheckedIn && !_isDayComplete,
                                     onTap:
                                         (!_isCheckedIn ||
+                                            _isDayComplete ||
                                             _isCheckingIn ||
                                             _isCheckingOut)
                                         ? null
