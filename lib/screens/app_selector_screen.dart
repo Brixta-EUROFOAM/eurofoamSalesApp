@@ -28,34 +28,87 @@ class _AppSelectorScreenState extends State<AppSelectorScreen> {
     _checkAutoLogin();
   }
 
-  Future<void> _checkAutoLogin() async {
+Future<void> _checkAutoLogin() async {
     try {
       final Employee? employee = await _authService.tryAutoLogin();
+      
+      // If logged out (null), stop loading and show the selector screen
       if (!mounted || employee == null) {
         setState(() => _isCheckingAutoLogin = false);
         return;
       }
 
       final prefs = await SharedPreferences.getInstance();
-      final bool isTechnical = prefs.getBool('is_technical_mode') ?? false;
+      
+      // 1. RECOVERY: Get stored mode. If null (Process Death), infer from Role.
+      bool? isTechnicalMode = prefs.getBool('is_technical_mode');
+      
+      // "Self-Healing": If preference is wiped, restore it based on the User Role
+      if (isTechnicalMode == null) {
+        if (employee.isTechnicalRole) {
+           isTechnicalMode = true; 
+           await prefs.setBool('is_technical_mode', true);
+        } else {
+           isTechnicalMode = false;
+           await prefs.setBool('is_technical_mode', false);
+        }
+      }
 
-      // If token + user OK, skip selector entirely
-      Navigator.of(context).pushNamedAndRemoveUntil(
-        isTechnical ? '/technical_home' : '/technical_home',
-        (route) => false,
-        arguments: employee,
-      );
+      // 2. NAVIGATION LOGIC
+      if (isTechnicalMode == true) {
+         // ✅ INTENDED MODE: TECHNICAL
+         
+         // SECURITY CHECK: Do they actually have the role?
+         if (employee.isTechnicalRole) {
+            // Permission Granted -> Go to Tech Home
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/technical_home',
+              (route) => false,
+              arguments: employee,
+            );
+         } else {
+            // ⛔️ PERMISSION DENIED (Role Mismatch)
+            // The app thought we were in Tech mode, but the User Role is Sales.
+            // Redirect to Login (Technical Interface) to fix the session.
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              '/salesforce_login_page', // Matches route defined in main.dart
+              (route) => false,
+              arguments: {'isTechnical': true}, // Force Tech UI on Login
+            );
+            
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("Session role mismatch. Please login again."),
+                backgroundColor: Colors.red,
+              ),
+            );
+         }
+      } else {
+         // ✅ INTENDED MODE: SALESMAN
+         Navigator.of(context).pushNamedAndRemoveUntil(
+            '/home', 
+            (route) => false,
+            arguments: employee,
+         );
+      }
+
     } catch (e) {
-      // Any failure: show selector normally
+      // 🛑 HANDLE OFFLINE / ERRORS
+      // If AuthService throws (e.g. SocketException), we catch it here.
       if (mounted) {
-        setState(() => _isCheckingAutoLogin = false);
+         setState(() => _isCheckingAutoLogin = false);
+         
+         // Optional: Feedback to user
+         // ScaffoldMessenger.of(context).showSnackBar(
+         //    SnackBar(content: Text("Connection failed. Please try again.")),
+         // );
       }
     }
   }
 
   void _navigateToLogin(BuildContext context, bool isTechnical) {
     Navigator.of(context).pushNamed(
-      '/salesforce_login_page',
+      '/salesforce_login_page', // Matches route defined in main.dart
       arguments: {'isTechnical': isTechnical},
     );
   }

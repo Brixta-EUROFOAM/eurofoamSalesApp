@@ -1,5 +1,5 @@
 // lib/api/auth_service.dart
-
+import 'dart:io';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as dev;
@@ -143,11 +143,11 @@ Future<void> logout() async {
 
     if (token == null) {
       dev.log('No token found. Auto-login skipped.', name: 'AuthService');
-      return null; // No token, no auto-login.
+      return null;
     }
 
     try {
-      // Decode the user ID directly from the token payload to be efficient
+      // Decode the user ID directly from the token payload
       final payload = json.decode(
         ascii.decode(base64.decode(base64.normalize(token.split('.')[1]))),
       );
@@ -157,11 +157,34 @@ Future<void> logout() async {
       final employee = await _fetchUserProfile(userId, token);
       dev.log('Auto-login successful!', name: 'AuthService');
       return employee;
+
+    } on SocketException {
+      // 🛑 NO INTERNET: Do NOT logout.
+      dev.log('Network unreachable during auto-login. Preserving session.', name: 'AuthService');
+      rethrow; // Let the UI handle offline state
+
+    } on TimeoutException {
+       // 🛑 SLOW INTERNET: Do NOT logout.
+      dev.log('Timeout during auto-login. Preserving session.', name: 'AuthService');
+      rethrow;
+
     } catch (e) {
-      // If the token is expired or invalid, it will fail.
-      // Clear the bad token and return null.
-      dev.log('Auto-login failed: ${e.toString()}', name: 'AuthService');
-      await logout();
+      // ⚠️ ACTUAL AUTH ERROR
+      final errorStr = e.toString().toLowerCase();
+      
+      // Only logout if it's clearly a credential issue
+      if (errorStr.contains("401") || 
+          errorStr.contains("403") || 
+          errorStr.contains("session expired") ||
+          errorStr.contains("invalid token")) {
+            
+         dev.log('Session invalid ($e). Logging out.', name: 'AuthService');
+         await logout();
+      } else {
+         // It might be a 500 Server Error or something else. Keep the session.
+         dev.log('Unknown error ($e). Preserving session.', name: 'AuthService');
+         rethrow;
+      }
       return null;
     }
   }
