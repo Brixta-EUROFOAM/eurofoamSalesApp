@@ -41,7 +41,7 @@ class _AppSelectorScreenState extends State<AppSelectorScreen> {
 
       // If token + user OK, skip selector entirely
       Navigator.of(context).pushNamedAndRemoveUntil(
-        isTechnical ? '/technical_home' : '/home',
+        isTechnical ? '/technical_home' : '/technical_home',
         (route) => false,
         arguments: employee,
       );

@@ -3,7 +3,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+// import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -199,41 +199,41 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
-  Future<void> _checkForcedLogout() async {
-    final prefs = await SharedPreferences.getInstance();
+  // Future<void> _checkForcedLogout() async {
+  //   final prefs = await SharedPreferences.getInstance();
 
-    final shouldLogout = prefs.getBool('force_logout_on_resume') ?? false;
-    if (!shouldLogout) return;
+  //   final shouldLogout = prefs.getBool('force_logout_on_resume') ?? false;
+  //   if (!shouldLogout) return;
 
-    final message = prefs.getString('force_logout_message');
+  //   final message = prefs.getString('force_logout_message');
 
-    // 🔥 Nuke ALL local state (single source of truth)
-    await prefs.clear();
+  //   // 🔥 Nuke ALL local state (single source of truth)
+  //   await prefs.clear();
 
-    // 🔐 Hard auth cleanup (secure storage, etc.)
-    await AuthService().logout();
+  //   // 🔐 Hard auth cleanup (secure storage, etc.)
+  //   await AuthService().logout();
 
-    // 🧭 Navigate safely to login
-    if (globalNavigatorKey.currentState != null) {
-      globalNavigatorKey.currentState!.pushNamedAndRemoveUntil(
-        '/salesforce_login_page',
-        (route) => false,
-      );
-    }
+  //   // 🧭 Navigate safely to login
+  //   if (globalNavigatorKey.currentState != null) {
+  //     globalNavigatorKey.currentState!.pushNamedAndRemoveUntil(
+  //       '/salesforce_login_page',
+  //       (route) => false,
+  //     );
+  //   }
 
-    // 🗣 Optional user feedback
-    if (message != null && globalNavigatorKey.currentContext != null) {
-      ScaffoldMessenger.of(globalNavigatorKey.currentContext!).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.red.shade700,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    }
+  //   // 🗣 Optional user feedback
+  //   if (message != null && globalNavigatorKey.currentContext != null) {
+  //     ScaffoldMessenger.of(globalNavigatorKey.currentContext!).showSnackBar(
+  //       SnackBar(
+  //         content: Text(message),
+  //         backgroundColor: Colors.red.shade700,
+  //         duration: const Duration(seconds: 4),
+  //       ),
+  //     );
+  //   }
 
-    debugPrint("🔐 Forced logout executed successfully");
-  }
+  //   debugPrint("🔐 Forced logout executed successfully");
+  // }
 
   @override
   void initState() {
@@ -241,7 +241,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _checkForcedLogout();
+      // await _checkForcedLogout();
 
       if (globalNavigatorKey.currentContext != null) {
         UpdateService.checkVersion(globalNavigatorKey.currentContext!);
@@ -253,7 +253,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) async {
     if (state == AppLifecycleState.resumed) {
       debugPrint("🔄 App resumed — checking forced logout");
-      await _checkForcedLogout();
+      // await _checkForcedLogout();
     }
   }
 

@@ -525,7 +525,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
             backgroundColor: _accentGreen,
             foregroundColor: Colors.white,
             icon: Icons.navigation,
-            label: 'START',
+            label: 'CLICK TO START',
             borderRadius: const BorderRadius.horizontal(
               left: Radius.circular(16),
             ),
@@ -652,7 +652,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      isPending ? "WAIT" : "START",
+                      isPending ? "WAIT" : "SLIDE TO START",
                       style: TextStyle(
                         color: isPending ? Colors.grey : _accentGreen,
                         fontWeight: FontWeight.bold,
