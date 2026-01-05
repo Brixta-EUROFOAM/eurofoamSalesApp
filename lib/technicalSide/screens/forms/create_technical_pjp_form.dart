@@ -6,6 +6,8 @@ import 'package:salesmanapp/features/mapselectionpjp/map_selection_result.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
+import 'package:maplibre_gl/maplibre_gl.dart'; // Ensure this is at the top
+import 'package:flutter/services.dart';
 
 class CreateTechnicalPjpForm extends StatefulWidget {
   final Employee employee;
@@ -27,12 +29,14 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
 
   // --- KERNEL FEATURE ---
   // Accessing the controller via AppKernel as per your architectural example
-  late final MapSelectionController _mapController = 
-      AppKernel.instance.feature<MapSelectionController>();
+  late final MapSelectionController _mapController = AppKernel.instance
+      .feature<MapSelectionController>();
 
   // --- STATE ---
   String _visitType = 'Site';
   bool _isSubmitting = false;
+  bool _isMapVisible = false;
+  bool _isMapEngineReady = false;
   String? _selectedActivityType;
   MapSelectionResult? _pickedLocation; // Stores the LatLng and Address result
 
@@ -47,15 +51,19 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   final _schemesController = TextEditingController(text: '');
   final _infNameController = TextEditingController();
   final _infPhoneController = TextEditingController();
-  
+
   final List<String> _activityOptions = [
-    'Mason', 'Contractor', 'Engineer/Architect', 'Builder', 'Dealer',
+    'Mason',
+    'Contractor',
+    'Engineer/Architect',
+    'Builder',
+    'Dealer',
   ];
 
   // --- THEME ---
   static const Color _surfaceWhite = Colors.white;
   static const Color _cardNavy = Color(0xFF0F172A);
-  static const Color _textDark = Color(0xFF111827); 
+  static const Color _textDark = Color(0xFF111827);
   static const Color _textGrey = Color(0xFF6B7280);
   static const Color _inputFill = Color(0xFFF9FAFB);
   static const Color _accentGreen = Color(0xFF10B981);
@@ -76,22 +84,34 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
     super.dispose();
   }
 
+  void initState() {
+    super.initState();
+    _warmupEngine();
+  }
+
+  Future<void> _warmupEngine() async {
+    await Future.delayed(Duration.zero);
+    if (mounted) setState(() => _isMapEngineReady = true);
+  }
+
   // --- NEW FEATURE HANDLER ---
   Future<void> _handleMapSelection() async {
-    // Uses the controller logic you just wired up in the AppKernel
-    final result = await _mapController.showMapPicker(context);
-    if (result != null) {
-      setState(() {
-        _pickedLocation = result;
-        _routeController.text = result.address;
-      });
+    if (!_isMapEngineReady) {
+      _showSnack("Initializing map engine...", _accentBlue);
+      return;
     }
+
+    HapticFeedback.lightImpact(); // Physical feedback makes it feel faster
+
+    setState(() {
+      _isMapVisible = true;
+    });
   }
 
   // --- SUBMISSION ---
   Future<void> _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     // Safety check for map selection
     if (_pickedLocation == null) {
       _showSnack('Please select a destination on the map.', Colors.orange);
@@ -101,12 +121,15 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
     setState(() => _isSubmitting = true);
 
     try {
-      String primaryName = _visitType == 'Influencer' 
-          ? _infNameController.text 
+      String primaryName = _visitType == 'Influencer'
+          ? _infNameController.text
           : "$_visitType Visit";
 
       // Using the controller logic to format the "Viable Data" string
-      final formattedArea = _mapController.formatPjpArea(primaryName, _pickedLocation!);
+      final formattedArea = _mapController.formatPjpArea(
+        primaryName,
+        _pickedLocation!,
+      );
 
       final newPjp = Pjp(
         id: '',
@@ -117,11 +140,15 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
         verificationStatus: 'PENDING',
         areaToBeVisited: formattedArea, // Now contains lat/lng from map
         route: _routeController.text,
-        description: _descriptionController.text.isNotEmpty ? _descriptionController.text : null,
+        description: _descriptionController.text.isNotEmpty
+            ? _descriptionController.text
+            : null,
         plannedNewSiteVisits: int.tryParse(_newSiteVisitsController.text) ?? 0,
-        plannedFollowUpSiteVisits: int.tryParse(_followUpVisitsController.text) ?? 0,
+        plannedFollowUpSiteVisits:
+            int.tryParse(_followUpVisitsController.text) ?? 0,
         plannedNewDealerVisits: int.tryParse(_dealerVisitsController.text) ?? 0,
-        plannedInfluencerVisits: int.tryParse(_influencerVisitsController.text) ?? 0,
+        plannedInfluencerVisits:
+            int.tryParse(_influencerVisitsController.text) ?? 0,
         noOfConvertedBags: int.tryParse(_bagsController.text) ?? 0,
         noOfMasonPcSchemes: int.tryParse(_schemesController.text) ?? 0,
         influencerName: _infNameController.text,
@@ -145,69 +172,108 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   void _showSnack(String msg, Color color) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(msg), backgroundColor: color, behavior: SnackBarBehavior.floating),
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: color,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }
 
   @override
+@override
   Widget build(BuildContext context) {
     return Padding(
+      // Handles keyboard pushing the sheet up
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
-        padding: const EdgeInsets.all(24.0),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
+        ),
+        // Removed internal padding here so the Map can go edge-to-edge
         decoration: const BoxDecoration(
           color: _surfaceWhite,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24.0)),
         ),
-        child: Form(
-          key: _formKey,
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40, height: 4,
-                    margin: const EdgeInsets.only(bottom: 20),
-                    decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(12)),
+        child: Stack(
+          children: [
+            // --- LAYER 1: THE FORM ---
+            Form(
+              key: _formKey,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24.0), // Padding moved here
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40, height: 4,
+                        margin: const EdgeInsets.only(bottom: 20),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    _buildVisitTypeSelector(),
+                    const SizedBox(height: 24),
+                    _buildDynamicContextFields(),
+                    const SizedBox(height: 16),
+
+                    _buildMapSelectorInput(
+                      label: "Route / Full Address",
+                      controller: _routeController,
+                      icon: Icons.map_rounded,
+                      hint: "Tap to select from map",
+                      onTap: _handleMapSelection, // Triggers local Stack state
+                    ),
+
+                    const Divider(height: 40),
+                    _buildSectionHeader("Planned Visit Targets", Icons.ads_click),
+                    _buildDynamicMetricGrid(),
+                    const Divider(height: 40),
+                    _buildSectionHeader("Business Goals", Icons.analytics),
+                    _buildBusinessGoalRow(),
+                    const SizedBox(height: 24),
+                    _buildSimpleInput(
+                      label: "Remarks / Purpose",
+                      controller: _descriptionController,
+                      icon: Icons.notes,
+                      maxLines: 2,
+                    ),
+                    const SizedBox(height: 32),
+                    _buildSubmitButton(),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+              ),
+            ),
+
+            // --- LAYER 2: THE INSTANT MAP OVERLAY ---
+            if (_isMapVisible)
+              Positioned.fill(
+                child: ClipRRect(
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24.0)),
+                  child: Material(
+                    color: _surfaceWhite,
+                    child: _mapController.buildPickerUI(
+                      context,
+                      initialPos: const LatLng(26.1445, 91.7362),
+                      onLocationSelected: (result) {
+                        setState(() {
+                          _pickedLocation = result;
+                          _routeController.text = result.address;
+                          _isMapVisible = false;
+                        });
+                      },
+                      onCancel: () => setState(() => _isMapVisible = false),
+                    ),
                   ),
                 ),
-                _buildVisitTypeSelector(),
-                const SizedBox(height: 24),
-                _buildDynamicContextFields(),
-                const SizedBox(height: 16),
-                
-                // UPDATED UI: Trigger map selection
-                _buildMapSelectorInput(
-                  label: "Route / Full Address",
-                  controller: _routeController,
-                  icon: Icons.map_rounded,
-                  hint: "Tap to select from map",
-                  onTap: _handleMapSelection,
-                ),
-
-                const Divider(height: 40),
-                _buildSectionHeader("Planned Visit Targets", Icons.ads_click),
-                _buildDynamicMetricGrid(),
-                const Divider(height: 40),
-                _buildSectionHeader("Business Goals", Icons.analytics),
-                _buildBusinessGoalRow(),
-                const SizedBox(height: 24),
-                _buildSimpleInput(
-                  label: "Remarks / Purpose",
-                  controller: _descriptionController,
-                  icon: Icons.notes,
-                  maxLines: 2,
-                ),
-                const SizedBox(height: 32),
-                _buildSubmitButton(),
-                const SizedBox(height: 24),
-              ],
-            ),
-          ),
+              ),
+          ],
         ),
       ),
     );
@@ -232,13 +298,20 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
             labelText: label,
             labelStyle: const TextStyle(color: _textGrey),
             prefixIcon: Icon(icon, color: _accentBlue, size: 20),
-            suffixIcon: const Icon(Icons.location_searching, color: _accentBlue),
+            suffixIcon: const Icon(
+              Icons.location_searching,
+              color: _accentBlue,
+            ),
             hintText: hint,
             filled: true,
             fillColor: _inputFill,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
           ),
-          validator: (v) => v == null || v.isEmpty ? 'Please select location' : null,
+          validator: (v) =>
+              v == null || v.isEmpty ? 'Please select location' : null,
         ),
       ),
     );
@@ -249,7 +322,10 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: _inputFill, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: _inputFill,
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Row(
         children: [
           _buildSegmentButton('Site Visit', 'Site'),
@@ -264,19 +340,31 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
     if (_visitType == 'Influencer') {
       return Column(
         children: [
-          _buildSimpleInput(label: "Name (PC / Mason / Engg)", controller: _infNameController, icon: Icons.person_outline),
+          _buildSimpleInput(
+            label: "Name (PC / Mason / Engg)",
+            controller: _infNameController,
+            icon: Icons.person_outline,
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: _buildFintechDropdown(
-                  label: "Activity Type", value: _selectedActivityType, items: _activityOptions,
-                  icon: Icons.assignment_ind_rounded, onChanged: (v) => setState(() => _selectedActivityType = v),
+                  label: "Activity Type",
+                  value: _selectedActivityType,
+                  items: _activityOptions,
+                  icon: Icons.assignment_ind_rounded,
+                  onChanged: (v) => setState(() => _selectedActivityType = v),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: _buildSimpleInput(label: "Phone", controller: _infPhoneController, icon: Icons.phone_android, isPhone: true),
+                child: _buildSimpleInput(
+                  label: "Phone",
+                  controller: _infPhoneController,
+                  icon: Icons.phone_android,
+                  isPhone: true,
+                ),
               ),
             ],
           ),
@@ -291,32 +379,64 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
     if (_visitType == 'Site') {
       metrics.addAll([
         _buildMetricItem("New Sites", _newSiteVisitsController, _accentBlue),
-        _buildMetricItem("Follow-up Sites", _followUpVisitsController, Colors.purple),
+        _buildMetricItem(
+          "Follow-up Sites",
+          _followUpVisitsController,
+          Colors.purple,
+        ),
       ]);
     } else if (_visitType == 'Dealer') {
-      metrics.add(_buildMetricItem("New Dealers", _dealerVisitsController, Colors.orange));
+      metrics.add(
+        _buildMetricItem("New Dealers", _dealerVisitsController, Colors.orange),
+      );
     } else if (_visitType == 'Influencer') {
-      metrics.add(_buildMetricItem("Influencers", _influencerVisitsController, Colors.teal));
+      metrics.add(
+        _buildMetricItem(
+          "Influencers",
+          _influencerVisitsController,
+          Colors.teal,
+        ),
+      );
     }
     return Wrap(spacing: 12, runSpacing: 12, children: metrics);
   }
 
-  Widget _buildMetricItem(String label, TextEditingController ctrl, Color color) {
+  Widget _buildMetricItem(
+    String label,
+    TextEditingController ctrl,
+    Color color,
+  ) {
     return Container(
       width: (MediaQuery.of(context).size.width - 60) / 2,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _inputFill, borderRadius: BorderRadius.circular(16),
+        color: _inputFill,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: color.withOpacity(0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           TextField(
-            controller: ctrl, keyboardType: TextInputType.number,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _textDark),
-            decoration: const InputDecoration(border: InputBorder.none, isDense: true),
+            controller: ctrl,
+            keyboardType: TextInputType.number,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: _textDark,
+            ),
+            decoration: const InputDecoration(
+              border: InputBorder.none,
+              isDense: true,
+            ),
           ),
         ],
       ),
@@ -326,30 +446,50 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   Widget _buildBusinessGoalRow() {
     return Row(
       children: [
-        Expanded(child: _buildMetricItem("Target Bags", _bagsController, _accentGreen)),
+        Expanded(
+          child: _buildMetricItem("Target Bags", _bagsController, _accentGreen),
+        ),
         const SizedBox(width: 12),
-        Expanded(child: _buildMetricItem("PC Schemes", _schemesController, Colors.redAccent)),
+        Expanded(
+          child: _buildMetricItem(
+            "PC Schemes",
+            _schemesController,
+            Colors.redAccent,
+          ),
+        ),
       ],
     );
   }
 
   Widget _buildFintechDropdown({
-    required String label, required String? value, required List<String> items,
-    required IconData icon, required void Function(String?) onChanged,
+    required String label,
+    required String? value,
+    required List<String> items,
+    required IconData icon,
+    required void Function(String?) onChanged,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         DropdownButtonFormField<String>(
-          value: value, isExpanded: true, dropdownColor: _surfaceWhite,
+          value: value,
+          isExpanded: true,
+          dropdownColor: _surfaceWhite,
           style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
           decoration: InputDecoration(
-            labelText: label, labelStyle: const TextStyle(color: _textGrey),
+            labelText: label,
+            labelStyle: const TextStyle(color: _textGrey),
             prefixIcon: Icon(icon, color: _textGrey, size: 20),
-            filled: true, fillColor: _inputFill,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+            filled: true,
+            fillColor: _inputFill,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
           ),
-          items: items.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+          items: items
+              .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+              .toList(),
           onChanged: onChanged,
           validator: (v) => v == null ? 'Required' : null,
         ),
@@ -358,19 +498,33 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   }
 
   Widget _buildSimpleInput({
-    required String label, required TextEditingController controller,
-    required IconData icon, String? hint, int maxLines = 1, bool isPhone = false,
+    required String label,
+    required TextEditingController controller,
+    required IconData icon,
+    String? hint,
+    int maxLines = 1,
+    bool isPhone = false,
   }) {
     return TextFormField(
-      controller: controller, maxLines: maxLines,
+      controller: controller,
+      maxLines: maxLines,
       keyboardType: isPhone ? TextInputType.phone : TextInputType.text,
       style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
       decoration: InputDecoration(
-        labelText: label, labelStyle: const TextStyle(color: _textGrey),
+        labelText: label,
+        labelStyle: const TextStyle(color: _textGrey),
         prefixIcon: Icon(icon, color: _textGrey, size: 20),
-        hintText: hint, filled: true, fillColor: _inputFill,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cardNavy, width: 1.5)),
+        hintText: hint,
+        filled: true,
+        fillColor: _inputFill,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: _cardNavy, width: 1.5),
+        ),
       ),
     );
   }
@@ -381,15 +535,30 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
       child: GestureDetector(
         onTap: () => setState(() {
           _visitType = value;
-          if (value != 'Site') { _newSiteVisitsController.clear(); _followUpVisitsController.clear(); }
+          if (value != 'Site') {
+            _newSiteVisitsController.clear();
+            _followUpVisitsController.clear();
+          }
           if (value != 'Dealer') _dealerVisitsController.clear();
           if (value != 'Influencer') _influencerVisitsController.clear();
         }),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(color: isSelected ? _cardNavy : Colors.transparent, borderRadius: BorderRadius.circular(8)),
-          child: Center(child: Text(label, style: TextStyle(color: isSelected ? Colors.white : _textGrey, fontWeight: FontWeight.bold, fontSize: 14))),
+          decoration: BoxDecoration(
+            color: isSelected ? _cardNavy : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : _textGrey,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -402,7 +571,15 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
         children: [
           Icon(icon, size: 18, color: _cardNavy),
           const SizedBox(width: 8),
-          Text(title.toUpperCase(), style: const TextStyle(color: _cardNavy, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+          Text(
+            title.toUpperCase(),
+            style: const TextStyle(
+              color: _cardNavy,
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
         ],
       ),
     );
@@ -414,13 +591,29 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
       child: ElevatedButton(
         onPressed: _isSubmitting ? null : _submitForm,
         style: ElevatedButton.styleFrom(
-          backgroundColor: _cardNavy, foregroundColor: Colors.white,
+          backgroundColor: _cardNavy,
+          foregroundColor: Colors.white,
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
         child: _isSubmitting
-            ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-            : const Text('CREATE PLAN', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0)),
+            ? const SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              )
+            : const Text(
+                'CREATE PLAN',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1.0,
+                ),
+              ),
       ),
     );
   }

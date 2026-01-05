@@ -993,7 +993,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
 
     final now = DateTime.now();
     final difference = now.difference(_checkInTime!);
-    const minMinutes = 10;
+    const minMinutes = 1;
 
     if (difference.inMinutes < minMinutes) {
       final remaining = minMinutes - difference.inMinutes;
@@ -1009,56 +1009,56 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       return;
     }
 
-    // --- Geofence (for IHB/Site visits) ---
-    if (_selectedCustomerType == 'IHB/Site' &&
-        _selectedSite != null &&
-        _selectedSite!.latitude != 0.0 &&
-        _selectedSite!.longitude != 0.0) {
-      double distanceInMeters = Geolocator.distanceBetween(
-        _capturedLocation!.latitude,
-        _capturedLocation!.longitude,
-        _selectedSite!.latitude,
-        _selectedSite!.longitude,
-      );
-      double distanceInKm = distanceInMeters / 1000;
-      if (distanceInMeters > 50) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Geofence Error: You are ${distanceInKm.toStringAsFixed(2)}km away.",
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
+    // // --- Geofence (for IHB/Site visits) ---
+    // if (_selectedCustomerType == 'IHB/Site' &&
+    //     _selectedSite != null &&
+    //     _selectedSite!.latitude != 0.0 &&
+    //     _selectedSite!.longitude != 0.0) {
+    //   double distanceInMeters = Geolocator.distanceBetween(
+    //     _capturedLocation!.latitude,
+    //     _capturedLocation!.longitude,
+    //     _selectedSite!.latitude,
+    //     _selectedSite!.longitude,
+    //   );
+    //   double distanceInKm = distanceInMeters / 1000;
+    //   if (distanceInMeters > 50) {
+    //     ScaffoldMessenger.of(context).showSnackBar(
+    //       SnackBar(
+    //         content: Text(
+    //           "Geofence Error: You are ${distanceInKm.toStringAsFixed(2)}km away.",
+    //         ),
+    //         backgroundColor: Colors.red,
+    //       ),
+    //     );
+    //     return;
+    //   }
+    // }
 
-    // --- Geofence (For Dealer) ---
-    if (_selectedCustomerType != null &&
-        _selectedCustomerType!.contains("Dealer") &&
-        _selectedDealer != null &&
-        (_selectedDealer!.latitude != 0.0 ||
-            _selectedDealer!.longitude != 0.0)) {
-      double distanceInMeters = Geolocator.distanceBetween(
-        _capturedLocation!.latitude,
-        _capturedLocation!.longitude,
-        _selectedDealer!.latitude ?? 0.0,
-        _selectedDealer!.longitude ?? 0.0,
-      );
-      double distanceInKm = distanceInMeters / 1000;
-      if (distanceInMeters > 50) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Geofence Error (Dealer): You are ${distanceInKm.toStringAsFixed(2)}km away.",
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
+    // // --- Geofence (For Dealer) ---
+    // if (_selectedCustomerType != null &&
+    //     _selectedCustomerType!.contains("Dealer") &&
+    //     _selectedDealer != null &&
+    //     (_selectedDealer!.latitude != 0.0 ||
+    //         _selectedDealer!.longitude != 0.0)) {
+    //   double distanceInMeters = Geolocator.distanceBetween(
+    //     _capturedLocation!.latitude,
+    //     _capturedLocation!.longitude,
+    //     _selectedDealer!.latitude ?? 0.0,
+    //     _selectedDealer!.longitude ?? 0.0,
+    //   );
+    //   double distanceInKm = distanceInMeters / 1000;
+    //   if (distanceInMeters > 50) {
+    //     ScaffoldMessenger.of(context).showSnackBar(
+    //       SnackBar(
+    //         content: Text(
+    //           "Geofence Error (Dealer): You are ${distanceInKm.toStringAsFixed(2)}km away.",
+    //         ),
+    //         backgroundColor: Colors.red,
+    //       ),
+    //     );
+    //     return;
+    //   }
+    // }
 
     // Dealer Specific Validation
     if (_selectedCustomerType != null &&
