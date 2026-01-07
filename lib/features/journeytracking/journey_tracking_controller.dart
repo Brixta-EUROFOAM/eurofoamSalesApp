@@ -153,9 +153,9 @@ class JourneyTrackingController {
       }
 
       // 2️⃣ Complete PJP
-      if (_currentPjpId != null) {
-        await api.updatePjp(_currentPjpId!, {'status': 'COMPLETED'});
-      }
+      // if (_currentPjpId != null) {
+      //   await api.updatePjp(_currentPjpId!, {'status': 'COMPLETED'});
+      // }
     } catch (_) {
       // Logic cleanup should proceed even if API PATCH fails
     }

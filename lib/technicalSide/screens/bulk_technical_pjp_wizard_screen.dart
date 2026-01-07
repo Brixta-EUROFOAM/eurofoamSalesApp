@@ -157,7 +157,7 @@ class _BulkTechnicalPjpWizardScreenState
           planDate: date,
           userId: int.parse(widget.employee.id),
           createdById: int.parse(widget.employee.id),
-          status: 'PENDING',
+          status: 'pending',
           verificationStatus: 'PENDING',
           areaToBeVisited: formattedArea,
           route: config['route'].text,
