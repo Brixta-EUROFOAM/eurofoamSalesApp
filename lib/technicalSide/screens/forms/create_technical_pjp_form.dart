@@ -100,6 +100,7 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
       _showSnack("Initializing map engine...", _accentBlue);
       return;
     }
+    FocusScope.of(context).unfocus();
 
     HapticFeedback.lightImpact(); // Physical feedback makes it feel faster
 
@@ -180,143 +181,163 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
       );
     }
   }
-
-  @override
 @override
   Widget build(BuildContext context) {
-    return Padding(
-      // Handles keyboard pushing the sheet up
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: Container(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.9,
-        ),
-        // Removed internal padding here so the Map can go edge-to-edge
-        decoration: const BoxDecoration(
-          color: _surfaceWhite,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24.0)),
-        ),
-        child: Stack(
-          children: [
-            // --- LAYER 1: THE FORM ---
-            Form(
-              key: _formKey,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24.0), // Padding moved here
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40, height: 4,
-                        margin: const EdgeInsets.only(bottom: 20),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                    _buildVisitTypeSelector(),
-                    const SizedBox(height: 24),
-                    _buildDynamicContextFields(),
-                    const SizedBox(height: 16),
+    // 1. Fixed Height (90% of screen)
+    final double height = MediaQuery.of(context).size.height * 0.9;
+    
+    // 2. Keyboard height (Used ONLY for the Form Layer padding)
+    final double keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
 
-                    _buildMapSelectorInput(
-                      label: "Route / Full Address",
-                      controller: _routeController,
-                      icon: Icons.map_rounded,
-                      hint: "Tap to select from map",
-                      onTap: _handleMapSelection, // Triggers local Stack state
-                    ),
-
-                    const Divider(height: 40),
-                    _buildSectionHeader("Planned Visit Targets", Icons.ads_click),
-                    _buildDynamicMetricGrid(),
-                    const Divider(height: 40),
-                    _buildSectionHeader("Business Goals", Icons.analytics),
-                    _buildBusinessGoalRow(),
-                    const SizedBox(height: 24),
-                    _buildSimpleInput(
-                      label: "Remarks / Purpose",
-                      controller: _descriptionController,
-                      icon: Icons.notes,
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: 32),
-                    _buildSubmitButton(),
-                    const SizedBox(height: 24),
-                  ],
-                ),
-              ),
-            ),
-
-            // --- LAYER 2: THE INSTANT MAP OVERLAY ---
-            if (_isMapVisible)
+    return Container(
+      height: height, 
+      decoration: const BoxDecoration(
+        color: _surfaceWhite,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24.0)),
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24.0)),
+        child: Material(
+          color: Colors.transparent,
+          child: Stack(
+            children: [
+              // --- LAYER 1: THE FORM (Standard Scrolling) ---
               Positioned.fill(
-                child: ClipRRect(
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(24.0)),
-                  child: Material(
-                    color: _surfaceWhite,
-                    child: _mapController.buildPickerUI(
-                      context,
-                      initialPos: const LatLng(26.1445, 91.7362),
-                      onLocationSelected: (result) {
-                        setState(() {
-                          _pickedLocation = result;
-                          _routeController.text = result.address;
-                          _isMapVisible = false;
-                        });
-                      },
-                      onCancel: () => setState(() => _isMapVisible = false),
+                child: Padding(
+                  // We manually pad the form so you can scroll to the bottom
+                  padding: EdgeInsets.only(bottom: _isMapVisible ? 0 : keyboardHeight),
+                  child: Form(
+                    key: _formKey,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 40, height: 4,
+                              margin: const EdgeInsets.only(bottom: 20),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[300],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                          _buildVisitTypeSelector(),
+                          const SizedBox(height: 24),
+                          _buildDynamicContextFields(),
+                          const SizedBox(height: 16),
+                          _buildMapSelectorInput(
+                            label: "Route / Full Address",
+                            controller: _routeController,
+                            icon: Icons.map_rounded,
+                            hint: "Tap to select from map",
+                            onTap: _handleMapSelection,
+                          ),
+                          const Divider(height: 40),
+                          _buildSectionHeader("Planned Visit Targets", Icons.ads_click),
+                          _buildDynamicMetricGrid(),
+                          const Divider(height: 40),
+                          _buildSectionHeader("Business Goals", Icons.analytics),
+                          _buildBusinessGoalRow(),
+                          const SizedBox(height: 24),
+                          _buildSimpleInput(
+                            label: "Remarks / Purpose",
+                            controller: _descriptionController,
+                            icon: Icons.notes,
+                            maxLines: 2,
+                          ),
+                          const SizedBox(height: 32),
+                          _buildSubmitButton(),
+                          const SizedBox(height: 24),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-          ],
+
+              // --- LAYER 2: MAP OVERLAY ---
+              if (_isMapVisible)
+                Positioned.fill(
+                  // 🔒 LOCK 1: Scaffold ignores Keyboard resizing
+                  // This ensures the Search Bar stays pinned at the top.
+                  child: Scaffold(
+                    backgroundColor: _surfaceWhite, 
+                    resizeToAvoidBottomInset: false, // <--- PREVENTS KEYBOARD SHIFT
+                    body: Stack(
+                      children: [
+                        // 🔓 UNLOCKED: GestureDetector REMOVED.
+                        // Your touches will now reach the Map, so you can drag/pan it.
+                        _mapController.buildPickerUI(
+                          context,
+                          initialPos: const LatLng(26.1445, 91.7362),
+                          onLocationSelected: (result) {
+                            FocusScope.of(context).unfocus();
+                            setState(() {
+                              _pickedLocation = result;
+                              _routeController.text = result.address;
+                              _isMapVisible = false;
+                            });
+                          },
+                          onCancel: () {
+                            FocusScope.of(context).unfocus();
+                            setState(() => _isMapVisible = false);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
   }
-
   // Special UI helper for the Map Selector
-  Widget _buildMapSelectorInput({
+Widget _buildMapSelectorInput({
     required String label,
     required TextEditingController controller,
     required IconData icon,
     required String hint,
     required VoidCallback onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: IgnorePointer(
-        child: TextFormField(
-          controller: controller,
-          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
-          decoration: InputDecoration(
-            labelText: label,
-            labelStyle: const TextStyle(color: _textGrey),
-            prefixIcon: Icon(icon, color: _accentBlue, size: 20),
-            suffixIcon: const Icon(
-              Icons.location_searching,
-              color: _accentBlue,
-            ),
-            hintText: hint,
-            filled: true,
-            fillColor: _inputFill,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-          ),
-          validator: (v) =>
-              v == null || v.isEmpty ? 'Please select location' : null,
+    return TextFormField(
+      controller: controller,
+      // ⚡ FIX: Use readOnly instead of IgnorePointer.
+      // This keeps the field "active" (so validation errors show properly)
+      // but prevents the keyboard from opening.
+      readOnly: true,
+      onTap: onTap, // Native tap handler works perfectly with readOnly
+
+      style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: _textGrey),
+        prefixIcon: Icon(icon, color: _accentBlue, size: 20),
+        suffixIcon: const Icon(
+          Icons.location_searching,
+          color: _accentBlue,
+        ),
+        hintText: hint,
+        filled: true,
+        fillColor: _inputFill,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
+        ),
+        // Optional: Ensure error states look good
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.red, width: 1),
         ),
       ),
+      validator: (v) =>
+          v == null || v.isEmpty ? 'Please select location' : null,
     );
   }
-
   // --- EXISTING UI HELPERS ---
   Widget _buildVisitTypeSelector() {
     return Container(

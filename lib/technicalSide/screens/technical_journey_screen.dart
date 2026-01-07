@@ -465,12 +465,14 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     }
   }
 
-  Future<void> _stopJourney() async {
+Future<void> _stopJourney() async {
     if (!_isJourneyActive) return;
 
     final api = ApiService();
     final checkInTime = DateTime.now();
 
+    // 1. Close the GeoTracking Point (Keep this!)
+    // This marks the end of THIS SPECIFIC trip/segment in the database.
     if (_currentGeoTrackingDbId != null && _currentUserLocation != null) {
       try {
         final updateData = {
@@ -489,17 +491,22 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       }
     }
 
-    if (_currentPjp?.id != null) {
+    // 🔴 CHANGE: Don't mark PJP as COMPLETED here. 
+    // We want to allow multiple visits/journeys for the same PJP.
+    /* if (_currentPjp?.id != null) {
       try {
         await api.updatePjp(_currentPjp!.id, {'status': 'COMPLETED'});
       } catch (_) {}
-    }
+    } 
+    */
 
+    // 2. Stop local tracking service (Keep this!)
     try {
       final tracking = AppKernel.instance.feature<JourneyTrackingController>();
       await tracking.stopJourney();
     } catch (_) {}
 
+    // 3. Reset UI
     _handleJourneyCleanup();
   }
 

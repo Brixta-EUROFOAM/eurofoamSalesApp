@@ -1,3 +1,5 @@
+//tvr ihb form 
+
 import 'package:flutter/material.dart';
 import '../utils/tvr_constants.dart';
 import '../tvrwidgets/tvr_form_widgets.dart';
@@ -155,7 +157,7 @@ class TvrIhbSection extends StatelessWidget {
         TvrSelectionCard(
           label: values['sitePhotoFile'] != null
               ? 'Site Photo Selected'
-              : 'Capture Site Progress Photo',
+              : 'Capture Site Progress Photo *',
           icon: Icons.camera_enhance,
           isDone: values['sitePhotoFile'] != null,
           onTap: onPickPhoto,
@@ -187,7 +189,7 @@ class TvrIhbSection extends StatelessWidget {
         const SizedBox(height: 16),
 
         TvrMultiSelectField(
-          label: 'Brands in Use',
+          label: 'Brands in Use *',
           items: TvrConstants.brandOptions,
           selectedValues: values['brandsInUse'] ?? [],
           onChanged: (v) => onUpdate('brandsInUse', v),
@@ -224,22 +226,6 @@ class TvrIhbSection extends StatelessWidget {
           keyboardType: TextInputType.number,
         ),
 
-        /// ---------------- DEALER INFO ----------------
-        const TvrSectionHeader(title: 'Dealer Info'),
-
-        TvrInputField(
-          label: 'Supplying Dealer',
-          controller: controllers['supplyingDealer']!,
-          isRequired: false,
-        ),
-
-        const SizedBox(height: 16),
-
-        TvrInputField(
-          label: 'Nearby Dealer (Best)',
-          controller: controllers['nearbyDealer']!,
-        ),
-
         /// ---------------- CONVERSION ----------------
         const TvrSectionHeader(title: 'Conversion'),
 
@@ -253,7 +239,7 @@ class TvrIhbSection extends StatelessWidget {
           const SizedBox(height: 12),
 
           TvrDropdownField(
-            label: 'Conversion Type',
+            label: 'Conversion Type *',
             value: values['conversionType'],
             items: const ['New', 'Retention'],
             onChanged: (v) => onUpdate('conversionType', v),
@@ -262,7 +248,7 @@ class TvrIhbSection extends StatelessWidget {
           const SizedBox(height: 16),
 
           TvrDropdownField(
-            label: 'From Brand',
+            label: 'From Brand *',
             value: values['conversionFromBrand'],
             items: TvrConstants.brandOptions,
             onChanged: (v) => onUpdate('conversionFromBrand', v),
@@ -274,7 +260,7 @@ class TvrIhbSection extends StatelessWidget {
             children: [
               Expanded(
                 child: TvrInputField(
-                  label: 'Quantity',
+                  label: 'Quantity *',
                   controller: controllers['qty']!,
                   keyboardType: TextInputType.number,
                 ),
@@ -282,7 +268,7 @@ class TvrIhbSection extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: TvrDropdownField(
-                  label: 'Unit',
+                  label: 'Unit *',
                   value: values['selectedUnit'],
                   items: const ['Bags'],
                   onChanged: (v) => onUpdate('selectedUnit', v),
@@ -291,6 +277,22 @@ class TvrIhbSection extends StatelessWidget {
             ],
           ),
         ],
+
+        /// ---------------- DEALER INFO ----------------
+        const TvrSectionHeader(title: 'Dealer Info'),
+
+        TvrInputField(
+          label: 'Supplying Dealer',
+          controller: controllers['supplyingDealer']!,
+          isRequired: false,
+        ),
+
+        const SizedBox(height: 16),
+
+        TvrInputField(
+          label: 'Nearby Dealer (Best) *',
+          controller: controllers['nearbyDealer']!,
+        ),
 
         /// ---------------- TECH SERVICES ----------------
         const TvrSectionHeader(title: 'Technical Services'),
@@ -305,7 +307,7 @@ class TvrIhbSection extends StatelessWidget {
           const SizedBox(height: 12),
 
           TvrDropdownField(
-            label: 'Service Type',
+            label: 'Service Type *',
             value: values['selectedServiceType'],
             items: TvrConstants.serviceTypeOptions,
             onChanged: (v) => onUpdate('selectedServiceType', v),
@@ -332,7 +334,7 @@ class TvrIhbSection extends StatelessWidget {
 
         const SizedBox(height: 16),
 
-        /// ---------------- INFLUENCER ----------------
+        // ---------------- INFLUENCER ----------------
         const TvrSectionHeader(title: 'Influencer / Mason'),
 
         TvrSearchTile(
@@ -344,7 +346,7 @@ class TvrIhbSection extends StatelessWidget {
         const SizedBox(height: 16),
 
         TvrDropdownField(
-          label: 'Influencer Type',
+          label: 'Influencer Type *',
           value: values['selectedInfluencerType'],
           items: TvrConstants.influencerTypeOptions,
           onChanged: (v) => onUpdate('selectedInfluencerType', v),
@@ -353,26 +355,23 @@ class TvrIhbSection extends StatelessWidget {
         const SizedBox(height: 16),
 
         TvrInputField(
-          label: 'Name',
+          label: 'Name *',
           controller: controllers['influencerName']!,
-          isRequired: false,
         ),
 
         const SizedBox(height: 16),
 
         TvrInputField(
-          label: 'Phone',
+          label: 'Phone *',
           controller: controllers['influencerPhone']!,
           keyboardType: TextInputType.phone,
-          isRequired: false,
         ),
 
         const SizedBox(height: 16),
 
         TvrInputField(
-          label: 'Influencer Productivity',
+          label: 'Influencer Productivity *',
           controller: controllers['productivity']!,
-          isRequired: false,
         ),
 
         const SizedBox(height: 16),
