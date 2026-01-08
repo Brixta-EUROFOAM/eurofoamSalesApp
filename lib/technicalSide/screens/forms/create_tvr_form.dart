@@ -656,6 +656,114 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       _showSnack("⚠️ Remarks are required.");
       return;
     }
+    if (type.contains("Dealer")) {
+      // Basic dealer info
+      if (_controllers['partyName']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Dealer / Sub-Dealer Name is required.");
+        return;
+      }
+
+      if (_controllers['phone']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Phone / WhatsApp No. is required.");
+        return;
+      }
+
+      // Visit meta
+      if (_values['selectedVisitCategory'] == null) {
+        _showSnack("⚠️ Visit Category is required.");
+        return;
+      }
+
+      if (_values['selectedInfluencerType'] == null) {
+        _showSnack("⚠️ Influencer Type is required.");
+        return;
+      }
+
+      // Location & region
+      if (_values['selectedRegion'] == null) {
+        _showSnack("⚠️ Region is required.");
+        return;
+      }
+
+      if (_controllers['area']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Area is required.");
+        return;
+      }
+
+      if (_controllers['siteAddress']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Address is required.");
+        return;
+      }
+
+      // Brands
+      final List brands = _values['brandsInUse'] ?? [];
+      if (brands.isEmpty) {
+        _showSnack("⚠️ Please select at least one Brand in Use / Selling.");
+        return;
+      }
+
+      // Conversion / Bag picked flow
+      if (_values['isBagPicked'] == true) {
+        if (_controllers['qty']!.text.trim().isEmpty) {
+          _showSnack("⚠️ Quantity is required.");
+          return;
+        }
+
+        if (_controllers['rate']!.text.trim().isEmpty) {
+          _showSnack("⚠️ Rate per Bag is required.");
+          return;
+        }
+
+        if (_values['supplyDate'] == null) {
+          _showSnack("⚠️ Supply Date is mandatory when bags are picked.");
+          return;
+        }
+      }
+    }
+
+    if (type.contains("Contractor/Head Mason ") ||
+        type.contains("Engineer/Architect")) {
+      if (_values['selectedInfluencerType'] == null) {
+        _showSnack("⚠️ Influencer Type is required.");
+        return;
+      }
+
+      if (_controllers['influencerName']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Influencer Name is required.");
+        return;
+      }
+
+      if (_controllers['influencerPhone']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Influencer Phone is required.");
+        return;
+      }
+
+      if (_values['selectedRegion'] == null) {
+        _showSnack("⚠️ Region is required.");
+        return;
+      }
+
+      if (_controllers['area']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Area is required.");
+        return;
+      }
+
+      if (_controllers['siteAddress']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Address is required.");
+        return;
+      }
+
+      if (_values['selectedVisitCategory'] == null) {
+        _showSnack("⚠️ Visit Category is required.");
+        return;
+      }
+
+      final List brands = _values['brandsInUse'] ?? [];
+      if (brands.isEmpty) {
+        _showSnack("⚠️ Please select at least one Preferred Brand.");
+        return;
+      }
+    }
 
     // ---------------------------------------------------------
     // 2. CHECKOUT CAMERA (Blocking - User must do this)
