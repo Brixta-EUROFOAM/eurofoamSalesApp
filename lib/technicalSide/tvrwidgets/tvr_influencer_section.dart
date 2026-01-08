@@ -24,7 +24,6 @@ class TvrInfluencerSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-
         /// ---------------- INFLUENCER SELECTION ----------------
         TvrSearchTile(
           label: 'Link Registered Profile (Optional)',
@@ -74,23 +73,6 @@ class TvrInfluencerSection extends StatelessWidget {
         ),
 
         const SizedBox(height: 16),
-
-        /// ---------------- VISIT META ----------------
-        TvrDropdownField(
-          label: 'Visit Category',
-          value: values['selectedVisitCategory'],
-          items: TvrConstants.visitCategoryOptions,
-          onChanged: (v) => onUpdate('selectedVisitCategory', v),
-        ),
-
-        const SizedBox(height: 16),
-
-        TvrInputField(
-          label: 'Purpose of Visit',
-          controller: controllers['purposeOfVisit']!,
-        ),
-
-        /// ---------------- DETAILS ----------------
         const TvrSectionHeader(title: 'Details'),
 
         Row(
@@ -121,11 +103,26 @@ class TvrInfluencerSection extends StatelessWidget {
           maxLines: 2,
         ),
 
+        /// ---------------- VISIT META ----------------
+        TvrDropdownField(
+          label: 'Visit Category',
+          value: values['selectedVisitCategory'],
+          items: TvrConstants.visitCategoryOptions,
+          onChanged: (v) => onUpdate('selectedVisitCategory', v),
+        ),
+
         const SizedBox(height: 16),
+
+        TvrInputField(
+          label: 'Purpose of Visit',
+          controller: controllers['purposeOfVisit']!,
+          isRequired: false,
+        ),
 
         TvrInputField(
           label: 'Productivity',
           controller: controllers['productivity']!,
+          isRequired: false,
         ),
 
         const SizedBox(height: 16),

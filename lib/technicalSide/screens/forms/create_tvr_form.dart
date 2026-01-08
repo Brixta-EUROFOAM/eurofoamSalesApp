@@ -656,6 +656,12 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       _showSnack("⚠️ Remarks are required.");
       return;
     }
+    if (type.contains("Dealer")) {
+      if (_values['isBagPicked'] == true && _values['supplyDate'] == null) {
+        _showSnack("⚠️ Supply Date is mandatory when bags are picked.");
+        return;
+      }
+    }
 
     // ---------------------------------------------------------
     // 2. CHECKOUT CAMERA (Blocking - User must do this)

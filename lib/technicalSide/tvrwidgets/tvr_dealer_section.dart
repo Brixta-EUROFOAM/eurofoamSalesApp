@@ -117,14 +117,14 @@ class TvrDealerSection extends StatelessWidget {
         const SizedBox(height: 16),
 
         /// ---------------- DEALER PHOTO ----------------
-        TvrSelectionCard(
-          label: values['sitePhotoFile'] != null
-              ? 'Photo Selected'
-              : 'Capture Dealer Photo (Optional)',
-          icon: Icons.camera_enhance,
-          isDone: values['sitePhotoFile'] != null,
-          onTap: onPickPhoto,
-        ),
+        // TvrSelectionCard(
+        //   label: values['sitePhotoFile'] != null
+        //       ? 'Photo Selected'
+        //       : 'Capture Dealer Photo (Optional)',
+        //   icon: Icons.camera_enhance,
+        //   isDone: values['sitePhotoFile'] != null,
+        //   onTap: onPickPhoto,
+        // ),
 
         /// ---------------- BUSINESS INFO ----------------
         const TvrSectionHeader(title: 'Business Info'),
@@ -132,6 +132,7 @@ class TvrDealerSection extends StatelessWidget {
         TvrInputField(
           label: 'Productivity',
           controller: controllers['productivity']!,
+          isRequired: false,
         ),
 
         const SizedBox(height: 16),
