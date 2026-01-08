@@ -147,10 +147,9 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
     }
   }
 
-  void _showSingleCreateForm() {
+void _showSingleCreateForm() {
     try {
       final controller = AppKernel.instance.feature<PjpCreateController>();
-
       final result = controller.startSingle();
 
       if (result.mode == PjpCreateMode.single) {
@@ -158,6 +157,8 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
           context: context,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
+          // ⚡ FIX: This freezes the sheet so it doesn't move when you drag the map
+          enableDrag: false, 
           builder: (_) => CreateTechnicalPjpForm(
             employee: widget.employee,
             onPjpCreated: refreshPjpList,
@@ -165,9 +166,9 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(e.toString())));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
     }
   }
 
@@ -267,7 +268,63 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
       );
     }
   }
+  // 🔥 NEW: Manually End PJP
+// 🔥 NEW: Manually End PJP
+  Future<void> _completePjp(Pjp pjp) async {
+    // 1. Confirm Dialog
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("End Visit Plan?"),
+        content: const Text(
+          "This will mark the PJP as COMPLETED.\n\n"
+          "• You cannot start this journey again today.\n"
+          "• Ensure you have submitted all reports.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("CANCEL"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("END VISIT", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
 
+    if (confirm != true) return;
+
+    // 2. Loading
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    // 3. API Call
+    try {
+      await _apiService.updatePjp(pjp.id, {'status': 'COMPLETED'});
+      if (mounted) Navigator.pop(context); // Pop loader
+      
+      refreshPjpList(); // Refresh to remove/update item
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Visit Marked as Completed"), 
+          backgroundColor: Colors.green
+        ),
+      );
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to end: $e"), backgroundColor: Colors.red),
+      );
+    }
+  }
   @override
   Widget build(BuildContext context) {
     final flags = context.read<TechnicalFlags>();
@@ -487,7 +544,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
     );
   }
 
-  Widget _buildVisitCard(Pjp pjp) {
+Widget _buildVisitCard(Pjp pjp) {
     final flags = context.read<TechnicalFlags>();
     // 1. Status Logic
     final isPending = pjp.status.toUpperCase() == 'PENDING';
@@ -517,6 +574,8 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
 
     return Slidable(
       enabled: flags.pjpjourney && !isPending,
+      
+      // 🟢 SWIPE RIGHT -> START/RESUME JOURNEY
       startActionPane: ActionPane(
         motion: const StretchMotion(),
         children: [
@@ -525,13 +584,31 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
             backgroundColor: _accentGreen,
             foregroundColor: Colors.white,
             icon: Icons.navigation,
-            label: 'START',
+            label: isInProgress ? 'RESUME' : 'START',
             borderRadius: const BorderRadius.horizontal(
               left: Radius.circular(16),
             ),
           ),
         ],
       ),
+
+      // 🔴 SWIPE LEFT -> END PJP (The New Feature)
+      endActionPane: ActionPane(
+        motion: const StretchMotion(),
+        children: [
+          SlidableAction(
+            onPressed: (_) => _completePjp(pjp),
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            icon: Icons.check_circle_outline,
+            label: 'END PJP',
+            borderRadius: const BorderRadius.horizontal(
+              right: Radius.circular(16),
+            ),
+          ),
+        ],
+      ),
+
       child: Container(
         decoration: BoxDecoration(
           color: _surfaceWhite,
@@ -547,6 +624,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
         child: Material(
           color: Colors.transparent,
           child: InkWell(
+            // Tapping also starts the journey
             onTap: () => flags.journey ? () => _startJourney(pjp) : null,
             borderRadius: BorderRadius.circular(20),
             child: Padding(
@@ -640,26 +718,34 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                     ),
                   ),
 
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isPending
-                          ? Colors.grey.withOpacity(0.15)
-                          : _accentGreen.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      isPending ? "WAIT" : "START",
-                      style: TextStyle(
-                        color: isPending ? Colors.grey : _accentGreen,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
+                  // Updated Visual Cue: Small chevrons to show it slides both ways
+                  if (!isPending)
+                    Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.chevron_left, color: Colors.grey[300], size: 20),
+                        Icon(Icons.chevron_right, color: Colors.grey[300], size: 20),
+                      ],
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        "WAIT",
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

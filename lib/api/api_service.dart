@@ -220,7 +220,7 @@ class ApiService {
       final request = http.MultipartRequest('POST', url);
       // NOTE: We assume the backend is configured to accept the Auth token via a file field or custom header
       if (_authToken != null) {
-        request.headers['Authorization'] = 'Bearer $_authToken!';
+        request.headers['Authorization'] = 'Bearer $_authToken';
       }
       request.files.add(
         await http.MultipartFile.fromPath('file', imageFile.path),

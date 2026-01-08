@@ -1,19 +1,27 @@
 // lib/technicalSide/screens/forms/create_tvr_form.dart
 import 'dart:io';
 import 'dart:async';
-import 'dart:convert'; // Added for Object Serialization (RAM Recovery)
-import 'package:salesmanapp/api/api_service.dart';
+import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
+import 'package:salesmanapp/technicalSide/utils/tvrworker.dart';
+
+// Project Imports
+import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/technicalSide/models/sites_model.dart';
 import 'package:salesmanapp/technicalSide/models/mason_pc_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
-import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
+// Refactored Components
+import '../../utils/tvr_constants.dart';
+import '../../tvrwidgets/tvr_form_widgets.dart';
+import '../../tvrwidgets/tvr_camera_screen.dart';
+import '../../tvrwidgets/tvr_ihb_section.dart';
+import '../../tvrwidgets/tvr_dealer_section.dart';
+import '../../tvrwidgets/tvr_influencer_section.dart';
 
 class CreateTvrScreen extends StatefulWidget {
   final Employee employee;
@@ -36,531 +44,314 @@ class CreateTvrScreen extends StatefulWidget {
 class _CreateTvrScreenState extends State<CreateTvrScreen> {
   final _formKey = GlobalKey<FormState>();
   final _apiService = ApiService();
-  final _imagePicker = ImagePicker();
 
-  // --- CONTROLLERS ---
-  final _siteNameConcernedPersonController = TextEditingController();
-  final _phoneNoController = TextEditingController();
-  final _whatsappNoController = TextEditingController();
-  final _associatedPartyNameController = TextEditingController();
-  final _salespersonRemarksController = TextEditingController();
-  final _conversionQuantityValueController = TextEditingController();
-  final _qualityComplaintController = TextEditingController();
-
-  final _siteAddressController = TextEditingController();
-  final _marketNameController = TextEditingController();
-  final _purposeOfVisitController = TextEditingController();
-  final _constAreaSqFtController = TextEditingController();
-  final _currentBrandPriceController = TextEditingController();
-  final _siteStockController = TextEditingController();
-  final _estRequirementController = TextEditingController();
-  final _supplyingDealerNameController = TextEditingController();
-  final _nearbyDealerNameController = TextEditingController();
-  final _serviceDescController = TextEditingController();
-  final _dhalaiVerificationCodeController = TextEditingController();
-
-  final _influencerNameController = TextEditingController();
-  final _influencerPhoneController = TextEditingController();
-  final _influencerProductivityController = TextEditingController();
-
-  // Lat/Long Display Controllers
-  final _latitudeController = TextEditingController();
-  final _longitudeController = TextEditingController();
-
-  final _areaController = TextEditingController();
-
-  // --- STATE ---
-  bool _isSubmitting = false;
-  bool _isUploadingImage = false;
-  bool _isFetchingLocation = false;
-
-  // Selection
-  TechnicalSite? _selectedSite;
-  Mason? _selectedMason;
-  Dealer? _selectedDealer;
-
-  // Dropdowns
-  String? _selectedVisitType = 'Site Visit';
-  String? _selectedVisitCategory;
-
-  String? _selectedCustomerType;
-
-  String? _selectedConversionType;
-  String? _selectedConversionUnit;
-  String? _selectedConversionFromBrand;
-
-  String? _selectedStage;
-  String? _selectedSiteVisitType;
-  List<String> _selectedBrandsInUse = [];
-
-  String? _selectedServiceType;
-  String? _selectedTechActivity;
-  String? _selectedInfluencerType;
-
-  // Region Dropdown State
-  String? _selectedRegion;
-
-  // Booleans
-  bool _isConverted = false;
-  bool _isTechService = false;
-  bool _isSchemeEnrolled = false;
-
-  // Dealer Specific
-  bool _isBagPicked = false;
-  DateTime? _supplyDate;
-
-  // Check-In Data & Images
-  DateTime? _checkInTime;
-  File? _inTimeImageFile;
-  String? _inTimeImageUrl;
-  Position? _capturedLocation;
-  File? _sitePhotoFile;
-
-  // --- DROPDOWN DATA LISTS ---
-  // form options
-  final List<String> _customerTypeOptions = [
-    'IHB/Site',
-    'Engineer/Architect',
-    'Contractor/Head Mason',
-    'Channel Partner(Dealer/Sub-Dealer)',
-    'Competitor Channel Partner (Dealer/Sub-Dealer)',
-  ];
-  //--------------
-  final List<String> _stageOptions = [
-    'Foundation',
-    'Plinth Level',
-    'Brick Work',
-    'Column Work',
-    'Lintel Work',
-    'Slab Work',
-    'Plaster Work',
-  ];
-  final List<String> _brandOptions = [
-    'Best',
-    'Star',
-    'Dalmia',
-    'Black Tiger',
-    'Topcem',
-    'Taj',
-    'Amrit',
-    'Max',
-    'Ambuja',
-    'ACC',
-    'other',
-  ];
-  final List<String> _serviceTypeOptions = [
-    'Slab Supervision',
-    'CTV Demo Cube Cast',
-    'NDT',
-    'Good Construction Practices',
-  ];
-  final List<String> _techActivityOptions = [
-    'Site Visit',
-    'IHB Meet',
-    'Contractor/Mason Meet',
-    'Consumer Awareness Camp',
-  ];
-  final List<String> _influencerTypeOptions = [
-    'Mason',
-    'Contractor',
-    'Engineer/Architect',
-    'Builder',
-    'Dealer',
-  ];
-
-  // Consolidated Visit Category
-  final List<String> _visitCategoryOptions = ['New', 'Follow Up'];
-
-  final List<String> _regionOptions = [
-    "All Region",
-    "Kamrup",
-    "Upper Assam",
-    "Lower Assam",
-    "Central Assam",
-    "Barak Valley",
-    "North Bank",
-    "Meghalaya",
-    "Mizoram",
-    "Nagaland",
-    "Tripura",
-  ];
-
-  // --- THEME ---
-  static const Color _surfaceWhite = Colors.white;
-  static const Color _cardNavy = Color(0xFF0F172A);
-  static const Color _textDark = Color(0xFF111827);
-  static const Color _textGrey = Color(0xFF6B7280);
-  static const Color _inputFill = Color(0xFFF9FAFB);
-  static const Color _accentGreen = Color(0xFF10B981);
-  static const Color _accentOrange = Color(0xFFF59E0B);
+  // ⚡ RAM OPTIMIZATION: Map-based state and controller management
+  late final Map<String, TextEditingController> _controllers;
+  final Map<String, dynamic> _values = {
+    'selectedCustomerType': null,
+    'selectedVisitType': null,
+    'selectedVisitCategory': null,
+    'selectedRegion': null,
+    'selectedUnit': 'Bags',
+    'isConverted': false,
+    'isBagPicked': false,
+    'isTechService': false,
+    'isSubmitting': false,
+    'isUploadingImage': false,
+    'isFetchingLocation': false,
+  };
 
   @override
   void initState() {
     super.initState();
-    if (widget.site != null) {
-      _onSiteSelected(widget.site!);
-    }
+    _initControllers();
+
+    // Autofill Logic
+    if (widget.site != null) _onSiteSelected(widget.site!);
     if (widget.initialCheckInTime != null) {
-      _checkInTime = widget.initialCheckInTime;
+      _values['checkInTime'] = widget.initialCheckInTime;
+      _values['isCheckInProcessing'] = false;
+      _values['checkInFailed'] = false;
     }
-    // Pre-fill region from employee if matches
     if (widget.employee.region != null &&
-        _regionOptions.contains(widget.employee.region)) {
-      _selectedRegion = widget.employee.region;
+        TvrConstants.regionOptions.contains(widget.employee.region)) {
+      _values['selectedRegion'] = widget.employee.region;
     }
 
-    // ⚡ RAM RECOVERY LOGIC
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-       await _loadDrafts();
-       await _checkLostData();
+      await _loadDrafts();
     });
   }
 
-  // --- 💾 RECOVERY SYSTEM ---
-  
-  // 1. Save state to disk
-  Future<void> _saveDrafts() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    // Save Controllers
-    await prefs.setString('tvr_party_name', _associatedPartyNameController.text);
-    await prefs.setString('tvr_phone', _phoneNoController.text);
-    await prefs.setString('tvr_whatsapp', _whatsappNoController.text);
-    await prefs.setString('tvr_address', _siteAddressController.text);
-    await prefs.setString('tvr_area', _areaController.text);
-    await prefs.setString('tvr_remarks', _salespersonRemarksController.text);
-    await prefs.setString('tvr_purpose', _purposeOfVisitController.text);
-    await prefs.setString('tvr_market', _marketNameController.text);
-    await prefs.setString('tvr_const_area', _constAreaSqFtController.text);
-    await prefs.setString('tvr_est_req', _estRequirementController.text);
-    await prefs.setString('tvr_brand_price', _currentBrandPriceController.text);
-    await prefs.setString('tvr_site_stock', _siteStockController.text);
-    await prefs.setString('tvr_qty', _conversionQuantityValueController.text);
+  void _showError(String message) {
+    if (!mounted) return;
 
-    // Save Dropdowns & Dates
-    if (_selectedCustomerType != null) await prefs.setString('tvr_cust_type', _selectedCustomerType!);
-    if (_selectedVisitCategory != null) await prefs.setString('tvr_visit_cat', _selectedVisitCategory!);
-    if (_selectedVisitType != null) await prefs.setString('tvr_visit_type', _selectedVisitType!);
-    if (_selectedSiteVisitType != null) await prefs.setString('tvr_site_visit_type', _selectedSiteVisitType!);
-    if (_selectedRegion != null) await prefs.setString('tvr_region', _selectedRegion!);
-    if (_selectedStage != null) await prefs.setString('tvr_stage', _selectedStage!);
-    if (_selectedInfluencerType != null) await prefs.setString('tvr_influencer_type', _selectedInfluencerType!);
-    if (_selectedServiceType != null) await prefs.setString('tvr_service_type', _selectedServiceType!);
-    if (_selectedTechActivity != null) await prefs.setString('tvr_tech_activity', _selectedTechActivity!);
-    if (_supplyDate != null) await prefs.setString('tvr_supply_date', _supplyDate!.toIso8601String());
-
-    // Save Objects (JSON) - Crucial for recovery
-    if (_selectedSite != null) {
-      await prefs.setString('tvr_selected_site_obj', jsonEncode(_selectedSite!.toJson()));
-    }
-    if (_selectedMason != null) {
-      await prefs.setString('tvr_selected_mason_obj', jsonEncode(_selectedMason!.toJson()));
-    }
-    if (_selectedDealer != null) {
-      await prefs.setString('tvr_selected_dealer_obj', jsonEncode(_selectedDealer!.toJson()));
-    }
-
-    // Save Lists
-    await prefs.setStringList('tvr_brands_in_use', _selectedBrandsInUse);
-    
-    // Save Booleans
-    await prefs.setBool('tvr_is_converted', _isConverted);
-    await prefs.setBool('tvr_is_bag_picked', _isBagPicked);
-    await prefs.setBool('tvr_is_tech_service', _isTechService);
-    await prefs.setBool('tvr_is_scheme_enrolled', _isSchemeEnrolled);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
-  // 2. Load state from disk
-  Future<void> _loadDrafts() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    // Only load if we have data to avoid overwriting init logic
-    if (prefs.containsKey('tvr_party_name')) {
-      setState(() {
-        // Restore Controllers
-        _associatedPartyNameController.text = prefs.getString('tvr_party_name') ?? "";
-        _phoneNoController.text = prefs.getString('tvr_phone') ?? "";
-        _whatsappNoController.text = prefs.getString('tvr_whatsapp') ?? "";
-        _siteAddressController.text = prefs.getString('tvr_address') ?? "";
-        _areaController.text = prefs.getString('tvr_area') ?? "";
-        _salespersonRemarksController.text = prefs.getString('tvr_remarks') ?? "";
-        _purposeOfVisitController.text = prefs.getString('tvr_purpose') ?? "";
-        _marketNameController.text = prefs.getString('tvr_market') ?? "";
-        _constAreaSqFtController.text = prefs.getString('tvr_const_area') ?? "";
-        _estRequirementController.text = prefs.getString('tvr_est_req') ?? "";
-        _currentBrandPriceController.text = prefs.getString('tvr_brand_price') ?? "";
-        _siteStockController.text = prefs.getString('tvr_site_stock') ?? "";
-        _conversionQuantityValueController.text = prefs.getString('tvr_qty') ?? "";
-
-        // Restore Dropdowns
-        _selectedCustomerType = prefs.getString('tvr_cust_type');
-        _selectedVisitCategory = prefs.getString('tvr_visit_cat');
-        _selectedVisitType = prefs.getString('tvr_visit_type');
-        _selectedSiteVisitType = prefs.getString('tvr_site_visit_type');
-        _selectedRegion = prefs.getString('tvr_region');
-        _selectedStage = prefs.getString('tvr_stage');
-        _selectedInfluencerType = prefs.getString('tvr_influencer_type');
-        _selectedServiceType = prefs.getString('tvr_service_type');
-        _selectedTechActivity = prefs.getString('tvr_tech_activity');
-
-        if (prefs.containsKey('tvr_supply_date')) {
-          _supplyDate = DateTime.tryParse(prefs.getString('tvr_supply_date')!);
-        }
-
-        // Restore Objects
-        if (prefs.containsKey('tvr_selected_site_obj')) {
-          try {
-            final json = jsonDecode(prefs.getString('tvr_selected_site_obj')!);
-            _selectedSite = TechnicalSite.fromJson(json);
-          } catch (e) { debugPrint("Error restoring site: $e"); }
-        }
-        if (prefs.containsKey('tvr_selected_mason_obj')) {
-          try {
-            final json = jsonDecode(prefs.getString('tvr_selected_mason_obj')!);
-            _selectedMason = Mason.fromJson(json);
-          } catch (e) { debugPrint("Error restoring mason: $e"); }
-        }
-        if (prefs.containsKey('tvr_selected_dealer_obj')) {
-          try {
-             final json = jsonDecode(prefs.getString('tvr_selected_dealer_obj')!);
-             _selectedDealer = Dealer.fromJson(json); 
-          } catch (e) { debugPrint("Error restoring dealer: $e"); }
-        }
-
-        _selectedBrandsInUse = prefs.getStringList('tvr_brands_in_use') ?? [];
-
-        // Restore Booleans
-        _isConverted = prefs.getBool('tvr_is_converted') ?? false;
-        _isBagPicked = prefs.getBool('tvr_is_bag_picked') ?? false;
-        _isTechService = prefs.getBool('tvr_is_tech_service') ?? false;
-        _isSchemeEnrolled = prefs.getBool('tvr_is_scheme_enrolled') ?? false;
-      });
-    }
+  void _showSnack(String message, {bool isError = true}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError
+            ? const Color.fromARGB(255, 238, 176, 42)
+            : TvrConstants.accentGreen,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
-  // 3. Clear drafts after submit
-  Future<void> _clearDrafts() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // Or remove specific keys
-  }
-
-  // 4. Recover Lost Image (The Process Death Fix)
-  Future<void> _checkLostData() async {
-    final LostDataResponse response = await _imagePicker.retrieveLostData();
-    if (response.isEmpty) return;
-    
-    final prefs = await SharedPreferences.getInstance();
-
-    if (response.file != null) {
-      final action = prefs.getString('pending_camera_action');
-
-      setState(() {
-        if (action == 'check_in') {
-          _inTimeImageFile = File(response.file!.path);
-          _handleRecoveryCheckIn(); // Auto upload and fetch GPS
-        } else if (action == 'site_photo') {
-          _sitePhotoFile = File(response.file!.path);
-          showSnack("Site photo restored.", backgroundColor: _accentGreen);
-        }
-      });
-      // Clear the flag so we don't process it again
-      await prefs.remove('pending_camera_action');
-    }
-  }
-
-  // Helper for check-in recovery
-  Future<void> _handleRecoveryCheckIn() async {
-      setState(() => _isUploadingImage = true);
-      try {
-        if (_inTimeImageFile != null) {
-          final imageUrl = await _apiService.uploadImageToR2(_inTimeImageFile!);
-          final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-          
-          if(mounted) {
-            setState(() {
-              _inTimeImageUrl = imageUrl;
-              _checkInTime = DateTime.now(); // Reset time to now
-              _capturedLocation = position;
-              _latitudeController.text = position.latitude.toStringAsFixed(6);
-              _longitudeController.text = position.longitude.toStringAsFixed(6);
-              _isUploadingImage = false;
-            });
-            showSnack("Check-in Restored Successfully", backgroundColor: _accentGreen);
-          }
-        }
-      } catch(e) {
-        if(mounted) setState(() => _isUploadingImage = false);
-      }
+  void _initControllers() {
+    final keys = [
+      'concernedPerson',
+      'phone',
+      'whatsapp',
+      'dealerName',
+      'partyName',
+      'remarks',
+      'qty',
+      'rate',
+      'siteAddress',
+      'marketName',
+      'purposeOfVisit',
+      'constArea',
+      'siteStock',
+      'estRequirement',
+      'supplyingDealer',
+      'nearbyDealer',
+      'serviceDesc',
+      'influencerName',
+      'influencerPhone',
+      'productivity',
+      'latitude',
+      'longitude',
+      'area',
+    ];
+    _controllers = {for (var key in keys) key: TextEditingController()};
   }
 
   @override
   void dispose() {
-    _siteNameConcernedPersonController.dispose();
-    _phoneNoController.dispose();
-    _whatsappNoController.dispose();
-    _associatedPartyNameController.dispose();
-    _salespersonRemarksController.dispose();
-    _conversionQuantityValueController.dispose();
-    _qualityComplaintController.dispose();
-    _siteAddressController.dispose();
-    _marketNameController.dispose();
-    _purposeOfVisitController.dispose();
-    _constAreaSqFtController.dispose();
-    _currentBrandPriceController.dispose();
-    _siteStockController.dispose();
-    _estRequirementController.dispose();
-    _supplyingDealerNameController.dispose();
-    _nearbyDealerNameController.dispose();
-    _serviceDescController.dispose();
-    _dhalaiVerificationCodeController.dispose();
-    _influencerNameController.dispose();
-    _influencerPhoneController.dispose();
-    _influencerProductivityController.dispose();
-    _latitudeController.dispose();
-    _longitudeController.dispose();
-    _areaController.dispose();
+    _controllers.forEach((_, c) => c.dispose()); // ⚡ Cleanup RAM
     super.dispose();
   }
 
-  void _onSiteSelected(TechnicalSite site) {
-    setState(() {
-      _selectedSite = site;
-      _siteNameConcernedPersonController.text = site.concernedPerson;
-      _phoneNoController.text = site.phoneNo;
-      _siteAddressController.text = site.address;
-      _areaController.text = site.area ?? '';
-      if (site.region != null && _regionOptions.contains(site.region)) {
-        _selectedRegion = site.region;
-      }
-      if (site.stageOfConstruction != null &&
-          _stageOptions.contains(site.stageOfConstruction)) {
-        _selectedStage = site.stageOfConstruction;
-      }
-    });
+  // --- 💾 RECOVERY SYSTEM ---
+
+  void _onUpdate(String key, dynamic value) {
+    setState(() => _values[key] = value);
     _saveDrafts();
   }
 
-  void _onMasonSelected(Mason mason) {
-    setState(() {
-      _selectedMason = mason;
-      _influencerNameController.text = mason.name;
-      _influencerPhoneController.text = mason.phoneNumber;
-    });
-    _saveDrafts();
+  Future<void> _saveDrafts() async {
+    final prefs = await SharedPreferences.getInstance();
+    _controllers.forEach((key, c) => prefs.setString('tvr_ctrl_$key', c.text));
+    prefs.setString('tvr_val_cust_type', _values['selectedCustomerType'] ?? "");
+    prefs.setBool('tvr_val_is_converted', _values['isConverted'] ?? false);
+    prefs.setBool('tvr_val_is_bag_picked', _values['isBagPicked'] ?? false);
+    if (_values['brandsInUse'] != null) {
+      prefs.setStringList('tvr_val_brands', _values['brandsInUse']);
+    }
   }
 
-  void _onDealerSelected(Dealer dealer) {
+  Future<void> _loadDrafts() async {
+    if (_values['selectedSite'] != null) {
+      _onSiteSelected(_values['selectedSite']);
+    }
+
+    if (_values['selectedDealer'] != null) {
+      _onDealerSelected(_values['selectedDealer']);
+    }
+
+    if (_values['selectedMason'] != null) {
+      _onMasonSelected(_values['selectedMason']);
+    }
+    final prefs = await SharedPreferences.getInstance();
+    if (!prefs.containsKey('tvr_ctrl_remarks')) return;
+
     setState(() {
-      _selectedDealer = dealer;
-      // Auto-fill form fields
-      _associatedPartyNameController.text = dealer.name;
-      _phoneNoController.text = dealer.phoneNo;
-      _siteAddressController.text = dealer.address;
-      _areaController.text = dealer.area;
-      if (_regionOptions.contains(dealer.region)) {
-        _selectedRegion = dealer.region;
-      }
-    });
-    _saveDrafts();
-  }
-
-  // --- 🛑 PLAY STORE COMPLIANT LOCATION LOGIC ---
-  Future<Position?> _ensureLocationPermission() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    // 1. Check GPS
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      showSnack(
-        "Location services are disabled. Please enable GPS.",
-        backgroundColor: Colors.red,
+      _controllers.forEach(
+        (key, c) => c.text = prefs.getString('tvr_ctrl_$key') ?? "",
       );
+      _values['selectedCustomerType'] = prefs.getString('tvr_val_cust_type');
+      _values['isConverted'] = prefs.getBool('tvr_val_is_converted') ?? false;
+    });
+  }
+
+  // Future<void> _clearDrafts() async {
+  //   final prefs = await SharedPreferences.getInstance();
+  //   final allKeys = prefs.getKeys();
+  //   for (String key in allKeys) {
+  //     if (key.startsWith('tvr_')) await prefs.remove(key);
+  //   }
+  // }
+
+  // --- 🛑 LOCATION & CAMERA ---
+
+  Future<void> _fetchLocationAndAddress() async {
+    _onUpdate('isFetchingLocation', true);
+
+    try {
+      final Position? position = await _ensureLocationPermission();
+      if (position == null) {
+        _onUpdate('isFetchingLocation', false);
+        return;
+      }
+      // ⚡ STEP 1: Update Lat/Long immediately so the user sees something happened
+      setState(() {
+        _values['capturedLocation'] = position;
+        _controllers['latitude']!.text = position.latitude.toStringAsFixed(6);
+        _controllers['longitude']!.text = position.longitude.toStringAsFixed(6);
+      });
+
+      // ⚡ STEP 2: Fetch Address
+      final addressDetails = await _apiService.reverseGeocodeWithRadar(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+
+      setState(() {
+        // ⚡ Robust mapping: Try different common keys from geocoding services
+        final String? foundAddress =
+            addressDetails['address'] ??
+            addressDetails['formattedAddress'] ??
+            addressDetails['addressLabel'];
+
+        if (foundAddress != null && foundAddress.isNotEmpty) {
+          _controllers['siteAddress']!.text = foundAddress;
+        }
+
+        if (addressDetails['area'] != null) {
+          _controllers['area']!.text = addressDetails['area']!;
+        }
+
+        if (addressDetails['region'] != null &&
+            TvrConstants.regionOptions.contains(addressDetails['region'])) {
+          _values['selectedRegion'] = addressDetails['region'];
+        }
+      });
+
+      _saveDrafts();
+      _showSnack(
+        "Location & Address Updated",
+        isError: false,
+      ); // Green snackbar
+    } catch (e) {
+      debugPrint("Geocoding Error: $e");
+      _showSnack("Location detected, but address fetch failed.");
+    } finally {
+      _onUpdate('isFetchingLocation', false);
+    }
+  }
+
+  Future<bool> _showLocationDisclosureDialog() async {
+    return await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: const [
+                  Icon(Icons.location_on, color: Colors.black87),
+                  SizedBox(width: 8),
+                  Text(
+                    "Location Access Required",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ],
+              ),
+              content: const Text(
+                "To verify this visit, the app needs your location.\n\n",
+                style: TextStyle(height: 1.4),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text(
+                    "DENY",
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text("ALLOW"),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+  }
+
+  Future<Position?> _ensureLocationPermission() async {
+    // 1. Check if GPS is ON
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _showError("Please enable GPS to continue.");
       return null;
     }
 
-    // 2. Check Permission
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      // 3. SHOW PROMINENT DISCLOSURE (Crucial for Play Store)
-      if (!mounted) return null;
-      final bool userAgreed = await _showLocationDisclosureDialog();
+    // 2. Check permission state
+    LocationPermission permission = await Geolocator.checkPermission();
 
-      if (!userAgreed) {
-        showSnack(
-          "Location is required to verify Site Visit.",
-          backgroundColor: Colors.orange,
-        );
+    if (permission == LocationPermission.denied) {
+      // 🔔 SHOW DISCLOSURE FIRST (CRITICAL)
+      final bool userAccepted = await _showLocationDisclosureDialog();
+      if (!userAccepted) {
+        _showError("Location permission is required to verify visit.");
         return null;
       }
 
       permission = await Geolocator.requestPermission();
+
       if (permission == LocationPermission.denied) {
-        showSnack("Location permission denied.", backgroundColor: Colors.red);
+        _showError("Location permission denied.");
         return null;
       }
     }
 
     if (permission == LocationPermission.deniedForever) {
-      if (mounted) _showSettingsDialog();
+      _showLocationSettingsDialog();
       return null;
     }
 
-    // 4. Get Position
+    // 3. Fetch location
     try {
+      // ⚡ ADDED: timeLimit prevents indefinite hanging
+      // On Emulators, make sure to "push" a location from Extended Controls
       return await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10), // Stop waiting after 10s
       );
     } catch (e) {
-      debugPrint("Location Error: $e");
-      return null;
+      // If it times out or fails, try to get the last known position as a fallback
+      debugPrint("GPS Error");
+      return await Geolocator.getLastKnownPosition();
     }
   }
 
-  // --- 📢 DISCLOSURE DIALOG ---
-  Future<bool> _showLocationDisclosureDialog() async {
-    return await showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: Row(
-              children: const [
-                Icon(Icons.location_on, color: _cardNavy),
-                SizedBox(width: 8),
-                Text("Location Required"),
-              ],
-            ),
-            content: const Text(
-              "To verify this technical visit, this app collects location data to ensure you are physically present at the site.\n\n"
-              "This data is collected only when you tap 'Fetch Location' or 'Check-In'.",
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text("DENY", style: TextStyle(color: Colors.grey)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: _cardNavy),
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text(
-                  "ACCEPT",
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-  }
-
-  // --- ⚙️ SETTINGS DIALOG ---
-  void _showSettingsDialog() {
+  void _showLocationSettingsDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Permission Required"),
         content: const Text(
-          "Location permission is permanently denied. Please enable it in Settings to submit TVRs.",
+          "Location permission is permanently denied.\n\n"
+          "Please enable it from App Settings to submit the report.",
         ),
         actions: [
           TextButton(
@@ -579,536 +370,473 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     );
   }
 
-  // --- Fetch Location & Address ---
-  Future<void> _fetchLocationAndAddress() async {
-    setState(() => _isFetchingLocation = true);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-
-    // 1. Get Location SAFELY (Play Store Compliant)
-    // This calls the helper method that handles Disclosure & Permissions
-    final Position? position = await _ensureLocationPermission();
-
-    // If null, permission was denied or GPS is off. Stop here.
-    if (position == null) {
-      setState(() => _isFetchingLocation = false);
-      return;
-    }
-
-    try {
-      // 2. Reverse Geocoding
-      Map<String, String> addressDetails = {};
-      try {
-        addressDetails = await _apiService.reverseGeocodeWithRadar(
-          latitude: position.latitude,
-          longitude: position.longitude,
-        );
-      } catch (e) {
-        debugPrint("Geocoding error: $e");
-      }
-
-      // 3. Update UI
-      if (mounted) {
-        setState(() {
-          _capturedLocation = position;
-          _latitudeController.text = position.latitude.toStringAsFixed(6);
-          _longitudeController.text = position.longitude.toStringAsFixed(6);
-
-          if (addressDetails['address']?.isNotEmpty == true) {
-            _siteAddressController.text = addressDetails['address']!;
-          }
-          if (addressDetails['area']?.isNotEmpty == true) {
-            _areaController.text = addressDetails['area']!;
-          }
-          if (addressDetails['region'] != null &&
-              _regionOptions.contains(addressDetails['region'])) {
-            _selectedRegion = addressDetails['region'];
-          }
-        });
-        
-        // Save fetched data to disk
-        _saveDrafts();
-
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text("Location & Address Updated"),
-            backgroundColor: _accentGreen,
-            duration: Duration(milliseconds: 1000),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text("Location Error: $e"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isFetchingLocation = false);
-    }
-  }
-
-  // --- SEARCH DIALOGS ---
-  Future<void> _openSiteSearch() async {
-    final TechnicalSite? result = await showDialog(
-      context: context,
-      builder: (context) => _ServerSiteSearchDialog(
-        api: _apiService,
-        userId: int.parse(widget.employee.id),
-      ),
-    );
-    if (result != null) _onSiteSelected(result);
-  }
-
-  Future<void> _openMasonSearch() async {
-    final Mason? result = await showDialog(
-      context: context,
-      builder: (context) => _ServerMasonSearchDialog(api: _apiService),
-    );
-    if (result != null) _onMasonSelected(result);
-  }
-
-  Future<void> _openDealerSearch() async {
-    final Dealer? result = await showDialog(
-      context: context,
-      builder: (context) => _ServerDealerSearchDialog(api: _apiService),
-    );
-    if (result != null) _onDealerSelected(result);
-  }
-
   Future<void> _handleCheckIn() async {
-    // 1. Save drafts before opening camera
-    await _saveDrafts();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pending_camera_action', 'check_in'); // Mark intention
+    // 1. UI: Open Camera (Blocking only for user action)
+    final String? imagePath = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (c) => const TvrCameraScreen()),
+    );
+    if (imagePath == null) return;
 
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    setState(() => _isUploadingImage = true);
-    
+    final File imageFile = File(imagePath);
+    final DateTime now = DateTime.now();
+
+    // 2. UI: Update State IMMEDIATELY (Optimistic)
+    // The user sees "Check-In Complete" instantly.
+    setState(() {
+      _values['checkInTime'] = now;
+      _values['inTimeImageFile'] = imageFile; // Show local image
+
+      // Flags for the background worker
+      _values['isCheckInProcessing'] = true;
+      _values['checkInFailed'] = false;
+    });
+
+    _saveDrafts();
+
+    // 3. LOGIC: Fire and Forget (Run in background)
+    // We do NOT use 'await' here. The UI thread is free to move on.
+    _processCheckInInBackground(imageFile);
+  }
+
+  Future<void> _processCheckInInBackground(File imageFile) async {
     try {
-      final position = await Geolocator.getCurrentPosition(
+      // A. Fetch Location (Slow)
+      // We use a small timeout so we don't hang forever, but we are in background anyway
+      final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
-      
-      // 2. Pick Image
-      final pickedFile = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 60,
-      );
 
-      // If user cancels, clear flag
-      if (pickedFile == null) {
-        if (mounted) setState(() => _isUploadingImage = false);
-        await prefs.remove('pending_camera_action');
-        return;
-      }
-
-      final imageFile = File(pickedFile.path);
-      if (mounted) setState(() => _inTimeImageFile = imageFile);
-
-      final imageUrl = await _apiService.uploadImageToR2(imageFile);
-
+      // Update location as soon as we have it
       if (mounted) {
         setState(() {
-          _checkInTime = DateTime.now();
-          _inTimeImageUrl = imageUrl;
-          _capturedLocation = position;
-          _latitudeController.text = position.latitude.toStringAsFixed(6);
-          _longitudeController.text = position.longitude.toStringAsFixed(6);
+          _values['capturedLocation'] = pos;
+          _controllers['latitude']!.text = pos.latitude.toStringAsFixed(6);
+          _controllers['longitude']!.text = pos.longitude.toStringAsFixed(6);
         });
-        
-        // Clear camera action flag on success
-        await prefs.remove('pending_camera_action');
-        
-        scaffoldMessenger.showSnackBar(
-          const SnackBar(
-            content: Text('Checked-In successfully.'),
-            backgroundColor: _accentGreen,
-          ),
-        );
+      }
+
+      // B. Upload Image (Slow)
+      final url = await _apiService.uploadImageToR2(imageFile);
+
+      // C. Success!
+      if (mounted) {
+        setState(() {
+          _values['inTimeImageUrl'] = url;
+          _values['isCheckInUploading'] = false;
+        });
       }
     } catch (e) {
+      debugPrint("Background Check-in Failed (Will retry at submit): $e");
+      // D. Silent Failure
+      // We don't show an error dialog yet. We just flag it.
       if (mounted) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(
-            content: Text('Check-In Failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        setState(() {
+          _values['isCheckInUploading'] = false;
+          _values['checkInUploadFailed'] = true; // Mark for retry later
+        });
       }
-    } finally {
-      if (mounted) setState(() => _isUploadingImage = false);
     }
   }
 
   Future<void> _pickSitePhoto() async {
-    // 1. Save drafts
-    await _saveDrafts();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pending_camera_action', 'site_photo');
-
-    final pickedFile = await _imagePicker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 60,
+    final String? imagePath = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const TvrCameraScreen()),
     );
-    
-    // Clear flag if user canceled or returned
-    if (pickedFile == null) {
-       await prefs.remove('pending_camera_action');
-       return;
-    }
-  }
+    if (imagePath == null) return;
 
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2030),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: _cardNavy, // Header background color
-              onPrimary: Colors.white, // Header text color
-              onSurface: _textDark, // Body text color
-            ),
-            textButtonTheme: TextButtonThemeData(
-              style: TextButton.styleFrom(
-                foregroundColor: _cardNavy, // Button text color
-              ),
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (picked != null && picked != _supplyDate) {
-      setState(() {
-        _supplyDate = picked;
-      });
+    final file = File(imagePath);
+
+    // 1. Immediately update UI to show "Selected" status
+    _onUpdate('sitePhotoFile', file);
+
+    // 2. Upload in background to avoid long waits during final submission
+    try {
+      final url = await _apiService.uploadImageToR2(file);
+      _values['sitePhotoUrl'] = url;
       _saveDrafts();
+    } catch (e) {
+      _showSnack("Background upload failed, will retry at submission.");
     }
   }
 
-  void showSnack(
-    String message, {
-    Color backgroundColor = Colors.orange,
-    int durationSeconds = 3,
-  }) {
-    if (!mounted) return;
+  // --- 🔍 SELECTION HANDLERS ---
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: backgroundColor,
-        duration: Duration(seconds: durationSeconds),
-      ),
-    );
+  void _onSiteSelected(TechnicalSite site) {
+    setState(() {
+      _values['selectedSite'] = site;
+      _values['selectedSiteName'] = site.siteName;
+
+      _controllers['concernedPerson']!.text = site.concernedPerson;
+      _controllers['whatsapp']!.text = site.phoneNo;
+      _controllers['phone']!.text = site.phoneNo;
+      _controllers['partyName']!.text = site.concernedPerson;
+
+      _controllers['siteAddress']!.text = site.address;
+      _controllers['area']!.text = site.area ?? '';
+
+      if (site.latitude != 0.0 && site.latitude != 0.0) {
+        _controllers['latitude']!.text = site.latitude.toStringAsFixed(6);
+      }
+      if (site.longitude != 0.0 && site.longitude != 0.0) {
+        _controllers['longitude']!.text = site.longitude.toStringAsFixed(6);
+      }
+
+      if (site.region != null &&
+          TvrConstants.regionOptions.contains(site.region)) {
+        _values['selectedRegion'] = site.region;
+      }
+
+      if (site.stageOfConstruction != null &&
+          TvrConstants.stageOptions.contains(site.stageOfConstruction)) {
+        _values['selectedStage'] = site.stageOfConstruction;
+      }
+    });
+
+    _saveDrafts();
   }
+
+  void _onDealerSelected(Dealer dealer) {
+    setState(() {
+      _values['selectedDealer'] = dealer;
+      _values['selectedDealerName'] = dealer.name;
+      _controllers['partyName']!.text = dealer.name;
+      _controllers['phone']!.text = dealer.phoneNo;
+      _controllers['siteAddress']!.text = dealer.address;
+      _controllers['area']!.text = dealer.area;
+
+      if (dealer.latitude != null && dealer.latitude != 0.0) {
+        _controllers['latitude']!.text = dealer.latitude!.toStringAsFixed(6);
+      }
+      if (dealer.longitude != null && dealer.longitude != 0.0) {
+        _controllers['longitude']!.text = dealer.longitude!.toStringAsFixed(6);
+      }
+      _values['selectedInfluencerType'] = 'Dealer';
+    });
+    _saveDrafts();
+  }
+
+  void _onMasonSelected(Mason mason) {
+    setState(() {
+      _values['selectedMason'] = mason;
+      _values['selectedMasonName'] = mason.name;
+      _controllers['influencerName']!.text = mason.name;
+      _controllers['influencerPhone']!.text = mason.phoneNumber;
+      _values['selectedInfluencerType'] = 'Mason';
+    });
+    _saveDrafts();
+  }
+
+  // --- 🚀 SUBMIT ---
+
+  // <--- Import this!
 
   Future<void> _submitTvr() async {
+    // ---------------------------------------------------------
+    // 1. VALIDATION LOGIC (Your strict logic preserved)
+    // ---------------------------------------------------------
     if (!_formKey.currentState!.validate()) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please fill all required fields.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      _showSnack("Please fill in the required fields marked in red.");
+      return;
+    }
+    if (_values['checkInTime'] == null) {
+      _showSnack("Check-in is required");
+      return;
+    }
+    if (!_passesTimeLock()) return;
+
+    // MANUAL ENFORCEMENT LOGIC (IHB/Site Checks)
+    final String type = _values['selectedCustomerType'] ?? '';
+    if (type == 'IHB/Site') {
+      if (_values['selectedVisitType'] == null) {
+        _showSnack("⚠️ Please select a Visit Type.");
+        return;
+      }
+      if (_values['selectedSiteVisitType'] == null) {
+        _showSnack("⚠️ Please select Site Visit Type.");
+        return;
+      }
+      if (_values['selectedVisitCategory'] == null) {
+        _showSnack("⚠️ Please select a Visit Category.");
+        return;
+      }
+      if (_controllers['partyName']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Site Owner Name is required.");
+        return;
+      }
+      if (_controllers['whatsapp']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Phone / WhatsApp No. is required.");
+        return;
+      }
+      if (_values['selectedRegion'] == null) {
+        _showSnack("⚠️ Region is required.");
+        return;
+      }
+      if (_controllers['area']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Area is required.");
+        return;
+      }
+      if (_controllers['siteAddress']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Site Address is required.");
+        return;
+      }
+      if (_controllers['marketName']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Market Name is required.");
+        return;
+      }
+      if (_controllers['constArea']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Construction Area (SqFt) is required.");
+        return;
+      }
+      if (_values['selectedStage'] == null) {
+        _showSnack("⚠️ Construction Stage is required.");
+        return;
+      }
+
+      final List brands = _values['brandsInUse'] ?? [];
+      if (brands.isEmpty) {
+        _showSnack("⚠️ Please select at least one Brand in Use.");
+        return;
+      }
+
+      if (_controllers['siteStock']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Site Stock is required.");
+        return;
+      }
+      if (_controllers['estRequirement']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Estimated Requirement is required.");
+        return;
+      }
+
+      if (_values['isConverted'] == true) {
+        if (_values['conversionType'] == null) {
+          _showSnack("⚠️ Please select Conversion Type.");
+          return;
+        }
+        if (_values['conversionFromBrand'] == null) {
+          _showSnack("⚠️ Please select 'From Brand'.");
+          return;
+        }
+        if (_controllers['qty']!.text.trim().isEmpty) {
+          _showSnack("⚠️ Please enter Conversion Quantity.");
+          return;
+        }
+        if (_values['selectedUnit'] == null) {
+          _showSnack("⚠️ Please select a Unit.");
+          return;
+        }
+        if (_controllers['nearbyDealer']!.text.trim().isEmpty) {
+          _showSnack("⚠️ Converted Brand Dealer(Best) is required.");
+          return;
+        }
+      }
+
+      if (_values['isTechService'] == true &&
+          _values['selectedServiceType'] == null) {
+        _showSnack("⚠️ Please select Service Type.");
+        return;
+      }
+
+      if (_values['selectedInfluencerType'] == null) {
+        _showSnack("⚠️ Influencer Type is required.");
+        return;
+      }
+      if (_controllers['influencerName']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Influencer Name is required.");
+        return;
+      }
+      if (_controllers['influencerPhone']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Influencer Phone is required.");
+        return;
+      }
+    }
+
+    if (_controllers['remarks']!.text.trim().isEmpty) {
+      _showSnack("⚠️ Remarks are required.");
       return;
     }
 
-    if (_selectedCustomerType == 'IHB/Site' && _selectedSite == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please select a Site.')));
-      return;
-    }
+    // ---------------------------------------------------------
+    // 2. CHECKOUT CAMERA (Blocking - User must do this)
+    // ---------------------------------------------------------
+    // We do NOT start any loaders here. Just open camera.
+    final String? outPath = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (c) => const TvrCameraScreen()),
+    );
+    if (outPath == null) return; // User cancelled
 
-    if (_checkInTime == null || _capturedLocation == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Check-in is required.')));
-      return;
-    }
-
+    // ---------------------------------------------------------
+    // 3. PREPARE DATA (Instant)
+    // ---------------------------------------------------------
     final now = DateTime.now();
-    final difference = now.difference(_checkInTime!);
-    const minMinutes = 10;
+    final checkIn = _values['checkInTime'] as DateTime;
+    final diff = now.difference(checkIn);
 
-    if (difference.inMinutes < minMinutes) {
-      final remaining = minMinutes - difference.inMinutes;
+    // ⚠️ CRITICAL: We pass whatever we have.
+    // If 'inTimeImageUrl' is null because background was slow, WE PASS NULL.
+    // The worker will see it's null and upload the file instead.
+
+    final payload = TechnicalVisitReport(
+      userId: int.parse(widget.employee.id),
+      reportDate: now,
+      visitType: _values['selectedVisitType'] ?? 'Site Visit',
+      visitCategory: _values['selectedVisitCategory'],
+      customerType: _values['selectedCustomerType'],
+      purposeOfVisit: _controllers['purposeOfVisit']?.text,
+      siteNameConcernedPerson: _controllers['concernedPerson']?.text ?? '',
+      phoneNo: _controllers['phone']?.text ?? '',
+      whatsappNo: _controllers['whatsapp']?.text,
+      siteAddress: _controllers['siteAddress']?.text,
+      marketName: _controllers['marketName']?.text,
+      region: _values['selectedRegion'],
+      area: _controllers['area']?.text,
+      latitude: _values['capturedLocation']?.latitude,
+      longitude: _values['capturedLocation']?.longitude,
+      siteVisitStage: _values['selectedStage'],
+      constAreaSqFt: int.tryParse(_controllers['constArea']?.text ?? ''),
+      siteVisitBrandInUse: _values['brandsInUse'] ?? [],
+      currentBrandPrice: double.tryParse(_controllers['rate']?.text ?? ''),
+      siteStock: double.tryParse(_controllers['siteStock']?.text ?? ''),
+      estRequirement: double.tryParse(
+        _controllers['estRequirement']?.text ?? '',
+      ),
+      supplyingDealerName: _controllers['supplyingDealer']?.text,
+      nearbyDealerName: _controllers['nearbyDealer']?.text,
+      associatedPartyName: _controllers['partyName']?.text,
+      isConverted: _values['isConverted'],
+      conversionType: _values['conversionType'],
+      conversionFromBrand: _values['conversionFromBrand'],
+      conversionQuantityValue: double.tryParse(_controllers['qty']?.text ?? ''),
+      conversionQuantityUnit: _values['selectedUnit'],
+      isTechService: _values['isTechService'],
+      serviceDesc: _controllers['serviceDesc']?.text,
+      influencerName: _controllers['influencerName']?.text,
+      influencerPhone: _controllers['influencerPhone']?.text,
+      influencerProductivity: _controllers['productivity']?.text,
+      isSchemeEnrolled: _values['isSchemeEnrolled'],
+      influencerType: _values['selectedInfluencerType'] != null
+          ? [_values['selectedInfluencerType']]
+          : [],
+      clientsRemarks: _controllers['remarks']?.text ?? '',
+      salespersonRemarks: _controllers['remarks']?.text ?? '',
+      checkInTime: checkIn,
+      checkOutTime: now,
+      timeSpentinLoc: '${diff.inHours}h ${diff.inMinutes.remainder(60)}m',
+
+      // PASS DATA FOR WORKER TO RESOLVE
+      inTimeImageUrl: _values['inTimeImageUrl'],
+      outTimeImageUrl: null, // Worker will upload this
+      sitePhotoUrl: _values['sitePhotoUrl'], // Worker will fix if null
+
+      pjpId: widget.pjp?.id,
+      masonId: _values['selectedMason']?.id,
+      siteId: _values['selectedSite']?.id,
+      siteVisitType: _values['selectedSiteVisitType'],
+    );
+
+    // Capture Files for the Worker
+    final File? inTimeFile = _values['inTimeImageFile'];
+    final File outTimeFile = File(outPath);
+    final File? sitePhotoFile = _values['sitePhotoFile'];
+
+    // ---------------------------------------------------------
+    // 4. HANDOFF & EXIT (Optimistic)
+    // ---------------------------------------------------------
+
+    // Fire the independent worker
+    TvrBackgroundWorker.processAndSubmit(
+      apiService: _apiService,
+      tvrPayload: payload,
+      inTimeFile: inTimeFile,
+      outTimeFile: outTimeFile,
+      sitePhotoFile: sitePhotoFile,
+      clearDrafts: true,
+    );
+
+    // Notify & Close Screen
+    if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            "Minimum $minMinutes mins required. Wait $remaining minute(s).",
+          content: Row(
+            children: const [
+              Icon(Icons.cloud_upload, color: Colors.white),
+              SizedBox(width: 10),
+              Text("Report Saved! Uploading in background..."),
+            ],
           ),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 4),
+          backgroundColor: TvrConstants.accentGreen,
+          duration: const Duration(seconds: 2),
         ),
       );
-      return;
-    }
-
-    // --- Geofence (for IHB/Site visits) ---
-    if (_selectedCustomerType == 'IHB/Site' &&
-        _selectedSite != null &&
-        _selectedSite!.latitude != 0.0 &&
-        _selectedSite!.longitude != 0.0) {
-      double distanceInMeters = Geolocator.distanceBetween(
-        _capturedLocation!.latitude,
-        _capturedLocation!.longitude,
-        _selectedSite!.latitude,
-        _selectedSite!.longitude,
-      );
-      double distanceInKm = distanceInMeters / 1000;
-      if (distanceInMeters > 50) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Geofence Error: You are ${distanceInKm.toStringAsFixed(2)}km away.",
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // --- Geofence (For Dealer) ---
-    if (_selectedCustomerType != null &&
-        _selectedCustomerType!.contains("Dealer") &&
-        _selectedDealer != null &&
-        (_selectedDealer!.latitude != 0.0 ||
-            _selectedDealer!.longitude != 0.0)) {
-      double distanceInMeters = Geolocator.distanceBetween(
-        _capturedLocation!.latitude,
-        _capturedLocation!.longitude,
-        _selectedDealer!.latitude ?? 0.0,
-        _selectedDealer!.longitude ?? 0.0,
-      );
-      double distanceInKm = distanceInMeters / 1000;
-      if (distanceInMeters > 50) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "Geofence Error (Dealer): You are ${distanceInKm.toStringAsFixed(2)}km away.",
-            ),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-    }
-
-    // Dealer Specific Validation
-    if (_selectedCustomerType != null &&
-        _selectedCustomerType!.contains("Dealer")) {
-      // Mandatory Brand Selection
-      if (_selectedBrandsInUse.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please select at least one Brand Selling/In Use.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-        return;
-      }
-
-      if (_isBagPicked) {
-        if (_conversionQuantityValueController.text.isEmpty) {
-          showSnack('Enter Quantity');
-          return;
-        }
-        if (_selectedConversionUnit == null) {
-          showSnack('Select Unit');
-          return;
-        }
-        if (_currentBrandPriceController.text.isEmpty) {
-          showSnack('Enter Rate per Bag');
-          return;
-        }
-        if (_supplyDate == null) {
-          showSnack('Select Supply Date');
-          return;
-        }
-      }
-    }
-
-    final String timeSpentStr =
-        '${difference.inHours}h ${difference.inMinutes.remainder(60)}m';
-
-    setState(() => _isSubmitting = true);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-
-    try {
-      final pickedOutFile = await _imagePicker.pickImage(
-        source: ImageSource.camera,
-        imageQuality: 60,
-      );
-      String? outTimeImageUrl;
-      if (pickedOutFile != null) {
-        outTimeImageUrl = await _apiService.uploadImageToR2(
-          File(pickedOutFile.path),
-        );
-      }
-
-      String? sitePhotoUrl;
-      if (_sitePhotoFile != null) {
-        sitePhotoUrl = await _apiService.uploadImageToR2(_sitePhotoFile!);
-      }
-
-      // Handle Dealer Logic
-      String finalRemarks = _salespersonRemarksController.text;
-      String finalSiteName = _siteNameConcernedPersonController.text;
-
-      if (_selectedCustomerType != null &&
-          _selectedCustomerType!.contains("Dealer")) {
-        // Map Dealer Name to Site Name (Mandatory DB field)
-        finalSiteName = _associatedPartyNameController.text;
-
-        if (_isConverted && _isBagPicked) {
-          final dateStr = _supplyDate != null
-              ? DateFormat('yyyy-MM-dd').format(_supplyDate!)
-              : 'N/A';
-          finalRemarks += " [Bag Picked: YES, Supply Date: $dateStr]";
-        }
-      }
-
-      final tvrReport = TechnicalVisitReport(
-        userId: int.parse(widget.employee.id),
-        reportDate: DateTime.now(),
-        visitType: _selectedVisitType!,
-        siteId: _selectedSite?.id,
-        masonId: _selectedMason?.id,
-        pjpId: widget.pjp?.id,
-
-        siteNameConcernedPerson: finalSiteName,
-        phoneNo: _phoneNoController.text,
-        whatsappNo: _whatsappNoController.text.isNotEmpty
-            ? _whatsappNoController.text
-            : null,
-        associatedPartyName: _associatedPartyNameController.text.isNotEmpty
-            ? _associatedPartyNameController.text
-            : null,
-
-        emailId: null,
-        siteAddress: _siteAddressController.text.isNotEmpty
-            ? _siteAddressController.text
-            : null,
-        marketName: _marketNameController.text.isNotEmpty
-            ? _marketNameController.text
-            : null,
-        region: _selectedRegion,
-        area: _areaController.text.isNotEmpty ? _areaController.text : null,
-        latitude: _capturedLocation?.latitude,
-        longitude: _capturedLocation?.longitude,
-
-        visitCategory: _selectedVisitCategory,
-        customerType: _selectedCustomerType,
-        purposeOfVisit: _purposeOfVisitController.text.isNotEmpty
-            ? _purposeOfVisitController.text
-            : null,
-        siteVisitType: _selectedSiteVisitType,
-
-        siteVisitStage: _selectedStage,
-        constAreaSqFt: int.tryParse(_constAreaSqFtController.text),
-        siteVisitBrandInUse: _selectedBrandsInUse,
-        currentBrandPrice: double.tryParse(_currentBrandPriceController.text),
-        siteStock: double.tryParse(_siteStockController.text),
-        estRequirement: double.tryParse(_estRequirementController.text),
-
-        supplyingDealerName: _supplyingDealerNameController.text.isNotEmpty
-            ? _supplyingDealerNameController.text
-            : null,
-        nearbyDealerName: _nearbyDealerNameController.text.isNotEmpty
-            ? _nearbyDealerNameController.text
-            : null,
-        channelPartnerVisit: null,
-
-        isConverted: _isConverted,
-        conversionType: _isConverted ? _selectedConversionType : null,
-        conversionFromBrand: _isConverted ? _selectedConversionFromBrand : null,
-        conversionQuantityValue: double.tryParse(
-          _conversionQuantityValueController.text,
-        ),
-        conversionQuantityUnit: _isConverted ? _selectedConversionUnit : null,
-
-        isTechService: _isTechService,
-        serviceDesc: _serviceDescController.text.isNotEmpty
-            ? _serviceDescController.text
-            : null,
-        serviceType: _selectedServiceType,
-        dhalaiVerificationCode:
-            _dhalaiVerificationCodeController.text.isNotEmpty
-            ? _dhalaiVerificationCodeController.text
-            : null,
-        isVerificationStatus: null,
-        qualityComplaint: _qualityComplaintController.text.isNotEmpty
-            ? _qualityComplaintController.text
-            : null,
-
-        influencerName: _influencerNameController.text.isNotEmpty
-            ? _influencerNameController.text
-            : null,
-        influencerPhone: _influencerPhoneController.text.isNotEmpty
-            ? _influencerPhoneController.text
-            : null,
-        isSchemeEnrolled: _isSchemeEnrolled,
-        influencerProductivity:
-            _influencerProductivityController.text.isNotEmpty
-            ? _influencerProductivityController.text
-            : null,
-        influencerType: _selectedInfluencerType != null
-            ? [_selectedInfluencerType!]
-            : [],
-
-        clientsRemarks:
-            (_selectedCustomerType != null &&
-                _selectedCustomerType!.contains("Dealer"))
-            ? finalRemarks
-            : '',
-
-        salespersonRemarks:
-            (_selectedCustomerType != null &&
-                _selectedCustomerType!.contains("Dealer"))
-            ? ''
-            : finalRemarks,
-        promotionalActivity: _selectedTechActivity,
-
-        checkInTime: _checkInTime!,
-        checkOutTime: now,
-        timeSpentinLoc: timeSpentStr,
-        inTimeImageUrl: _inTimeImageUrl,
-        outTimeImageUrl: outTimeImageUrl,
-        sitePhotoUrl: sitePhotoUrl,
-      );
-
-      await _apiService.createTvr(tvrReport);
-      
-      await _clearDrafts(); // CLEAR SAVED DATA ON SUCCESS
-
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('TVR submitted successfully!'),
-          backgroundColor: _accentGreen,
-        ),
-      );
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      if (mounted) {
-        scaffoldMessenger.showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+      Navigator.pop(context);
     }
   }
 
-  // --- UI BUILDER ---
+  bool _passesTimeLock() {
+    final DateTime checkIn = _values['checkInTime'];
+    final Duration diff = DateTime.now().difference(checkIn);
+
+    const int minMinutes = 0;
+
+    if (diff.inMinutes < minMinutes) {
+      final remaining = minMinutes - diff.inMinutes;
+      _showError(
+        "Minimum $minMinutes minutes required. Wait $remaining minute(s).",
+      );
+      return false;
+    }
+    return true;
+  }
+
+  // bool _passesGeofence() {
+  //   final Position pos = _values['capturedLocation'];
+  //   final String type = _values['selectedCustomerType'];
+
+  //   const double allowedMeters = 50;
+
+  //   if (type == 'IHB/Site') {
+  //     final site = _values['selectedSite'];
+  //     if (site?.latitude == null || site?.longitude == null) return true;
+
+  //     final meters = Geolocator.distanceBetween(
+  //       pos.latitude,
+  //       pos.longitude,
+  //       site.latitude,
+  //       site.longitude,
+  //     );
+
+  //     if (meters > allowedMeters) {
+  //       _showError(
+  //         "Geofence error: you are ${(meters / 1000).toStringAsFixed(2)} km away from site",
+  //       );
+  //       return false;
+  //     }
+  //   }
+
+  //   if (type != null && type.contains("Dealer")) {
+  //     final dealer = _values['selectedDealer'];
+  //     if (dealer?.latitude == null || dealer?.longitude == null) return true;
+
+  //     final meters = Geolocator.distanceBetween(
+  //       pos.latitude,
+  //       pos.longitude,
+  //       dealer.latitude,
+  //       dealer.longitude,
+  //     );
+
+  //     if (meters > allowedMeters) {
+  //       _showError(
+  //         "Geofence error: you are ${(meters / 1000).toStringAsFixed(2)} km away from dealer",
+  //       );
+  //       return false;
+  //     }
+  //   }
+
+  //   return true;
+  // }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1119,157 +847,30 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           child: Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-              color: _surfaceWhite,
+              color: TvrConstants.surfaceWhite,
               borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20),
-              ],
             ),
             child: Form(
               key: _formKey,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Technical Visit Report',
-                        style: TextStyle(
-                          color: _textDark,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: _textGrey),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-                    ],
-                  ),
-                  const Divider(height: 30, color: Color(0xFFF3F4F6)),
-
-                  if (_checkInTime == null) ...[
-                    _buildFintechDropdown(
+                  _buildHeader(),
+                  const Divider(height: 30),
+                  if (_values['checkInTime'] == null) ...[
+                    TvrDropdownField(
                       label: 'Type of Customer',
-                      value: _selectedCustomerType,
-                      items: _customerTypeOptions,
-                      onChanged: (v) {
-                          setState(() => _selectedCustomerType = v);
-                          _saveDrafts();
-                      },
-                      isRequired: true,
+                      value: _values['selectedCustomerType'],
+                      items: TvrConstants.customerTypeOptions,
+                      onChanged: (v) => _onUpdate('selectedCustomerType', v),
                     ),
                     const SizedBox(height: 24),
-                    ElevatedButton.icon(
-                      onPressed: _isUploadingImage ? null : _handleCheckIn,
-                      icon: _isUploadingImage
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.camera_alt),
-                      label: const Text(
-                        'CHECK-IN (PHOTO)',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _accentOrange,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
+                    _buildCheckInButton(),
                   ] else ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF0FDF4),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFBBF7D0)),
-                      ),
-                      child: Row(
-                        children: [
-                          _inTimeImageFile != null
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.file(
-                                    _inTimeImageFile!,
-                                    width: 50,
-                                    height: 50,
-                                    fit: BoxFit.cover,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.check_circle,
-                                  color: _accentGreen,
-                                  size: 40,
-                                ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  _selectedCustomerType ?? "Visit",
-                                  style: const TextStyle(
-                                    color: _textDark,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                Text(
-                                  'In: ${DateFormat('hh:mm a').format(_checkInTime!)}',
-                                  style: const TextStyle(
-                                    color: _textGrey,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    _buildVisitSummary(),
                     const SizedBox(height: 24),
-
-                    // --- FORM SWITCHER ---
-                    if (_selectedCustomerType == 'IHB/Site')
-                      _buildIHBForm()
-                    else if (_selectedCustomerType != null &&
-                        _selectedCustomerType!.contains("Dealer"))
-                      _buildDealerForm()
-                    else
-                      _buildInfluencerForm(),
-
+                    _buildFormSwitcher(), // ⚡ Delegated to child widgets
                     const SizedBox(height: 32),
-                    ElevatedButton(
-                      onPressed: _isSubmitting ? null : _submitTvr,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _accentGreen,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: _isSubmitting
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 2,
-                              ),
-                            )
-                          : const Text(
-                              'SUBMIT & CHECK-OUT',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                    ),
+                    _buildSubmitButton(),
                   ],
                 ],
               ),
@@ -1280,1232 +881,166 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     );
   }
 
-  // --- 1. IHB FORM ---
-  Widget _buildIHBForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+  Widget _buildHeader() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        InkWell(
-          onTap: _openSiteSearch,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            decoration: BoxDecoration(
-              color: _inputFill,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _selectedSite != null
-                        ? "${_selectedSite!.siteName} (${_selectedSite!.region})"
-                        : "Select Construction Site *",
-                    style: TextStyle(
-                      color: _selectedSite != null ? _textDark : _textGrey,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.search, color: _textGrey),
-              ],
-            ),
-          ),
+        const Text(
+          'TVR Report',
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _siteNameConcernedPersonController,
-          label: 'Concerned Person',
-          readOnly: true,
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechDropdown(
-          label: 'Visit Type',
-          value: _selectedVisitType,
-          items: ['Site Visit', 'Service', 'Complaint', 'Influencer Meet'],
-          onChanged: (v) {
-              setState(() => _selectedVisitType = v);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechDropdown(
-          label: 'Site Visit Type',
-          value: _selectedSiteVisitType,
-          items: ['Planned', 'Unplanned'],
-          onChanged: (v) {
-              setState(() => _selectedSiteVisitType = v);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechDropdown(
-          label: 'Visit Category',
-          value: _selectedVisitCategory,
-          items: _visitCategoryOptions,
-          onChanged: (v) {
-              setState(() => _selectedVisitCategory = v);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _purposeOfVisitController,
-          label: 'Purpose of Visit',
-          isRequired: true,
-        ),
-        //AUTOFILL LATER
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _associatedPartyNameController,
-          label: 'Site Owner Name',
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _whatsappNoController,
-          label: 'Phone/WhatsApp No.',
-          keyboardType: TextInputType.phone,
-          isRequired: true,
-        ),
-
-        const SizedBox(height: 16),
-        _buildLocationFetchSection(),
-
-        _buildSectionHeader("SITE INFO"),
-        Row(
-          children: [
-            Expanded(
-              child: _buildFintechDropdown(
-                label: 'Region',
-                value: _selectedRegion,
-                items: _regionOptions,
-                onChanged: (v) {
-                    setState(() => _selectedRegion = v);
-                    _saveDrafts();
-                },
-                isRequired: true,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildFintechInput(
-                controller: _areaController,
-                label: 'Area',
-                isRequired: true,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _marketNameController,
-          label: 'Market Name',
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _siteAddressController,
-          label: 'Site Address',
-          maxLines: 2,
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        InkWell(
-          onTap: _pickSitePhoto,
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              color: _inputFill,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.camera_enhance, color: _textGrey),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _sitePhotoFile != null
-                        ? "Site Photo Selected"
-                        : "Capture Site Progress Photo",
-                    style: TextStyle(
-                      color: _sitePhotoFile != null ? _textDark : _textGrey,
-                    ),
-                  ),
-                ),
-                if (_sitePhotoFile != null)
-                  const Icon(Icons.check_circle, color: _accentGreen),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _buildFintechInput(
-                controller: _constAreaSqFtController,
-                label: 'Area (SqFt)',
-                keyboardType: TextInputType.number,
-                isRequired: true,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildFintechDropdown(
-                label: 'Stage',
-                value: _selectedStage,
-                items: _stageOptions,
-                onChanged: (v) {
-                    setState(() => _selectedStage = v);
-                    _saveDrafts();
-                },
-                isRequired: true,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildFintechMultiSelect(
-          label: 'Brands in Use',
-          selectedValues: _selectedBrandsInUse,
-          items: _brandOptions,
-          onChanged: (list) {
-              setState(() => _selectedBrandsInUse = list);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _buildFintechInput(
-                controller: _currentBrandPriceController,
-                label: 'Current Price',
-                keyboardType: TextInputType.number,
-                isRequired: false,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildFintechInput(
-                controller: _siteStockController,
-                label: 'Site Stock',
-                keyboardType: TextInputType.number,
-                isRequired: true,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _estRequirementController,
-          label: 'Est. Requirement',
-          keyboardType: TextInputType.number,
-          isRequired: true,
-        ),
-        _buildSectionHeader("DEALER INFO"),
-        _buildFintechInput(
-          controller: _supplyingDealerNameController,
-          label: 'Supplying Dealer',
-          isRequired: false,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _nearbyDealerNameController,
-          label: 'Nearby Dealer (Best)',
-          isRequired: true,
-        ),
-        _buildSectionHeader("CONVERSION"),
-        _buildFintechSwitch(
-          label: "Is Converted?",
-          value: _isConverted,
-          onChanged: (v) {
-              setState(() => _isConverted = v);
-              _saveDrafts();
-          },
-        ),
-        if (_isConverted) ...[
-          const SizedBox(height: 12),
-          _buildFintechDropdown(
-            label: 'Conversion Type',
-            value: _selectedConversionType,
-            items: ['New', 'Retention'],
-            onChanged: (v) {
-               setState(() => _selectedConversionType = v);
-               _saveDrafts();
-            },
-            isRequired: true,
-          ),
-          const SizedBox(height: 16),
-          _buildFintechDropdown(
-            label: 'From Brand',
-            value: _selectedConversionFromBrand,
-            items: _brandOptions,
-            onChanged: (v) {
-               setState(() => _selectedConversionFromBrand = v);
-               _saveDrafts();
-            },
-            isRequired: true,
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: _buildFintechInput(
-                  controller: _conversionQuantityValueController,
-                  label: 'Qty',
-                  keyboardType: TextInputType.number,
-                  isRequired: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildFintechDropdown(
-                  label: 'Unit',
-                  value: _selectedConversionUnit,
-                  items: ['Bags'],
-                  onChanged: (v) {
-                      setState(() => _selectedConversionUnit = v);
-                      _saveDrafts();
-                  },
-                  isRequired: true,
-                ),
-              ),
-            ],
-          ),
-        ],
-        _buildSectionHeader("TECHNICAL SERVICES"),
-        _buildFintechSwitch(
-          label: "Tech Service Given?",
-          value: _isTechService,
-          onChanged: (v) {
-              setState(() => _isTechService = v);
-              _saveDrafts();
-          },
-        ),
-        if (_isTechService) ...[
-          const SizedBox(height: 12),
-          _buildFintechDropdown(
-            label: 'Service Type',
-            value: _selectedServiceType,
-            items: _serviceTypeOptions,
-            onChanged: (v) {
-               setState(() => _selectedServiceType = v);
-               _saveDrafts();
-            },
-            isRequired: true,
-          ),
-          const SizedBox(height: 16),
-          _buildFintechDropdown(
-            label: 'Type of Technical Activity',
-            value: _selectedTechActivity,
-            items: _techActivityOptions,
-            onChanged: (v) {
-               setState(() => _selectedTechActivity = v);
-               _saveDrafts();
-            },
-            isRequired: false,
-          ),
-          const SizedBox(height: 16),
-          _buildFintechInput(
-            controller: _serviceDescController,
-            label: 'Description',
-            maxLines: 2,
-            isRequired: true,
-          ),
-        ],
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _qualityComplaintController,
-          label: 'Quality Complaint',
-          isRequired: false,
-        ),
-        _buildSectionHeader("INFLUENCER / MASON"),
-        InkWell(
-          onTap: _openMasonSearch,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            decoration: BoxDecoration(
-              color: _inputFill,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.person_search, color: _cardNavy),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _selectedMason != null
-                        ? _selectedMason!.name
-                        : "Link Registered Mason (Optional)",
-                    style: TextStyle(
-                      color: _selectedMason != null ? _textDark : _textGrey,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildFintechDropdown(
-          label: 'Influencer Type',
-          value: _selectedInfluencerType,
-          items: _influencerTypeOptions,
-          onChanged: (v) {
-              setState(() => _selectedInfluencerType = v);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _influencerNameController,
-          label: 'Name',
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _influencerPhoneController,
-          label: 'Phone',
-          keyboardType: TextInputType.phone,
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _influencerProductivityController,
-          label: 'Influencer Productivity',
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechSwitch(
-          label: "Enrolled in Scheme?",
-          value: _isSchemeEnrolled,
-          onChanged: (v) {
-              setState(() => _isSchemeEnrolled = v);
-              _saveDrafts();
-          },
-        ),
-        _buildSectionHeader("REMARKS"),
-        _buildFintechInput(
-          controller: _salespersonRemarksController,
-          label: 'Remarks',
-          maxLines: 2,
-          isRequired: true,
+        IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.pop(context),
         ),
       ],
     );
   }
 
-  // 2. DEALER FORM
-  Widget _buildDealerForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        InkWell(
-          onTap: _openDealerSearch,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            decoration: BoxDecoration(
-              color: _inputFill,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.store, color: _cardNavy),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _selectedDealer != null
-                        ? "${_selectedDealer!.name} (${_selectedDealer!.area})"
-                        : "Tap to Search Dealer (Optional)",
-                    style: TextStyle(
-                      color: _selectedDealer != null ? _textDark : _textGrey,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.search, color: _textGrey),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _associatedPartyNameController,
-          label: 'Dealer/Sub-Dealer Name',
-          isRequired: true,
-          readOnly: false, // Auto-filled .. can be edited
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _phoneNoController,
-          label: 'Phone/WhatsApp No.',
-          keyboardType: TextInputType.phone,
-          isRequired: true,
-          readOnly: false, // Auto-filled .. can be edited
-        ),
-        const SizedBox(height: 16),
-
-        _buildLocationFetchSection(),
-        const SizedBox(height: 16),
-
-        _buildFintechDropdown(
-          label: 'Visit Category',
-          value: _selectedVisitCategory,
-          items: _visitCategoryOptions,
-          onChanged: (v) {
-              setState(() => _selectedVisitCategory = v);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechDropdown(
-          label: 'Influencer Type',
-          value: _selectedInfluencerType,
-          items: const ['Dealer', 'Sub-Dealer'],
-          onChanged: (v) {
-              setState(() => _selectedInfluencerType = v);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-        _buildSectionHeader("LOCATION & REGION"),
-        Row(
-          children: [
-            Expanded(
-              child: _buildFintechDropdown(
-                label: 'Region',
-                value: _selectedRegion,
-                items: _regionOptions,
-                onChanged: (v) {
-                    setState(() => _selectedRegion = v);
-                    _saveDrafts();
-                },
-                isRequired: true,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildFintechInput(
-                controller: _areaController,
-                label: 'Area',
-                isRequired: true,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _siteAddressController,
-          label: 'Address',
-          maxLines: 2,
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        InkWell(
-          onTap: _pickSitePhoto,
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              color: _inputFill,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.camera_enhance, color: _textGrey),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _sitePhotoFile != null
-                        ? "Photo Selected"
-                        : "Capture Dealer Photo(optional)",
-                    style: TextStyle(
-                      color: _sitePhotoFile != null ? _textDark : _textGrey,
-                    ),
-                  ),
-                ),
-                if (_sitePhotoFile != null)
-                  const Icon(Icons.check_circle, color: _accentGreen),
-              ],
-            ),
-          ),
-        ),
-        _buildSectionHeader("BUSINESS INFO"),
-        _buildFintechInput(
-          controller: _influencerProductivityController,
-          label: 'Productivity',
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechMultiSelect(
-          label: 'Brands in Use/Selling',
-          selectedValues: _selectedBrandsInUse,
-          items: _brandOptions,
-          onChanged: (list) {
-              setState(() => _selectedBrandsInUse = list);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-
-        _buildSectionHeader("CONVERSION"),
-        // Directly ask for Bags (Implicitly sets converted status)
-        _buildFintechSwitch(
-          label: "Is Bag Picked?",
-          value: _isBagPicked,
-          onChanged: (v) => setState(() {
-            _isBagPicked = v;
-            _isConverted = v; // Auto-set conversion status
-            _saveDrafts();
-          }),
-        ),
-
-        if (_isBagPicked) ...[
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildFintechInput(
-                  controller: _conversionQuantityValueController,
-                  label: 'Qty',
-                  keyboardType: TextInputType.number,
-                  isRequired: true,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildFintechDropdown(
-                  label: 'Unit',
-                  value: _selectedConversionUnit,
-                  items: ['Bags'],
-                  onChanged: (v) {
-                      setState(() => _selectedConversionUnit = v);
-                      _saveDrafts();
-                  },
-                  isRequired: true,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildFintechInput(
-            controller: _currentBrandPriceController,
-            label: 'Rate per Bag',
-            keyboardType: TextInputType.number,
-            isRequired: true,
-          ),
-          const SizedBox(height: 16),
-          InkWell(
-            onTap: () => _selectDate(context),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-              decoration: BoxDecoration(
-                color: _inputFill,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.calendar_today, color: _cardNavy, size: 20),
-                  const SizedBox(width: 12),
-                  Text(
-                    _supplyDate != null
-                        ? DateFormat('dd MMM yyyy').format(_supplyDate!)
-                        : "Select Date of Supply (of Bags)",
-                    style: TextStyle(
-                      color: _supplyDate != null ? _textDark : _textGrey,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-
-        _buildSectionHeader("REMARKS"),
-        _buildFintechInput(
-          controller: _salespersonRemarksController,
-          label: 'Remarks',
-          maxLines: 2,
-          isRequired: true,
-        ),
-      ],
+  Widget _buildCheckInButton() {
+    return ElevatedButton.icon(
+      onPressed: _values['isUploadingImage'] ? null : _handleCheckIn,
+      icon: const Icon(Icons.camera_alt),
+      label: const Text('CHECK-IN'),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: TvrConstants.accentOrange,
+        padding: const EdgeInsets.all(16),
+      ),
     );
   }
 
-  // 3. INFLUENCER FORM
-  Widget _buildInfluencerForm() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Selection
-        InkWell(
-          onTap: _openMasonSearch,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
-            decoration: BoxDecoration(
-              color: _inputFill,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.person_search, color: _cardNavy),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _selectedMason != null
-                        ? _selectedMason!.name
-                        : "Link Registered Profile (Optional)",
-                    style: TextStyle(
-                      color: _selectedMason != null ? _textDark : _textGrey,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        _buildFintechDropdown(
-          label: 'Influencer Type',
-          value: _selectedInfluencerType,
-          items: ['Mason', 'Head Mason', 'Contractor', 'Engineer', 'Architect'],
-          onChanged: (v) {
-              setState(() => _selectedInfluencerType = v);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _influencerNameController,
-          label: 'Name',
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _influencerPhoneController,
-          label: 'Phone/WhatsApp',
-          keyboardType: TextInputType.phone,
-          isRequired: true,
-        ),
-
-        const SizedBox(height: 16),
-        _buildLocationFetchSection(),
-
-        const SizedBox(height: 16),
-        _buildFintechDropdown(
-          label: 'Visit Category',
-          value: _selectedVisitCategory,
-          items: _visitCategoryOptions,
-          onChanged: (v) {
-              setState(() => _selectedVisitCategory = v);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _purposeOfVisitController,
-          label: 'Purpose of Visit',
-          isRequired: true,
-        ),
-
-        _buildSectionHeader("DETAILS"),
-        Row(
-          children: [
-            Expanded(
-              child: _buildFintechDropdown(
-                label: 'Region',
-                value: _selectedRegion,
-                items: _regionOptions,
-                onChanged: (v) {
-                    setState(() => _selectedRegion = v);
-                    _saveDrafts();
-                },
-                isRequired: true,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildFintechInput(
-                controller: _areaController,
-                label: 'Area',
-                isRequired: true,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 16),
-        _buildFintechInput(
-          controller: _siteAddressController,
-          label: 'Address',
-          maxLines: 2,
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-
-        _buildFintechInput(
-          controller: _influencerProductivityController,
-          label: 'Productivity',
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechMultiSelect(
-          label: 'Preferred Brands',
-          selectedValues: _selectedBrandsInUse,
-          items: _brandOptions,
-          onChanged: (list) {
-              setState(() => _selectedBrandsInUse = list);
-              _saveDrafts();
-          },
-          isRequired: true,
-        ),
-        const SizedBox(height: 16),
-        _buildFintechSwitch(
-          label: "Enrolled in Scheme?",
-          value: _isSchemeEnrolled,
-          onChanged: (v) {
-              setState(() => _isSchemeEnrolled = v);
-              _saveDrafts();
-          },
-        ),
-
-        _buildSectionHeader("REMARKS"),
-        _buildFintechInput(
-          controller: _salespersonRemarksController,
-          label: 'Remarks',
-          maxLines: 2,
-          isRequired: true,
-        ),
-      ],
-    );
-  }
-
-  // --- REUSABLE WIDGET: LOCATION FETCH SECTION ---
-  Widget _buildLocationFetchSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _isFetchingLocation ? null : _fetchLocationAndAddress,
-            icon: _isFetchingLocation
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.my_location),
-            label: const Text("FETCH LOCATION & ADDRESS"),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              side: const BorderSide(color: _cardNavy),
-              foregroundColor: _cardNavy,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _buildFintechInput(
-                controller: _latitudeController,
-                label: "Latitude",
-                readOnly: true,
-                isRequired: false,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildFintechInput(
-                controller: _longitudeController,
-                label: "Longitude",
-                readOnly: true,
-                isRequired: false,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // --- WIDGETS ---
-  Widget _buildFintechInput({
-    required TextEditingController controller,
-    required String label,
-    String? hint,
-    bool isRequired = true,
-    TextInputType keyboardType = TextInputType.text,
-    int maxLines = 1,
-    bool readOnly = false,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        RichText(
-          text: TextSpan(
-            text: label,
-            style: const TextStyle(
-              color: _textDark,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              fontFamily: 'Roboto',
-            ),
-            children: [
-              if (isRequired)
-                const TextSpan(
-                  text: ' *',
-                  style: TextStyle(color: Colors.red),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: controller,
-          keyboardType: keyboardType,
-          maxLines: maxLines,
-          readOnly: readOnly,
-          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
-          validator: isRequired ? (v) => v!.isEmpty ? 'Required' : null : null,
-          onChanged: (v) => _saveDrafts(), // Auto-save on change
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: readOnly ? Colors.grey[200] : _inputFill,
-            hintText: hint,
-            hintStyle: TextStyle(color: Colors.grey[400]),
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 14,
-              horizontal: 16,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: _cardNavy, width: 1.5),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFintechDropdown({
-    required String label,
-    required String? value,
-    required List<String> items,
-    required void Function(String?) onChanged,
-    bool isRequired = true,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        RichText(
-          text: TextSpan(
-            text: label,
-            style: const TextStyle(
-              color: _textDark,
-              fontWeight: FontWeight.w600,
-              fontSize: 13,
-              fontFamily: 'Roboto',
-            ),
-            children: [
-              if (isRequired)
-                const TextSpan(
-                  text: ' *',
-                  style: TextStyle(color: Colors.red),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          value: value,
-          isExpanded: true,
-          dropdownColor: _surfaceWhite,
-          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: _inputFill,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 14,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-          ),
-          items: items
-              .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-              .toList(),
-          onChanged: onChanged,
-          validator: isRequired ? (v) => v == null ? 'Required' : null : null,
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFintechMultiSelect({
-    required String label,
-    required List<String> items,
-    required List<String> selectedValues,
-    required void Function(List<String>) onChanged,
-    bool isRequired = true,
-  }) {
-    return FormField<List<String>>(
-      initialValue: selectedValues,
-      validator: isRequired
-          ? (value) => (value == null || value.isEmpty) ? 'Required' : null
-          : null,
-      builder: (FormFieldState<List<String>> field) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            RichText(
-              text: TextSpan(
-                text: label,
-                style: const TextStyle(
-                  color: _textDark,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                  fontFamily: 'Roboto',
-                ),
-                children: [
-                  if (isRequired)
-                    const TextSpan(
-                      text: ' *',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            InkWell(
-              onTap: () async {
-                final List<String>? result = await showDialog(
-                  context: context,
-                  builder: (ctx) {
-                    List<String> tempSelected = List.from(selectedValues);
-                    return StatefulBuilder(
-                      builder: (context, setState) {
-                        return AlertDialog(
-                          backgroundColor: _surfaceWhite,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          title: Text(
-                            "Select $label",
-                            style: const TextStyle(
-                              color: _textDark,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          content: SizedBox(
-                            width: double.maxFinite,
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              itemCount: items.length,
-                              itemBuilder: (ctx, i) {
-                                final item = items[i];
-                                final isChecked = tempSelected.contains(item);
-                                return CheckboxListTile(
-                                  value: isChecked,
-                                  title: Text(
-                                    item,
-                                    style: const TextStyle(color: _textDark),
-                                  ),
-                                  activeColor: _accentGreen,
-                                  checkColor: Colors.white,
-                                  controlAffinity:
-                                      ListTileControlAffinity.leading,
-                                  onChanged: (checked) {
-                                    setState(() {
-                                      if (checked == true) {
-                                        tempSelected.add(item);
-                                      } else {
-                                        tempSelected.remove(item);
-                                      }
-                                    });
-                                  },
-                                );
-                              },
-                            ),
-                          ),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text(
-                                "CANCEL",
-                                style: TextStyle(color: _textGrey),
-                              ),
-                            ),
-                            ElevatedButton(
-                              onPressed: () =>
-                                  Navigator.pop(context, tempSelected),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _accentGreen,
-                                foregroundColor: Colors.white,
-                              ),
-                              child: const Text("OK"),
-                            ),
-                          ],
-                        );
-                      },
-                    );
-                  },
-                );
-
-                if (result != null) {
-                  onChanged(result);
-                  field.didChange(result);
-                }
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                decoration: BoxDecoration(
-                  color: _inputFill,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: field.hasError ? Colors.red : Colors.transparent,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: selectedValues.isEmpty
-                          ? Text(
-                              "Select Options",
-                              style: TextStyle(color: Colors.grey[400]),
-                            )
-                          : Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: selectedValues
-                                  .map(
-                                    (e) => Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFE0F2F1),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(
-                                          color: Colors.teal.shade100,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        e,
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w600,
-                                          color: Colors.teal,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                    ),
-                    const Icon(Icons.arrow_drop_down, color: _textGrey),
-                  ],
-                ),
-              ),
-            ),
-            if (field.hasError)
-              Padding(
-                padding: const EdgeInsets.only(top: 6, left: 12),
-                child: Text(
-                  field.errorText ?? '',
-                  style: const TextStyle(color: Colors.red, fontSize: 12),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildFintechSwitch({
-    required String label,
-    required bool value,
-    required void Function(bool) onChanged,
-  }) {
+  Widget _buildVisitSummary() {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _inputFill,
+        color: const Color(0xFFF0FDF4),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: value ? _accentGreen.withOpacity(0.5) : Colors.transparent,
-        ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              color: _textDark,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
-          ),
-          Switch(value: value, onChanged: onChanged, activeColor: _accentGreen),
-        ],
-      ),
+      child: Text("${_values['selectedCustomerType']} Check-in complete."),
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 24.0, bottom: 12.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Divider(),
-          const SizedBox(height: 12),
-          Text(
-            title.toUpperCase(),
-            style: const TextStyle(
-              color: _textGrey,
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.0,
+  Future<void> _selectSupplyDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime(2099),
+    );
+
+    if (picked != null) {
+      _onUpdate('supplyDate', picked);
+    }
+  }
+
+  Widget _buildFormSwitcher() {
+    final type = _values['selectedCustomerType'];
+
+    if (type == 'IHB/Site') {
+      return TvrIhbSection(
+        controllers: _controllers,
+        values: _values,
+        onUpdate: _onUpdate,
+        onSiteSearch: _openSiteSearch,
+        onMasonSearch: _openMasonSearch,
+        onLocationFetch: _fetchLocationAndAddress,
+        onPickPhoto: _pickSitePhoto,
+      );
+    }
+
+    if (type != null && type.contains("Dealer")) {
+      return TvrDealerSection(
+        controllers: _controllers,
+        values: _values,
+        onUpdate: _onUpdate,
+        onDealerSearch: _openDealerSearch,
+        onLocationFetch: _fetchLocationAndAddress,
+        onPickPhoto: _pickSitePhoto,
+        onSelectSupplyDate: _selectSupplyDate,
+      );
+    }
+
+    // Influencer
+    return TvrInfluencerSection(
+      controllers: _controllers,
+      values: _values,
+      onUpdate: _onUpdate,
+      onMasonSearch: _openMasonSearch,
+      onLocationFetch: _fetchLocationAndAddress,
+    );
+  }
+
+  Widget _buildSubmitButton() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // --- NEW TEXT LABEL ---
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8.0),
+          child: Center(
+            child: Text(
+              "Submit progress/update photo and Check Out",
+              style: TextStyle(
+                color: Color(0xFF111827), // Dark text color
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-        ],
+        ),
+
+        // --- BUTTON ---
+        ElevatedButton(
+          onPressed: _values['isSubmitting'] ? null : _submitTvr,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: TvrConstants.accentGreen,
+            padding: const EdgeInsets.all(16),
+          ),
+          child: _values['isSubmitting']
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+              : const Text(
+                  'SUBMIT & CHECK-OUT',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+        ),
+      ],
+    );
+  }
+
+  // --- SEARCH DIALOGS (Keep at bottom) ---
+  void _openSiteSearch() async {
+    final site = await showDialog<TechnicalSite>(
+      context: context,
+      builder: (c) => _ServerSiteSearchDialog(
+        api: _apiService,
+        userId: int.parse(widget.employee.id),
       ),
     );
+    if (site != null) _onSiteSelected(site);
+  }
+
+  void _openDealerSearch() async {
+    final dealer = await showDialog<Dealer>(
+      context: context,
+      builder: (c) => _ServerDealerSearchDialog(api: _apiService),
+    );
+    if (dealer != null) _onDealerSelected(dealer);
+  }
+
+  void _openMasonSearch() async {
+    final mason = await showDialog<Mason>(
+      context: context,
+      builder: (c) => _ServerMasonSearchDialog(api: _apiService),
+    );
+    if (mason != null) _onMasonSelected(mason);
   }
 }
 

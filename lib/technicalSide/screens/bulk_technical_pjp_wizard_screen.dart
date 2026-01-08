@@ -8,6 +8,8 @@ import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/services.dart';
+import 'package:maplibre_gl/maplibre_gl.dart';
 
 class BulkTechnicalPjpWizardScreen extends StatefulWidget {
   final Employee employee;
@@ -30,6 +32,10 @@ class _BulkTechnicalPjpWizardScreenState
   int _plannerPageIndex = 0;
   bool _isSubmitting = false;
   final ApiService _apiService = ApiService();
+  bool _isMapEngineReady = false;
+  final Map<DateTime, bool> _mapLoadingStates = {};
+  bool _isMapVisible = false; // Controls the overlay visibility
+  DateTime? _activeMapDate;   // Tracks which date we are picking a route for
 
   // --- KERNEL FEATURE ---
   late final MapSelectionController _mapController = AppKernel.instance
@@ -50,6 +56,19 @@ class _BulkTechnicalPjpWizardScreenState
   DateTime _focusedDay = DateTime.now();
   List<DateTime> _sortedDates = [];
   final Map<DateTime, Map<String, dynamic>> _dailyConfigs = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _warmupMapEngine();
+  }
+
+  Future<void> _warmupMapEngine() async {
+    // If your MapSelectionController has an init/warmup method, call it here.
+    // Even just accessing the feature early helps.
+    await Future.delayed(Duration.zero);
+    setState(() => _isMapEngineReady = true);
+  }
 
   @override
   void dispose() {
@@ -86,15 +105,21 @@ class _BulkTechnicalPjpWizardScreenState
   }
 
   // --- MAP SELECTION HANDLER ---
+  // --- MAP SELECTION HANDLER ---
   Future<void> _handleMapSelection(DateTime date) async {
-    final result = await _mapController.showMapPicker(context);
-    if (result != null) {
-      setState(() {
-        _dailyConfigs[date]!['locationResult'] = result;
-        _dailyConfigs[date]!['route'].text = result.address;
-      });
-    }
+  if (!_isMapEngineReady) {
+    _showSnack("Initializing map engine...", _accentBlue);
+    return;
   }
+
+  // Instant physical haptic feedback
+  HapticFeedback.selectionClick();
+
+  setState(() {
+    _activeMapDate = date;
+    _isMapVisible = true; // This triggers the build() Stack immediately
+  });
+}
 
   // --- SUBMISSION LOGIC ---
   Future<void> _submitWeeklyPlan() async {
@@ -132,7 +157,7 @@ class _BulkTechnicalPjpWizardScreenState
           planDate: date,
           userId: int.parse(widget.employee.id),
           createdById: int.parse(widget.employee.id),
-          status: 'PENDING',
+          status: 'pending',
           verificationStatus: 'PENDING',
           areaToBeVisited: formattedArea,
           route: config['route'].text,
@@ -184,104 +209,116 @@ class _BulkTechnicalPjpWizardScreenState
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
+ @override
+Widget build(BuildContext context) {
+  return Scaffold(
+    backgroundColor: _surfaceWhite,
+    appBar: AppBar(
       backgroundColor: _surfaceWhite,
-      appBar: AppBar(
-        backgroundColor: _surfaceWhite,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: _cardNavy,
-            size: 20,
-          ),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          'Weekly Visit Planner',
-          style: TextStyle(
-            color: _cardNavy,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
+      elevation: 0,
+      centerTitle: true,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _cardNavy, size: 20),
+        onPressed: () => Navigator.pop(context),
       ),
-      body: Theme(
-        data: Theme.of(context).copyWith(
-          canvasColor: _surfaceWhite,
-          colorScheme: const ColorScheme.light(
-            primary: Colors.black,
-            onPrimary: Colors.white,
+      title: const Text(
+        'Weekly Visit Planner',
+        style: TextStyle(color: _cardNavy, fontWeight: FontWeight.bold, fontSize: 16),
+      ),
+    ),
+    // --- WRAP THE BODY IN A STACK ---
+    body: Stack(
+      children: [
+        Theme(
+          data: Theme.of(context).copyWith(
+            canvasColor: _surfaceWhite,
+            colorScheme: const ColorScheme.light(
+              primary: Colors.black,
+              onPrimary: Colors.white,
+            ),
           ),
-        ),
-        child: Stepper(
-          type: StepperType.horizontal,
-          elevation: 0,
-          currentStep: _currentStep,
-          onStepContinue: () {
-            if (_currentStep == 0) {
-              if (_selectedDates.isEmpty)
-                return _showSnack("Please select dates", Colors.orange);
-              setState(() {
-                _initializeDailyConfigs();
-                _currentStep++;
-              });
-            } else {
-              _submitWeeklyPlan();
-            }
-          },
-          onStepCancel: () => _currentStep > 0
-              ? setState(() => _currentStep--)
-              : Navigator.pop(context),
-          controlsBuilder: (context, details) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-              child: _isSubmitting
-                  ? const Center(
-                      child: CircularProgressIndicator(color: _cardNavy),
-                    )
-                  : ElevatedButton(
-                      onPressed: details.onStepContinue,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _cardNavy,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(double.infinity, 56),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+          child: Stepper(
+            type: StepperType.horizontal,
+            elevation: 0,
+            currentStep: _currentStep,
+            onStepContinue: () {
+              if (_currentStep == 0) {
+                if (_selectedDates.isEmpty) return _showSnack("Please select dates", Colors.orange);
+                setState(() {
+                  _initializeDailyConfigs();
+                  _currentStep++;
+                });
+              } else {
+                _submitWeeklyPlan();
+              }
+            },
+            onStepCancel: () => _currentStep > 0
+                ? setState(() => _currentStep--)
+                : Navigator.pop(context),
+            controlsBuilder: (context, details) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                child: _isSubmitting
+                    ? const Center(child: CircularProgressIndicator(color: _cardNavy))
+                    : ElevatedButton(
+                        onPressed: details.onStepContinue,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _cardNavy,
+                          foregroundColor: Colors.white,
+                          minimumSize: const Size(double.infinity, 56),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        child: Text(
+                          _currentStep == 0 ? 'NEXT: PLAN TARGETS' : 'GENERATE WEEKLY PLAN',
+                          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0),
                         ),
                       ),
-                      child: Text(
-                        _currentStep == 0
-                            ? 'NEXT: PLAN TARGETS'
-                            : 'GENERATE WEEKLY PLAN',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1.0,
-                        ),
-                      ),
-                    ),
-            );
-          },
-          steps: [
-            Step(
-              title: const Text('Schedule'),
-              isActive: _currentStep >= 0,
-              state: _currentStep > 0 ? StepState.complete : StepState.indexed,
-              content: _buildCalendarStep(),
-            ),
-            Step(
-              title: const Text('Planner'),
-              isActive: _currentStep >= 1,
-              state: StepState.indexed,
-              content: _buildPlannerStep(),
-            ),
-          ],
+              );
+            },
+            steps: [
+              Step(
+                title: const Text('Schedule'),
+                isActive: _currentStep >= 0,
+                state: _currentStep > 0 ? StepState.complete : StepState.indexed,
+                content: _buildCalendarStep(),
+              ),
+              Step(
+                title: const Text('Planner'),
+                isActive: _currentStep >= 1,
+                state: StepState.indexed,
+                content: _buildPlannerStep(),
+              ),
+            ],
+          ),
         ),
-      ),
-    );
-  }
+
+        // --- THE INSTANT MAP LAYER ---
+       // --- THE INSTANT MAP LAYER ---
+        if (_isMapVisible)
+          Positioned.fill(
+            child: Material(
+              color: Colors.white,
+              child: _mapController.buildPickerUI(
+                context,
+                // ADD THIS LINE: Default coordinates (Guwahati area)
+                initialPos: const LatLng(26.1445, 91.7362), 
+                onLocationSelected: (result) {
+                  if (_activeMapDate != null) {
+                    setState(() {
+                      _dailyConfigs[_activeMapDate]!['locationResult'] = result;
+                      _dailyConfigs[_activeMapDate]!['route'].text = result.address;
+                      _isMapVisible = false;
+                    });
+                  }
+                },
+                onCancel: () => setState(() => _isMapVisible = false),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
 
   Widget _buildCalendarStep() {
     return Container(
@@ -395,6 +432,7 @@ class _BulkTechnicalPjpWizardScreenState
 
                 // --- ROUTE SELECTOR FIELD ---
                 _buildMapSelectorInput(
+                  date: date, // Pass the current date from the loop/index
                   label: "Route / Destination",
                   controller: config['route'],
                   icon: Icons.map_rounded,
@@ -463,13 +501,20 @@ class _BulkTechnicalPjpWizardScreenState
   }
 
   Widget _buildMapSelectorInput({
+    required DateTime date,
     required String label,
     required TextEditingController controller,
     required IconData icon,
     required VoidCallback onTap,
   }) {
+    final bool isLocalLoading = _mapLoadingStates[date] ?? false;
+    // Use the flag here to determine the icon color or state
+    final Color iconColor = _isMapEngineReady
+        ? _accentBlue
+        : _textGrey.withOpacity(0.5);
+
     return InkWell(
-      onTap: onTap,
+      onTap: (isLocalLoading || !_isMapEngineReady) ? null : onTap,
       borderRadius: BorderRadius.circular(12),
       child: IgnorePointer(
         child: TextFormField(
@@ -478,12 +523,20 @@ class _BulkTechnicalPjpWizardScreenState
           decoration: InputDecoration(
             labelText: label,
             labelStyle: const TextStyle(color: _textGrey, fontSize: 13),
-            prefixIcon: Icon(icon, color: _accentBlue, size: 20),
-            suffixIcon: const Icon(
-              Icons.location_searching,
-              color: _accentBlue,
-              size: 20,
-            ),
+            prefixIcon: Icon(icon, color: iconColor, size: 20),
+            suffixIcon: isLocalLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: _accentBlue,
+                      ),
+                    ),
+                  )
+                : Icon(Icons.location_searching, color: iconColor, size: 20),
             filled: true,
             fillColor: _inputFill,
             border: OutlineInputBorder(

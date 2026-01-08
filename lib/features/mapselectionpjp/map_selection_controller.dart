@@ -62,19 +62,17 @@ class MapSelectionController {
     return "Custom Location";
   }
 
-  // --- 2. FORMAT HELPER (Restored) ---
+  // --- 2. FORMAT HELPER ---
   String formatPjpArea(String primaryName, MapSelectionResult result) {
     return '$primaryName, ${result.address}|${result.position.latitude}|${result.position.longitude}';
   }
 
-  // --- 3. FORWARD GEOCODING (SEARCH) [ADDED] ---
-  // This allows the TechnicalJourneyScreen to search for locations
+  // --- 3. FORWARD GEOCODING (SEARCH) ---
   Future<LatLng?> searchLocation(String query) async {
     if (query.trim().isEmpty) return null;
     try {
       final uri = Uri.parse(
           'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(query)}&format=json&limit=1');
-      // User-Agent is required by OpenStreetMap
       final res = await http.get(uri, headers: {'User-Agent': 'salesmanapp/1.0'});
       
       if (res.statusCode == 200) {
@@ -89,7 +87,24 @@ class MapSelectionController {
     return null;
   }
 
-  // --- 4. PICKER METHOD (Restored & Safer) ---
+  // --- 4. INSTANT PICKER UI (For Wizard Stack) ---
+  /// Returns the Map UI as a Widget to be used in a Stack (Instant feel)
+  Widget buildPickerUI(
+    BuildContext context, {
+    required LatLng initialPos,
+    required Function(MapSelectionResult) onLocationSelected,
+    required VoidCallback onCancel,
+  }) {
+    return _MapPickerScreen(
+      initialPos: initialPos,
+      caps: caps,
+      isOverlay: true,
+      onResult: onLocationSelected,
+      onBack: onCancel,
+    );
+  }
+
+  // --- 5. CLASSIC PICKER METHOD (Navigator based) ---
   Future<MapSelectionResult?> showMapPicker(BuildContext context) async {
     if (!caps.enabled) return null;
 
@@ -117,12 +132,23 @@ class MapSelectionController {
   }
 }
 
-// --- FULL SCREEN MAP PICKER (Kept exactly as you had it) ---
+// --- FULL SCREEN / OVERLAY MAP PICKER ---
 class _MapPickerScreen extends StatefulWidget {
   final LatLng initialPos;
   final MapSelectionCapabilities caps;
+  
+  // New props for Overlay support
+  final bool isOverlay;
+  final Function(MapSelectionResult)? onResult;
+  final VoidCallback? onBack;
 
-  const _MapPickerScreen({required this.initialPos, required this.caps});
+  const _MapPickerScreen({
+    required this.initialPos, 
+    required this.caps,
+    this.isOverlay = false,
+    this.onResult,
+    this.onBack,
+  });
 
   @override
   State<_MapPickerScreen> createState() => _MapPickerScreenState();
@@ -183,6 +209,8 @@ class _MapPickerScreenState extends State<_MapPickerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // We use a WillPopScope-like logic or simply Scaffold to handle the UI.
+    // If it's an overlay, we might want to wrap it in a Gesture detector to prevent taps leaking through.
     return Scaffold(
       body: Stack(
         children: [
@@ -220,11 +248,20 @@ class _MapPickerScreenState extends State<_MapPickerScreen> {
                   hintText: "Search area...",
                   prefixIcon: IconButton(
                     icon: const Icon(Icons.arrow_back),
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () {
+                      if (widget.isOverlay) {
+                        widget.onBack?.call();
+                      } else {
+                        Navigator.pop(context);
+                      }
+                    },
                   ),
                   suffixIcon: _isSearching
                       ? const Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator(strokeWidth: 2))
-                      : IconButton(icon: const Icon(Icons.search, color: Color(0xFF0F172A)), onPressed: () => _searchLocation(_searchController.text)),
+                      : IconButton(
+                          icon: const Icon(Icons.search, color: Color(0xFF0F172A)), 
+                          onPressed: () => _searchLocation(_searchController.text)
+                        ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 ),
@@ -257,7 +294,12 @@ class _MapPickerScreenState extends State<_MapPickerScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     onPressed: () {
-                      Navigator.pop(context, MapSelectionResult(position: _currentPos, address: _address));
+                      final res = MapSelectionResult(position: _currentPos, address: _address);
+                      if (widget.isOverlay) {
+                        widget.onResult?.call(res);
+                      } else {
+                        Navigator.pop(context, res);
+                      }
                     },
                     child: const Text("CONFIRM LOCATION", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
                   ),

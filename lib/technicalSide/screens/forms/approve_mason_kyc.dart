@@ -46,6 +46,7 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
   Future<List<KycSubmission>> _fetchPendingKyc() async {
     try {
       final userId = int.tryParse(widget.employee.id);
+      if (userId == null) return [];
       return await _api.fetchPendingKycSubmissions(userId: userId);
     } catch (e) {
       debugPrint("Error fetching KYC: $e");
@@ -53,28 +54,34 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
     }
   }
 
-  // --- 🟢 NEW: Dynamic Server-Side Search Dialog ---
+  // --- 🟢 DYNAMIC SERVER SEARCH ---
   Future<Dealer?> _showServerSearchDealerDialog() async {
     return await showDialog<Dealer>(
       context: context,
+      barrierDismissible: true, // Search dialog can be dismissed
       builder: (context) => _ServerSearchDialog(api: _api),
     );
   }
 
-  // --- UPDATED: Main Edit Dialog ---
+  // --- 🛡️ UPDATED: EDIT DIALOG (Safe from accidental close) ---
   void _showEditAndActionDialog(KycSubmission item) {
     final nameController = TextEditingController(text: item.mason?.name ?? '');
     final remarkController = TextEditingController();
     Dealer? selectedDealer;
 
+    // Use StatefulBuilder to update the dialog UI (e.g. Dealer selection)
     showDialog(
       context: context,
+      barrierDismissible: false, // 🔒 PREVENT ACCIDENTAL DISMISSAL
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) {
           return AlertDialog(
             backgroundColor: _surfaceWhite,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text("Review & Edit Details", style: TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
+            title: const Text(
+              "Review & Edit Details",
+              style: TextStyle(fontWeight: FontWeight.bold, color: _textDark),
+            ),
             content: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -88,7 +95,7 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Dealer Selector (Tap to Search)
+                  // Dealer Selector
                   const Text("Assign/Change Dealer", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: _textDark)),
                   const SizedBox(height: 8),
                   
@@ -100,12 +107,13 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                         setStateDialog(() => selectedDealer = result);
                       }
                     },
+                    borderRadius: BorderRadius.circular(8),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
                       decoration: BoxDecoration(
                         color: _inputFill,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _cardNavy.withOpacity(0.3)), 
+                        border: Border.all(color: _cardNavy.withOpacity(0.1)), 
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -477,7 +485,7 @@ class _ServerSearchDialogState extends State<_ServerSearchDialog> {
   @override
   void initState() {
     super.initState();
-    _performSearch(""); // Initial load (top results)
+    _performSearch(""); // Initial load
   }
 
   @override
@@ -502,7 +510,7 @@ class _ServerSearchDialogState extends State<_ServerSearchDialog> {
     try {
       final results = await widget.api.fetchDealers(
         search: query,
-        limit: 20, // Keep payload small
+        limit: 20,
       );
       if (mounted) {
         setState(() {
