@@ -43,6 +43,7 @@ class TvrDealerSection extends StatelessWidget {
         TvrInputField(
           label: 'Dealer / Sub-Dealer Name',
           controller: controllers['partyName']!,
+          isRequired: true,
         ),
 
         const SizedBox(height: 16),
@@ -52,6 +53,7 @@ class TvrDealerSection extends StatelessWidget {
           label: 'Phone / WhatsApp No.',
           controller: controllers['phone']!,
           keyboardType: TextInputType.phone,
+          isRequired: true,
         ),
 
         const SizedBox(height: 16),
@@ -72,6 +74,7 @@ class TvrDealerSection extends StatelessWidget {
           value: values['selectedVisitCategory'],
           items: TvrConstants.visitCategoryOptions,
           onChanged: (v) => onUpdate('selectedVisitCategory', v),
+          isRequired: true,
         ),
 
         const SizedBox(height: 16),
@@ -81,6 +84,7 @@ class TvrDealerSection extends StatelessWidget {
           value: values['selectedInfluencerType'],
           items: const ['Dealer', 'Sub-Dealer'],
           onChanged: (v) => onUpdate('selectedInfluencerType', v),
+          isRequired: true,
         ),
 
         /// ---------------- LOCATION & REGION ----------------
@@ -94,6 +98,7 @@ class TvrDealerSection extends StatelessWidget {
                 value: values['selectedRegion'],
                 items: TvrConstants.regionOptions,
                 onChanged: (v) => onUpdate('selectedRegion', v),
+                isRequired: true,
               ),
             ),
             const SizedBox(width: 12),
@@ -101,6 +106,7 @@ class TvrDealerSection extends StatelessWidget {
               child: TvrInputField(
                 label: 'Area',
                 controller: controllers['area']!,
+                isRequired: true,
               ),
             ),
           ],
@@ -112,6 +118,7 @@ class TvrDealerSection extends StatelessWidget {
           label: 'Address',
           controller: controllers['siteAddress']!,
           maxLines: 2,
+          isRequired: true,
         ),
 
         const SizedBox(height: 16),
@@ -142,6 +149,7 @@ class TvrDealerSection extends StatelessWidget {
           items: TvrConstants.brandOptions,
           selectedValues: values['brandsInUse'] ?? [],
           onChanged: (v) => onUpdate('brandsInUse', v),
+          isRequired: true,
         ),
 
         /// ---------------- CONVERSION ----------------
@@ -166,6 +174,7 @@ class TvrDealerSection extends StatelessWidget {
                   label: 'Quantity',
                   controller: controllers['qty']!,
                   keyboardType: TextInputType.number,
+                  isRequired: true,
                 ),
               ),
               const SizedBox(width: 12),
@@ -186,6 +195,7 @@ class TvrDealerSection extends StatelessWidget {
             label: 'Rate per Bag',
             controller: controllers['rate']!,
             keyboardType: TextInputType.number,
+            isRequired: true,
           ),
 
           const SizedBox(height: 16),
