@@ -1,7 +1,7 @@
 name: salesmanapp
 description: "Salesman & Technical Salesman App for Best Cement"
 publish_to: 'none'
-version: 1.2.1+31
+version: 1.2.1+32
 
 environment:
   sdk: ^3.9.2

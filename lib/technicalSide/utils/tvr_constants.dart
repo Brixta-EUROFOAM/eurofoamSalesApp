@@ -20,7 +20,7 @@ class TvrConstants {
   ];
 
   static const List<String> serviceTypeOptions = [
-    'Slab Supervision', 'CTV Demo Cube Cast', 'NDT', 'Good Construction Practices',
+    'Slab Supervision', 'CTV Demo', 'NDT', 'Good Construction Practices',
   ];
 
   static const List<String> techActivityOptions = [
@@ -28,7 +28,7 @@ class TvrConstants {
   ];
 
   static const List<String> influencerTypeOptions = [
-    'Mason', 'Contractor', 'Engineer/Architect', 'Builder', 'Dealer',
+    'Head Mason', 'Mason', 'PC', 'Engineer/Architect'
   ];
 
   static const List<String> visitCategoryOptions = ['New', 'Follow Up'];

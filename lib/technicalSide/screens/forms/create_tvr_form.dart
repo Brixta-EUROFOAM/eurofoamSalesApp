@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
+import 'package:salesmanapp/technicalSide/utils/tvrworker.dart';
 
 // Project Imports
 import 'package:salesmanapp/api/api_service.dart';
@@ -48,7 +49,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   late final Map<String, TextEditingController> _controllers;
   final Map<String, dynamic> _values = {
     'selectedCustomerType': null,
-    'selectedVisitType': 'Site Visit',
+    'selectedVisitType': null,
     'selectedVisitCategory': null,
     'selectedRegion': null,
     'selectedUnit': 'Bags',
@@ -69,6 +70,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     if (widget.site != null) _onSiteSelected(widget.site!);
     if (widget.initialCheckInTime != null) {
       _values['checkInTime'] = widget.initialCheckInTime;
+      _values['isCheckInProcessing'] = false;
+      _values['checkInFailed'] = false;
     }
     if (widget.employee.region != null &&
         TvrConstants.regionOptions.contains(widget.employee.region)) {
@@ -97,7 +100,9 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? Colors.red : TvrConstants.accentGreen,
+        backgroundColor: isError
+            ? const Color.fromARGB(255, 238, 176, 42)
+            : TvrConstants.accentGreen,
         duration: const Duration(seconds: 3),
       ),
     );
@@ -180,13 +185,13 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     });
   }
 
-  Future<void> _clearDrafts() async {
-    final prefs = await SharedPreferences.getInstance();
-    final allKeys = prefs.getKeys();
-    for (String key in allKeys) {
-      if (key.startsWith('tvr_')) await prefs.remove(key);
-    }
-  }
+  // Future<void> _clearDrafts() async {
+  //   final prefs = await SharedPreferences.getInstance();
+  //   final allKeys = prefs.getKeys();
+  //   for (String key in allKeys) {
+  //     if (key.startsWith('tvr_')) await prefs.remove(key);
+  //   }
+  // }
 
   // --- 🛑 LOCATION & CAMERA ---
 
@@ -200,47 +205,51 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         return;
       }
       // ⚡ STEP 1: Update Lat/Long immediately so the user sees something happened
-    setState(() {
-      _values['capturedLocation'] = position;
-      _controllers['latitude']!.text = position.latitude.toStringAsFixed(6);
-      _controllers['longitude']!.text = position.longitude.toStringAsFixed(6);
-    });
+      setState(() {
+        _values['capturedLocation'] = position;
+        _controllers['latitude']!.text = position.latitude.toStringAsFixed(6);
+        _controllers['longitude']!.text = position.longitude.toStringAsFixed(6);
+      });
 
-    // ⚡ STEP 2: Fetch Address
-    final addressDetails = await _apiService.reverseGeocodeWithRadar(
-      latitude: position.latitude,
-      longitude: position.longitude,
-    );
+      // ⚡ STEP 2: Fetch Address
+      final addressDetails = await _apiService.reverseGeocodeWithRadar(
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
 
-    setState(() {
-      // ⚡ Robust mapping: Try different common keys from geocoding services
-      final String? foundAddress = addressDetails['address'] ?? 
-                                   addressDetails['formattedAddress'] ?? 
-                                   addressDetails['addressLabel'];
-                                   
-      if (foundAddress != null && foundAddress.isNotEmpty) {
-        _controllers['siteAddress']!.text = foundAddress;
-      }
+      setState(() {
+        // ⚡ Robust mapping: Try different common keys from geocoding services
+        final String? foundAddress =
+            addressDetails['address'] ??
+            addressDetails['formattedAddress'] ??
+            addressDetails['addressLabel'];
 
-      if (addressDetails['area'] != null) {
-        _controllers['area']!.text = addressDetails['area']!;
-      }
+        if (foundAddress != null && foundAddress.isNotEmpty) {
+          _controllers['siteAddress']!.text = foundAddress;
+        }
 
-      if (addressDetails['region'] != null &&
-          TvrConstants.regionOptions.contains(addressDetails['region'])) {
-        _values['selectedRegion'] = addressDetails['region'];
-      }
-    });
+        if (addressDetails['area'] != null) {
+          _controllers['area']!.text = addressDetails['area']!;
+        }
 
-    _saveDrafts();
-    _showSnack("Location & Address Updated", isError: false); // Green snackbar
-  } catch (e) {
-     debugPrint("Geocoding Error: $e");
-    _showSnack("Location detected, but address fetch failed.");
-  } finally {
-    _onUpdate('isFetchingLocation', false);
+        if (addressDetails['region'] != null &&
+            TvrConstants.regionOptions.contains(addressDetails['region'])) {
+          _values['selectedRegion'] = addressDetails['region'];
+        }
+      });
+
+      _saveDrafts();
+      _showSnack(
+        "Location & Address Updated",
+        isError: false,
+      ); // Green snackbar
+    } catch (e) {
+      debugPrint("Geocoding Error: $e");
+      _showSnack("Location detected, but address fetch failed.");
+    } finally {
+      _onUpdate('isFetchingLocation', false);
+    }
   }
-}
 
   Future<bool> _showLocationDisclosureDialog() async {
     return await showDialog<bool>(
@@ -362,39 +371,83 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   Future<void> _handleCheckIn() async {
+    // 1. UI: Open Camera (Blocking only for user action)
     final String? imagePath = await Navigator.push(
       context,
       MaterialPageRoute(builder: (c) => const TvrCameraScreen()),
     );
     if (imagePath == null) return;
 
-    _onUpdate('isUploadingImage', true);
+    final File imageFile = File(imagePath);
+    final DateTime now = DateTime.now();
+
+    // 2. UI: Update State IMMEDIATELY (Optimistic)
+    // The user sees "Check-In Complete" instantly.
+    setState(() {
+      _values['checkInTime'] = now;
+      _values['inTimeImageFile'] = imageFile; // Show local image
+
+      // Flags for the background worker
+      _values['isCheckInProcessing'] = true;
+      _values['checkInFailed'] = false;
+    });
+
+    _saveDrafts();
+
+    // 3. LOGIC: Fire and Forget (Run in background)
+    // We do NOT use 'await' here. The UI thread is free to move on.
+    _processCheckInInBackground(imageFile);
+  }
+
+  Future<void> _processCheckInInBackground(File imageFile) async {
     try {
+      // A. Fetch Location (Slow)
+      // We use a small timeout so we don't hang forever, but we are in background anyway
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
-      final url = await _apiService.uploadImageToR2(File(imagePath));
 
-      setState(() {
-       _values['checkInTime'] = DateTime.now();
-        _values['inTimeImageUrl'] = url;
-        _values['capturedLocation'] = pos;
-        _values['inTimeImageFile'] = File(imagePath);
-        _controllers['latitude']!.text = pos.latitude.toStringAsFixed(6);
-        _controllers['longitude']!.text = pos.longitude.toStringAsFixed(6);
-      });
-      _saveDrafts();
-    } finally {
-      _onUpdate('isUploadingImage', false);
+      // Update location as soon as we have it
+      if (mounted) {
+        setState(() {
+          _values['capturedLocation'] = pos;
+          _controllers['latitude']!.text = pos.latitude.toStringAsFixed(6);
+          _controllers['longitude']!.text = pos.longitude.toStringAsFixed(6);
+        });
+      }
+
+      // B. Upload Image (Slow)
+      final url = await _apiService.uploadImageToR2(imageFile);
+
+      // C. Success!
+      if (mounted) {
+        setState(() {
+          _values['inTimeImageUrl'] = url;
+          _values['isCheckInUploading'] = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Background Check-in Failed (Will retry at submit): $e");
+      // D. Silent Failure
+      // We don't show an error dialog yet. We just flag it.
+      if (mounted) {
+        setState(() {
+          _values['isCheckInUploading'] = false;
+          _values['checkInUploadFailed'] = true; // Mark for retry later
+        });
+      }
     }
   }
 
   Future<void> _pickSitePhoto() async {
-    final String? imagePath = await Navigator.push(context, MaterialPageRoute(builder: (_) => const TvrCameraScreen()));
+    final String? imagePath = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const TvrCameraScreen()),
+    );
     if (imagePath == null) return;
 
     final file = File(imagePath);
-    
+
     // 1. Immediately update UI to show "Selected" status
     _onUpdate('sitePhotoFile', file);
 
@@ -423,10 +476,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       _controllers['siteAddress']!.text = site.address;
       _controllers['area']!.text = site.area ?? '';
 
-      if (site.latitude != null && site.latitude != 0.0) {
+      if (site.latitude != 0.0 && site.latitude != 0.0) {
         _controllers['latitude']!.text = site.latitude.toStringAsFixed(6);
       }
-      if (site.longitude != null && site.longitude != 0.0) {
+      if (site.longitude != 0.0 && site.longitude != 0.0) {
         _controllers['longitude']!.text = site.longitude.toStringAsFixed(6);
       }
 
@@ -477,117 +530,265 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
 
   // --- 🚀 SUBMIT ---
 
+  // <--- Import this!
+
   Future<void> _submitTvr() async {
-    if (!_formKey.currentState!.validate()) return;
-    if (_values['checkInTime'] == null) { _showSnack("Check-in is required"); return; }
+    // ---------------------------------------------------------
+    // 1. VALIDATION LOGIC (Your strict logic preserved)
+    // ---------------------------------------------------------
+    if (!_formKey.currentState!.validate()) {
+      _showSnack("Please fill in the required fields marked in red.");
+      return;
+    }
+    if (_values['checkInTime'] == null) {
+      _showSnack("Check-in is required");
+      return;
+    }
+    if (!_passesTimeLock()) return;
 
-    _onUpdate('isSubmitting', true);
-    try {
-      // 1. Mandatory Checkout Photo
-      final String? outPath = await Navigator.push(context, MaterialPageRoute(builder: (c) => const TvrCameraScreen()));
-      if (outPath == null) { _onUpdate('isSubmitting', false); return; }
-
-      // 2. Upload Images
-      final outUrl = await _apiService.uploadImageToR2(File(outPath));
-      String? siteUrl = _values['sitePhotoUrl'];
-      if (siteUrl == null && _values['sitePhotoFile'] != null) {
-        siteUrl = await _apiService.uploadImageToR2(_values['sitePhotoFile']);
+    // MANUAL ENFORCEMENT LOGIC (IHB/Site Checks)
+    final String type = _values['selectedCustomerType'] ?? '';
+    if (type == 'IHB/Site') {
+      if (_values['selectedVisitType'] == null) {
+        _showSnack("⚠️ Please select a Visit Type.");
+        return;
+      }
+      if (_values['selectedSiteVisitType'] == null) {
+        _showSnack("⚠️ Please select Site Visit Type.");
+        return;
+      }
+      if (_values['selectedVisitCategory'] == null) {
+        _showSnack("⚠️ Please select a Visit Category.");
+        return;
+      }
+      if (_controllers['partyName']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Site Owner Name is required.");
+        return;
+      }
+      if (_controllers['whatsapp']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Phone / WhatsApp No. is required.");
+        return;
+      }
+      if (_values['selectedRegion'] == null) {
+        _showSnack("⚠️ Region is required.");
+        return;
+      }
+      if (_controllers['area']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Area is required.");
+        return;
+      }
+      if (_controllers['siteAddress']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Site Address is required.");
+        return;
+      }
+      if (_controllers['marketName']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Market Name is required.");
+        return;
+      }
+      if (_controllers['constArea']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Construction Area (SqFt) is required.");
+        return;
+      }
+      if (_values['selectedStage'] == null) {
+        _showSnack("⚠️ Construction Stage is required.");
+        return;
       }
 
-      // 3. Prepare Payload
-      final now = DateTime.now();
-      final checkIn = _values['checkInTime'] as DateTime;
-      final diff = now.difference(checkIn);
+      final List brands = _values['brandsInUse'] ?? [];
+      if (brands.isEmpty) {
+        _showSnack("⚠️ Please select at least one Brand in Use.");
+        return;
+      }
 
-      final tvr = TechnicalVisitReport(
-        userId: int.parse(widget.employee.id),
-        reportDate: now,
-        visitType: _values['selectedVisitType'] ?? 'Site Visit',
-        visitCategory: _values['selectedVisitCategory'],
-        customerType: _values['selectedCustomerType'],
-        purposeOfVisit: _controllers['purposeOfVisit']?.text,
-        siteNameConcernedPerson: _controllers['concernedPerson']?.text ?? '',
-        phoneNo: _controllers['phone']?.text ?? '',
-        whatsappNo: _controllers['whatsapp']?.text,
-        siteAddress: _controllers['siteAddress']?.text,
-        marketName: _controllers['marketName']?.text,
-        region: _values['selectedRegion'],
-        area: _controllers['area']?.text,
-        latitude: _values['capturedLocation']?.latitude,
-        longitude: _values['capturedLocation']?.longitude,
-        siteVisitStage: _values['selectedStage'],
-        constAreaSqFt: int.tryParse(_controllers['constArea']?.text ?? ''),
-        siteVisitBrandInUse: _values['brandsInUse'] ?? [],
-        currentBrandPrice: double.tryParse(_controllers['rate']?.text ?? ''),
-        siteStock: double.tryParse(_controllers['siteStock']?.text ?? ''),
-        estRequirement: double.tryParse(_controllers['estRequirement']?.text ?? ''),
-        supplyingDealerName: _controllers['supplyingDealer']?.text,
-        nearbyDealerName: _controllers['nearbyDealer']?.text,
-        associatedPartyName: _controllers['partyName']?.text,
-        isConverted: _values['isConverted'],
-        conversionType: _values['conversionType'],
-        conversionFromBrand: _values['conversionFromBrand'],
-        conversionQuantityValue: double.tryParse(_controllers['qty']?.text ?? ''),
-        conversionQuantityUnit: _values['selectedUnit'],
-        isTechService: _values['isTechService'],
-        serviceDesc: _controllers['serviceDesc']?.text,
-        influencerName: _controllers['influencerName']?.text,
-        influencerPhone: _controllers['influencerPhone']?.text,
-        influencerProductivity: _controllers['productivity']?.text,
-        isSchemeEnrolled: _values['isSchemeEnrolled'],
-        influencerType: _values['selectedInfluencerType'] != null ? [_values['selectedInfluencerType']] : [],
-        clientsRemarks: _controllers['remarks']?.text ?? '',
-        salespersonRemarks: _controllers['remarks']?.text ?? '',
-        checkInTime: checkIn,
-        checkOutTime: now,
-        timeSpentinLoc: '${diff.inHours}h ${diff.inMinutes.remainder(60)}m',
-        inTimeImageUrl: _values['inTimeImageUrl'],
-        outTimeImageUrl: outUrl,
-        sitePhotoUrl: siteUrl,
-        pjpId: widget.pjp?.id,
-        masonId: _values['selectedMason']?.id,
-        siteId: _values['selectedSite']?.id,
-        siteVisitType: _values['selectedSiteVisitType'],
+      if (_controllers['siteStock']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Site Stock is required.");
+        return;
+      }
+      if (_controllers['estRequirement']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Estimated Requirement is required.");
+        return;
+      }
+
+      if (_values['isConverted'] == true) {
+        if (_values['conversionType'] == null) {
+          _showSnack("⚠️ Please select Conversion Type.");
+          return;
+        }
+        if (_values['conversionFromBrand'] == null) {
+          _showSnack("⚠️ Please select 'From Brand'.");
+          return;
+        }
+        if (_controllers['qty']!.text.trim().isEmpty) {
+          _showSnack("⚠️ Please enter Conversion Quantity.");
+          return;
+        }
+        if (_values['selectedUnit'] == null) {
+          _showSnack("⚠️ Please select a Unit.");
+          return;
+        }
+        if (_controllers['nearbyDealer']!.text.trim().isEmpty) {
+          _showSnack("⚠️ Converted Brand Dealer(Best) is required.");
+          return;
+        }
+      }
+
+      if (_values['isTechService'] == true &&
+          _values['selectedServiceType'] == null) {
+        _showSnack("⚠️ Please select Service Type.");
+        return;
+      }
+
+      if (_values['selectedInfluencerType'] == null) {
+        _showSnack("⚠️ Influencer Type is required.");
+        return;
+      }
+      if (_controllers['influencerName']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Influencer Name is required.");
+        return;
+      }
+      if (_controllers['influencerPhone']!.text.trim().isEmpty) {
+        _showSnack("⚠️ Influencer Phone is required.");
+        return;
+      }
+    }
+
+    if (_controllers['remarks']!.text.trim().isEmpty) {
+      _showSnack("⚠️ Remarks are required.");
+      return;
+    }
+
+    // ---------------------------------------------------------
+    // 2. CHECKOUT CAMERA (Blocking - User must do this)
+    // ---------------------------------------------------------
+    // We do NOT start any loaders here. Just open camera.
+    final String? outPath = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (c) => const TvrCameraScreen()),
+    );
+    if (outPath == null) return; // User cancelled
+
+    // ---------------------------------------------------------
+    // 3. PREPARE DATA (Instant)
+    // ---------------------------------------------------------
+    final now = DateTime.now();
+    final checkIn = _values['checkInTime'] as DateTime;
+    final diff = now.difference(checkIn);
+
+    // ⚠️ CRITICAL: We pass whatever we have.
+    // If 'inTimeImageUrl' is null because background was slow, WE PASS NULL.
+    // The worker will see it's null and upload the file instead.
+
+    final payload = TechnicalVisitReport(
+      userId: int.parse(widget.employee.id),
+      reportDate: now,
+      visitType: _values['selectedVisitType'] ?? 'Site Visit',
+      visitCategory: _values['selectedVisitCategory'],
+      customerType: _values['selectedCustomerType'],
+      purposeOfVisit: _controllers['purposeOfVisit']?.text,
+      siteNameConcernedPerson: _controllers['concernedPerson']?.text ?? '',
+      phoneNo: _controllers['phone']?.text ?? '',
+      whatsappNo: _controllers['whatsapp']?.text,
+      siteAddress: _controllers['siteAddress']?.text,
+      marketName: _controllers['marketName']?.text,
+      region: _values['selectedRegion'],
+      area: _controllers['area']?.text,
+      latitude: _values['capturedLocation']?.latitude,
+      longitude: _values['capturedLocation']?.longitude,
+      siteVisitStage: _values['selectedStage'],
+      constAreaSqFt: int.tryParse(_controllers['constArea']?.text ?? ''),
+      siteVisitBrandInUse: _values['brandsInUse'] ?? [],
+      currentBrandPrice: double.tryParse(_controllers['rate']?.text ?? ''),
+      siteStock: double.tryParse(_controllers['siteStock']?.text ?? ''),
+      estRequirement: double.tryParse(
+        _controllers['estRequirement']?.text ?? '',
+      ),
+      supplyingDealerName: _controllers['supplyingDealer']?.text,
+      nearbyDealerName: _controllers['nearbyDealer']?.text,
+      associatedPartyName: _controllers['partyName']?.text,
+      isConverted: _values['isConverted'],
+      conversionType: _values['conversionType'],
+      conversionFromBrand: _values['conversionFromBrand'],
+      conversionQuantityValue: double.tryParse(_controllers['qty']?.text ?? ''),
+      conversionQuantityUnit: _values['selectedUnit'],
+      isTechService: _values['isTechService'],
+      serviceDesc: _controllers['serviceDesc']?.text,
+      influencerName: _controllers['influencerName']?.text,
+      influencerPhone: _controllers['influencerPhone']?.text,
+      influencerProductivity: _controllers['productivity']?.text,
+      isSchemeEnrolled: _values['isSchemeEnrolled'],
+      influencerType: _values['selectedInfluencerType'] != null
+          ? [_values['selectedInfluencerType']]
+          : [],
+      clientsRemarks: _controllers['remarks']?.text ?? '',
+      salespersonRemarks: _controllers['remarks']?.text ?? '',
+      checkInTime: checkIn,
+      checkOutTime: now,
+      timeSpentinLoc: '${diff.inHours}h ${diff.inMinutes.remainder(60)}m',
+
+      // PASS DATA FOR WORKER TO RESOLVE
+      inTimeImageUrl: _values['inTimeImageUrl'],
+      outTimeImageUrl: null, // Worker will upload this
+      sitePhotoUrl: _values['sitePhotoUrl'], // Worker will fix if null
+
+      pjpId: widget.pjp?.id,
+      masonId: _values['selectedMason']?.id,
+      siteId: _values['selectedSite']?.id,
+      siteVisitType: _values['selectedSiteVisitType'],
+    );
+
+    // Capture Files for the Worker
+    final File? inTimeFile = _values['inTimeImageFile'];
+    final File outTimeFile = File(outPath);
+    final File? sitePhotoFile = _values['sitePhotoFile'];
+
+    // ---------------------------------------------------------
+    // 4. HANDOFF & EXIT (Optimistic)
+    // ---------------------------------------------------------
+
+    // Fire the independent worker
+    TvrBackgroundWorker.processAndSubmit(
+      apiService: _apiService,
+      tvrPayload: payload,
+      inTimeFile: inTimeFile,
+      outTimeFile: outTimeFile,
+      sitePhotoFile: sitePhotoFile,
+      clearDrafts: true,
+    );
+
+    // Notify & Close Screen
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.cloud_upload, color: Colors.white),
+              SizedBox(width: 10),
+              Text("Report Saved! Uploading in background..."),
+            ],
+          ),
+          backgroundColor: TvrConstants.accentGreen,
+          duration: const Duration(seconds: 2),
+        ),
       );
-
-      await _apiService.createTvr(tvr);
-      await _clearDrafts(); // ⚡ CRITICAL: Don't show old data next time
       Navigator.pop(context);
-      _showSnack("Report Submitted Successfully", isError: false);
-    }  catch (e, stackTrace) {
-      // 1. Log the full error to console
-      debugPrint("🔴 SUBMISSION ERROR: $e");
-      debugPrint("🔴 STACK TRACE: $stackTrace");
-
-      // 2. If it's an API exception containing HTML, try to read it
-      if (e.toString().contains("<html>") || e.toString().contains("<!DOCTYPE html>")) {
-         debugPrint("⚠️ SERVER RETURNED HTML INSTEAD OF JSON."); 
-         debugPrint("⚠️ This usually means a 500 Server Error or 404 URL Error.");
-      }
-
-      // 3. Show a more descriptive snackbar
-      _showSnack("Submission Failed: Server returned an error (check logs)");
-    } finally {
-      _onUpdate('isSubmitting', false);
     }
   }
 
-  // bool _passesTimeLock() {
-  //   final DateTime checkIn = _values['checkInTime'];
-  //   final Duration diff = DateTime.now().difference(checkIn);
+  bool _passesTimeLock() {
+    final DateTime checkIn = _values['checkInTime'];
+    final Duration diff = DateTime.now().difference(checkIn);
 
-  //   const int minMinutes = 10;
+    const int minMinutes = 0;
 
-  //   if (diff.inMinutes < minMinutes) {
-  //     final remaining = minMinutes - diff.inMinutes;
-  //     _showError(
-  //       "Minimum $minMinutes minutes required. Wait $remaining minute(s).",
-  //     );
-  //     return false;
-  //   }
-
-  //   return true;
-  // }
+    if (diff.inMinutes < minMinutes) {
+      final remaining = minMinutes - diff.inMinutes;
+      _showError(
+        "Minimum $minMinutes minutes required. Wait $remaining minute(s).",
+      );
+      return false;
+    }
+    return true;
+  }
 
   // bool _passesGeofence() {
   //   final Position pos = _values['capturedLocation'];
@@ -770,13 +971,47 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   Widget _buildSubmitButton() {
-    return ElevatedButton(
-      onPressed: _values['isSubmitting'] ? null : _submitTvr,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: TvrConstants.accentGreen,
-        padding: const EdgeInsets.all(16),
-      ),
-      child: const Text('SUBMIT & CHECK-OUT'),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // --- NEW TEXT LABEL ---
+        const Padding(
+          padding: EdgeInsets.only(bottom: 8.0),
+          child: Center(
+            child: Text(
+              "Submit progress/update photo and Check Out",
+              style: TextStyle(
+                color: Color(0xFF111827), // Dark text color
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+
+        // --- BUTTON ---
+        ElevatedButton(
+          onPressed: _values['isSubmitting'] ? null : _submitTvr,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: TvrConstants.accentGreen,
+            padding: const EdgeInsets.all(16),
+          ),
+          child: _values['isSubmitting']
+              ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+              : const Text(
+                  'SUBMIT & CHECK-OUT',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+        ),
+      ],
     );
   }
 

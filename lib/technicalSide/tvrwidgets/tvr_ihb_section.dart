@@ -51,9 +51,9 @@ class TvrIhbSection extends StatelessWidget {
           value: values['selectedVisitType'],
           items: const [
             'Site Visit',
-            'Service',
-            'Complaint',
-            'Influencer Meet',
+            'Site Service',
+            'Quality Complaint',
+            'Conversion',
           ],
           onChanged: (v) => onUpdate('selectedVisitType', v),
         ),
@@ -74,13 +74,6 @@ class TvrIhbSection extends StatelessWidget {
           value: values['selectedVisitCategory'],
           items: TvrConstants.visitCategoryOptions,
           onChanged: (v) => onUpdate('selectedVisitCategory', v),
-        ),
-
-        const SizedBox(height: 16),
-
-        TvrInputField(
-          label: 'Purpose of Visit',
-          controller: controllers['purposeOfVisit']!,
         ),
 
         const SizedBox(height: 16),
@@ -137,13 +130,6 @@ class TvrIhbSection extends StatelessWidget {
         const SizedBox(height: 16),
 
         TvrInputField(
-          label: 'Market Name',
-          controller: controllers['marketName']!,
-        ),
-
-        const SizedBox(height: 16),
-
-        TvrInputField(
           label: 'Site Address',
           controller: controllers['siteAddress']!,
           maxLines: 2,
@@ -151,17 +137,15 @@ class TvrIhbSection extends StatelessWidget {
 
         const SizedBox(height: 16),
 
-        /// ---------------- SITE PHOTO ----------------
-        TvrSelectionCard(
-          label: values['sitePhotoFile'] != null
-              ? 'Site Photo Selected'
-              : 'Capture Site Progress Photo',
-          icon: Icons.camera_enhance,
-          isDone: values['sitePhotoFile'] != null,
-          onTap: onPickPhoto,
+        TvrInputField(
+          label: 'Market Name',
+          controller: controllers['marketName']!,
         ),
 
         const SizedBox(height: 16),
+
+        /// ---------------- SITE PHOTO ----------------
+        // taken with CheckOut photo
 
         Row(
           children: [
@@ -224,20 +208,10 @@ class TvrIhbSection extends StatelessWidget {
           keyboardType: TextInputType.number,
         ),
 
-        /// ---------------- DEALER INFO ----------------
-        const TvrSectionHeader(title: 'Dealer Info'),
-
         TvrInputField(
-          label: 'Supplying Dealer',
+          label: 'Site Supplying Dealer',
           controller: controllers['supplyingDealer']!,
           isRequired: false,
-        ),
-
-        const SizedBox(height: 16),
-
-        TvrInputField(
-          label: 'Nearby Dealer (Best)',
-          controller: controllers['nearbyDealer']!,
         ),
 
         /// ---------------- CONVERSION ----------------
@@ -290,6 +264,14 @@ class TvrIhbSection extends StatelessWidget {
               ),
             ],
           ),
+
+          const SizedBox(height: 16),
+
+          TvrInputField(
+            label: 'Converted Brand Dealer (Best)',
+            controller: controllers['nearbyDealer']!,
+            isRequired: true,
+          ),
         ],
 
         /// ---------------- TECH SERVICES ----------------
@@ -313,20 +295,11 @@ class TvrIhbSection extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          TvrDropdownField(
-            label: 'Type of Technical Activity',
-            value: values['selectedTechActivity'],
-            items: TvrConstants.techActivityOptions,
-            onChanged: (v) => onUpdate('selectedTechActivity', v),
-            isRequired: false,
-          ),
-
-          const SizedBox(height: 16),
-
           TvrInputField(
             label: 'Description',
             controller: controllers['serviceDesc']!,
             maxLines: 2,
+            isRequired: false,
           ),
         ],
 
@@ -355,7 +328,7 @@ class TvrIhbSection extends StatelessWidget {
         TvrInputField(
           label: 'Name',
           controller: controllers['influencerName']!,
-          isRequired: false,
+          isRequired: true,
         ),
 
         const SizedBox(height: 16),
@@ -364,7 +337,7 @@ class TvrIhbSection extends StatelessWidget {
           label: 'Phone',
           controller: controllers['influencerPhone']!,
           keyboardType: TextInputType.phone,
-          isRequired: false,
+          isRequired: true,
         ),
 
         const SizedBox(height: 16),
