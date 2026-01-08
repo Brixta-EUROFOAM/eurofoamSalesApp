@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
+
 // Project Imports
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/employee_model.dart';
@@ -12,6 +13,7 @@ import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/technicalSide/models/sites_model.dart';
 import 'package:salesmanapp/technicalSide/models/mason_pc_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
+
 // Refactored Components
 import '../../utils/tvr_constants.dart';
 import '../../tvrwidgets/tvr_form_widgets.dart';
@@ -198,51 +200,47 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         return;
       }
       // ⚡ STEP 1: Update Lat/Long immediately so the user sees something happened
-      setState(() {
-        _values['capturedLocation'] = position;
-        _controllers['latitude']!.text = position.latitude.toStringAsFixed(6);
-        _controllers['longitude']!.text = position.longitude.toStringAsFixed(6);
-      });
+    setState(() {
+      _values['capturedLocation'] = position;
+      _controllers['latitude']!.text = position.latitude.toStringAsFixed(6);
+      _controllers['longitude']!.text = position.longitude.toStringAsFixed(6);
+    });
 
-      // ⚡ STEP 2: Fetch Address
-      final addressDetails = await _apiService.reverseGeocodeWithRadar(
-        latitude: position.latitude,
-        longitude: position.longitude,
-      );
+    // ⚡ STEP 2: Fetch Address
+    final addressDetails = await _apiService.reverseGeocodeWithRadar(
+      latitude: position.latitude,
+      longitude: position.longitude,
+    );
 
-      setState(() {
-        // ⚡ Robust mapping: Try different common keys from geocoding services
-        final String? foundAddress =
-            addressDetails['address'] ??
-            addressDetails['formattedAddress'] ??
-            addressDetails['addressLabel'];
+    setState(() {
+      // ⚡ Robust mapping: Try different common keys from geocoding services
+      final String? foundAddress = addressDetails['address'] ?? 
+                                   addressDetails['formattedAddress'] ?? 
+                                   addressDetails['addressLabel'];
+                                   
+      if (foundAddress != null && foundAddress.isNotEmpty) {
+        _controllers['siteAddress']!.text = foundAddress;
+      }
 
-        if (foundAddress != null && foundAddress.isNotEmpty) {
-          _controllers['siteAddress']!.text = foundAddress;
-        }
+      if (addressDetails['area'] != null) {
+        _controllers['area']!.text = addressDetails['area']!;
+      }
 
-        if (addressDetails['area'] != null) {
-          _controllers['area']!.text = addressDetails['area']!;
-        }
+      if (addressDetails['region'] != null &&
+          TvrConstants.regionOptions.contains(addressDetails['region'])) {
+        _values['selectedRegion'] = addressDetails['region'];
+      }
+    });
 
-        if (addressDetails['region'] != null &&
-            TvrConstants.regionOptions.contains(addressDetails['region'])) {
-          _values['selectedRegion'] = addressDetails['region'];
-        }
-      });
-
-      _saveDrafts();
-      _showSnack(
-        "Location & Address Updated",
-        isError: false,
-      ); // Green snackbar
-    } catch (e) {
-      debugPrint("Geocoding Error: $e");
-      _showSnack("Location detected, but address fetch failed.");
-    } finally {
-      _onUpdate('isFetchingLocation', false);
-    }
+    _saveDrafts();
+    _showSnack("Location & Address Updated", isError: false); // Green snackbar
+  } catch (e) {
+     debugPrint("Geocoding Error: $e");
+    _showSnack("Location detected, but address fetch failed.");
+  } finally {
+    _onUpdate('isFetchingLocation', false);
   }
+}
 
   Future<bool> _showLocationDisclosureDialog() async {
     return await showDialog<bool>(
@@ -363,90 +361,40 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     );
   }
 
-Future<void> _handleCheckIn() async {
+  Future<void> _handleCheckIn() async {
     final String? imagePath = await Navigator.push(
       context,
       MaterialPageRoute(builder: (c) => const TvrCameraScreen()),
     );
     if (imagePath == null) return;
 
-    final file = File(imagePath);
-
-    // ⚡ STEP 1: INSTANTLY UNLOCK UI
-    setState(() {
-      _values['checkInTime'] = DateTime.now();
-      _values['inTimeImageFile'] = file;
-      _values['isUploadingImage'] = true; // Block submit button only
-    });
-
-    // ⚡ STEP 2: BACKGROUND TASKS
+    _onUpdate('isUploadingImage', true);
     try {
-      final results = await Future.wait([
-        // Task A: GPS (Fixed Type Error Here)
-        Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-          timeLimit: const Duration(seconds: 10),
-        ).catchError((_) async {
-          // FIX: Explicitly check for null before returning
-          final Position? lastKnown = await Geolocator.getLastKnownPosition();
-          if (lastKnown != null) {
-            return lastKnown; // Valid non-null Position
-          }
-          // If both GPS and Cache fail, we must throw to satisfy the type system
-          throw Exception("GPS failed and no cached location found.");
-        }),
-
-        // Task B: Upload Image
-        _apiService.uploadImageToR2(file),
-      ]);
-
-      // ⚡ STEP 3: UPDATE DATA
-      if (!mounted) return;
+      final pos = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      final url = await _apiService.uploadImageToR2(File(imagePath));
 
       setState(() {
-        final Position pos = results[0] as Position; // Now guaranteed to be Position
-        final String url = results[1] as String;
-
-        _values['capturedLocation'] = pos;
+       _values['checkInTime'] = DateTime.now();
         _values['inTimeImageUrl'] = url;
-        
+        _values['capturedLocation'] = pos;
+        _values['inTimeImageFile'] = File(imagePath);
         _controllers['latitude']!.text = pos.latitude.toStringAsFixed(6);
         _controllers['longitude']!.text = pos.longitude.toStringAsFixed(6);
-
-        // Allow submission
-        _values['isUploadingImage'] = false; 
-
-        // Optional: Address Fetch
-        _apiService.reverseGeocodeWithRadar(
-            latitude: pos.latitude,
-            longitude: pos.longitude,
-        ).then((addr) {
-            if (mounted && addr['formattedAddress'] != null) {
-              setState(() => _controllers['siteAddress']!.text = addr['formattedAddress']!);
-            }
-        });
       });
-
       _saveDrafts();
-
-    } catch (e) {
-      debugPrint("Check-in background error: $e");
-      if (mounted) {
-        setState(() => _values['isUploadingImage'] = false);
-        _showSnack("Location/Upload failed. Please check internet & GPS.");
-      }
+    } finally {
+      _onUpdate('isUploadingImage', false);
     }
   }
 
   Future<void> _pickSitePhoto() async {
-    final String? imagePath = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const TvrCameraScreen()),
-    );
+    final String? imagePath = await Navigator.push(context, MaterialPageRoute(builder: (_) => const TvrCameraScreen()));
     if (imagePath == null) return;
 
     final file = File(imagePath);
-
+    
     // 1. Immediately update UI to show "Selected" status
     _onUpdate('sitePhotoFile', file);
 
@@ -475,10 +423,10 @@ Future<void> _handleCheckIn() async {
       _controllers['siteAddress']!.text = site.address;
       _controllers['area']!.text = site.area ?? '';
 
-      if (site.latitude != 0.0 && site.latitude != 0.0) {
+      if (site.latitude != null && site.latitude != 0.0) {
         _controllers['latitude']!.text = site.latitude.toStringAsFixed(6);
       }
-      if (site.longitude != 0.0 && site.longitude != 0.0) {
+      if (site.longitude != null && site.longitude != 0.0) {
         _controllers['longitude']!.text = site.longitude.toStringAsFixed(6);
       }
 
@@ -530,102 +478,14 @@ Future<void> _handleCheckIn() async {
   // --- 🚀 SUBMIT ---
 
   Future<void> _submitTvr() async {
-    if (!_formKey.currentState!.validate()) {
-      _showSnack("Please fill in the required fields marked in red.");
-      return;
-    }
-    if (_values['checkInTime'] == null) {
-      _showSnack("Check-in is required");
-      return;
-    }
-
-    if (!_passesTimeLock()) {
-      return; 
-    }
-
-    //  MANUAL ENFORCEMENT LOGIC START
-
-    final String type = _values['selectedCustomerType'] ?? '';
-
-    // A. STRICT CHECKS FOR SITE VISITS (IHB)
-    if (type == 'IHB/Site') {
-      if (_values['sitePhotoFile'] == null && _values['sitePhotoUrl'] == null) {
-        _showSnack("⚠️ Site Photo is mandatory. Please capture photo.");
-        return;
-      }
-
-      final List brands = _values['brandsInUse'] ?? [];
-      if (brands.isEmpty) {
-        _showSnack("⚠️ Please select at least one Brand in Use.");
-        return;
-      }
-      if (_controllers['selectedInfluencerType']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Influencer type is required.");
-        return;
-      }
-      if (_controllers['influencerName']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Influencer/Mason Name is required.");
-        return;
-      }
-      if (_controllers['influencerPhone']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Influencer Phone is required.");
-        return;
-      }
-      if (_controllers['productivity']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Influencer Productivity is required.");
-        return;
-      }
-      if (_controllers['nearbyDealer']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Nearby Dealer(Best) is required.");
-        return;
-      }
-      // IHB/Site form isConverted section
-      if (_values['isConverted'] == true) {
-        // 1. Conversion Type
-        if (_values['conversionType'] == null) {
-          _showSnack("⚠️ Please select Conversion Type (New/Retention).");
-          return;
-        }
-
-        // 2. From Brand
-        if (_values['conversionFromBrand'] == null) {
-          _showSnack("⚠️ Please select 'From Brand'.");
-          return;
-        }
-
-        // 3. Quantity
-        if (_controllers['qty']!.text.trim().isEmpty) {
-          _showSnack("⚠️ Please enter Conversion Quantity.");
-          return;
-        }
-
-        // 4. Unit (Should be auto-selected, but safety check)
-        if (_values['selectedUnit'] == null) {
-          _showSnack("⚠️ Please select a Unit.");
-          return;
-        }
-      }
-    }
-
-    // C. GENERAL CHECKS (Applies to ALL types)
-    if (_controllers['remarks']!.text.trim().isEmpty) {
-      _showSnack("⚠️ Remarks are required.");
-      return;
-    }
-
-    // MANUAL ENFORCEMENT LOGIC END
+    if (!_formKey.currentState!.validate()) return;
+    if (_values['checkInTime'] == null) { _showSnack("Check-in is required"); return; }
 
     _onUpdate('isSubmitting', true);
     try {
       // 1. Mandatory Checkout Photo
-      final String? outPath = await Navigator.push(
-        context,
-        MaterialPageRoute(builder: (c) => const TvrCameraScreen()),
-      );
-      if (outPath == null) {
-        _onUpdate('isSubmitting', false);
-        return;
-      }
+      final String? outPath = await Navigator.push(context, MaterialPageRoute(builder: (c) => const TvrCameraScreen()));
+      if (outPath == null) { _onUpdate('isSubmitting', false); return; }
 
       // 2. Upload Images
       final outUrl = await _apiService.uploadImageToR2(File(outPath));
@@ -660,18 +520,14 @@ Future<void> _handleCheckIn() async {
         siteVisitBrandInUse: _values['brandsInUse'] ?? [],
         currentBrandPrice: double.tryParse(_controllers['rate']?.text ?? ''),
         siteStock: double.tryParse(_controllers['siteStock']?.text ?? ''),
-        estRequirement: double.tryParse(
-          _controllers['estRequirement']?.text ?? '',
-        ),
+        estRequirement: double.tryParse(_controllers['estRequirement']?.text ?? ''),
         supplyingDealerName: _controllers['supplyingDealer']?.text,
         nearbyDealerName: _controllers['nearbyDealer']?.text,
         associatedPartyName: _controllers['partyName']?.text,
         isConverted: _values['isConverted'],
         conversionType: _values['conversionType'],
         conversionFromBrand: _values['conversionFromBrand'],
-        conversionQuantityValue: double.tryParse(
-          _controllers['qty']?.text ?? '',
-        ),
+        conversionQuantityValue: double.tryParse(_controllers['qty']?.text ?? ''),
         conversionQuantityUnit: _values['selectedUnit'],
         isTechService: _values['isTechService'],
         serviceDesc: _controllers['serviceDesc']?.text,
@@ -679,9 +535,7 @@ Future<void> _handleCheckIn() async {
         influencerPhone: _controllers['influencerPhone']?.text,
         influencerProductivity: _controllers['productivity']?.text,
         isSchemeEnrolled: _values['isSchemeEnrolled'],
-        influencerType: _values['selectedInfluencerType'] != null
-            ? [_values['selectedInfluencerType']]
-            : [],
+        influencerType: _values['selectedInfluencerType'] != null ? [_values['selectedInfluencerType']] : [],
         clientsRemarks: _controllers['remarks']?.text ?? '',
         salespersonRemarks: _controllers['remarks']?.text ?? '',
         checkInTime: checkIn,
@@ -700,29 +554,40 @@ Future<void> _handleCheckIn() async {
       await _clearDrafts(); // ⚡ CRITICAL: Don't show old data next time
       Navigator.pop(context);
       _showSnack("Report Submitted Successfully", isError: false);
-    } catch (e) {
-      _showSnack("Submission failed: $e");
+    }  catch (e, stackTrace) {
+      // 1. Log the full error to console
+      debugPrint("🔴 SUBMISSION ERROR: $e");
+      debugPrint("🔴 STACK TRACE: $stackTrace");
+
+      // 2. If it's an API exception containing HTML, try to read it
+      if (e.toString().contains("<html>") || e.toString().contains("<!DOCTYPE html>")) {
+         debugPrint("⚠️ SERVER RETURNED HTML INSTEAD OF JSON."); 
+         debugPrint("⚠️ This usually means a 500 Server Error or 404 URL Error.");
+      }
+
+      // 3. Show a more descriptive snackbar
+      _showSnack("Submission Failed: Server returned an error (check logs)");
     } finally {
       _onUpdate('isSubmitting', false);
     }
   }
 
-  bool _passesTimeLock() {
-    final DateTime checkIn = _values['checkInTime'];
-    final Duration diff = DateTime.now().difference(checkIn);
+  // bool _passesTimeLock() {
+  //   final DateTime checkIn = _values['checkInTime'];
+  //   final Duration diff = DateTime.now().difference(checkIn);
 
-    const int minMinutes = 10;
+  //   const int minMinutes = 10;
 
-    if (diff.inMinutes < minMinutes) {
-      final remaining = minMinutes - diff.inMinutes;
-      _showError(
-        "Minimum $minMinutes minutes required. Wait $remaining minute(s).",
-      );
-      return false;
-    }
+  //   if (diff.inMinutes < minMinutes) {
+  //     final remaining = minMinutes - diff.inMinutes;
+  //     _showError(
+  //       "Minimum $minMinutes minutes required. Wait $remaining minute(s).",
+  //     );
+  //     return false;
+  //   }
 
-    return true;
-  }
+  //   return true;
+  // }
 
   // bool _passesGeofence() {
   //   final Position pos = _values['capturedLocation'];
