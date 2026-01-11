@@ -103,6 +103,17 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   bool _isUserLocationLayerAdded = false;
   bool _isRouteLineLayerAdded = false;
   bool _isTravelledLineLayerAdded = false;
+  //delay for polyline
+  DateTime _lastPolylineUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
+  bool _canUpdatePolyline() {
+    final now = DateTime.now();
+    if (now.difference(_lastPolylineUpdate).inMilliseconds < 500) {
+      return false;
+    }
+    _lastPolylineUpdate = now;
+    return true;
+  }
 
   static const _initialCameraPosition = CameraPosition(
     target: LatLng(26.1445, 91.7362),
@@ -299,6 +310,29 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     }
   }
 
+  // ✅ FIX: Robust helper to Add OR Update without removing/re-adding
+  Future<void> _addOrUpdateGeoJsonSource(
+    String sourceId,
+    Map<String, dynamic> geoJson,
+  ) async {
+    final controller = await _controllerCompleter.future;
+
+    // Check if source exists by trying to update it first
+    try {
+      await controller.setGeoJsonSource(sourceId, geoJson);
+    } catch (e) {
+      // If update fails, it likely doesn't exist. Add it.
+      try {
+        await controller.addSource(
+          sourceId,
+          GeojsonSourceProperties(data: geoJson),
+        );
+      } catch (_) {
+        // Ignore if it already exists race condition
+      }
+    }
+  }
+
   Future<void> _loadUnplannedJourney(UnplannedJourneyResult result) async {
     setState(() {
       _journeyMode = JourneyMode.unplanned;
@@ -450,7 +484,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
         _routeTaken.add(latLng);
         _drawUserLocationPointer(latLng);
-        _updateTravelledPolyline();
+        if (_canUpdatePolyline()) {
+          _updateTravelledPolyline();
+        }
       });
 
       _eventSub = tracking.eventStream.listen((event) {
@@ -465,14 +501,12 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     }
   }
 
-Future<void> _stopJourney() async {
+  Future<void> _stopJourney() async {
     if (!_isJourneyActive) return;
 
     final api = ApiService();
     final checkInTime = DateTime.now();
 
-    // 1. Close the GeoTracking Point (Keep this!)
-    // This marks the end of THIS SPECIFIC trip/segment in the database.
     if (_currentGeoTrackingDbId != null && _currentUserLocation != null) {
       try {
         final updateData = {
@@ -491,35 +525,33 @@ Future<void> _stopJourney() async {
       }
     }
 
-    // 🔴 CHANGE: Don't mark PJP as COMPLETED here. 
-    // We want to allow multiple visits/journeys for the same PJP.
-    /* if (_currentPjp?.id != null) {
-      try {
-        await api.updatePjp(_currentPjp!.id, {'status': 'COMPLETED'});
-      } catch (_) {}
-    } 
-    */
-
-    // 2. Stop local tracking service (Keep this!)
     try {
       final tracking = AppKernel.instance.feature<JourneyTrackingController>();
       await tracking.stopJourney();
     } catch (_) {}
 
-    // 3. Reset UI
     _handleJourneyCleanup();
   }
 
+  // ✅ CRASH PROOF FIX: Separate Try/Catch blocks
   Future<void> _removeRouteLine() async {
     if (!_isRouteLineLayerAdded) return;
     final controller = await _controllerCompleter.future;
+
+    // 1. Try remove layer
     try {
       await controller.removeLayer('route-line');
-      await controller.removeSource('route-source');
-      _isRouteLineLayerAdded = false;
     } catch (_) {}
+
+    // 2. Try remove source INDEPENDENTLY
+    try {
+      await controller.removeSource('route-source');
+    } catch (_) {}
+
+    _isRouteLineLayerAdded = false;
   }
 
+  // ✅ CRASH PROOF FIX: Safe Update Logic
   Future<void> _getDirectionsAndDrawRoute() async {
     if (_currentUserLocation == null || _destinationLocation == null) return;
     if (_radarApiKey == null) return;
@@ -529,6 +561,7 @@ Future<void> _stopJourney() async {
           '${_currentUserLocation!.latitude},${_currentUserLocation!.longitude}';
       final end =
           '${_destinationLocation!.latitude},${_destinationLocation!.longitude}';
+
       final uri = Uri.parse(
         'https://api.radar.io/v1/route/directions?locations=$start|$end&mode=car&units=metric&geometry=polyline5',
       );
@@ -557,31 +590,54 @@ Future<void> _stopJourney() async {
           };
 
           final controller = await _controllerCompleter.future;
+          final sourceId = 'route-source';
+          final layerId = 'route-line';
 
+          // ---------------------------------------------------------
+          // ✅ SAFE UPDATE LOGIC (Prevents Crash)
+          // ---------------------------------------------------------
+
+          bool updatedSuccessfully = false;
+
+          // 1. If we think the layer exists, try to UPDATE the data first
           if (_isRouteLineLayerAdded) {
             try {
-              await controller.removeLayer('route-line');
-              await controller.removeSource('route-source');
-            } catch (_) {}
-            _isRouteLineLayerAdded = false;
+              await controller.setGeoJsonSource(sourceId, geoJson);
+              updatedSuccessfully = true;
+            } catch (e) {
+              // If update fails, the source might be missing. We will re-add it below.
+              _isRouteLineLayerAdded = false;
+            }
           }
 
-          await controller.addSource(
-            'route-source',
-            GeojsonSourceProperties(data: geoJson),
-          );
-          await controller.addLineLayer(
-            'route-source',
-            'route-line',
-            const LineLayerProperties(
-              lineColor: '#0B4AA8',
-              lineWidth: 5.0,
-              lineOpacity: 0.8,
-              lineCap: 'round',
-              lineJoin: 'round',
-            ),
-          );
-          _isRouteLineLayerAdded = true;
+          // 2. Only if update failed (or it's the first time), ADD new source/layer
+          if (!updatedSuccessfully) {
+            // Cleanup leftovers safely (just in case)
+            try {
+              await controller.removeLayer(layerId);
+            } catch (_) {}
+            try {
+              await controller.removeSource(sourceId);
+            } catch (_) {}
+
+            await controller.addSource(
+              sourceId,
+              GeojsonSourceProperties(data: geoJson),
+            );
+            await controller.addLineLayer(
+              sourceId,
+              layerId,
+              const LineLayerProperties(
+                lineColor: '#0B4AA8',
+                lineWidth: 5.0,
+                lineOpacity: 0.8,
+                lineCap: 'round',
+                lineJoin: 'round',
+              ),
+            );
+            _isRouteLineLayerAdded = true;
+          }
+          // ---------------------------------------------------------
         }
       }
     } catch (e) {
@@ -753,63 +809,80 @@ Future<void> _stopJourney() async {
     } catch (_) {}
   }
 
-  // 🔥 UPDATED: POINTER VISUALS (Red/White Target)
   Future<void> _addDestinationMarker(LatLng point) async {
     try {
       final controller = await _controllerCompleter.future;
+      final sourceId = 'dest-source';
 
-      // Cleanup first
-      try {
-        await controller.removeLayer('dest-layer-inner');
-        await controller.removeLayer('dest-layer-outer');
-        await controller.removeSource('dest-source');
-      } catch (_) {}
-
-      await controller.addSource(
-        'dest-source',
-        GeojsonSourceProperties(
-          data: {
-            'type': 'FeatureCollection',
-            'features': [
-              {
-                'type': 'Feature',
-                'geometry': {
-                  'type': 'Point',
-                  'coordinates': [point.longitude, point.latitude],
-                },
-              },
-            ],
+      final geoJson = {
+        'type': 'FeatureCollection',
+        'features': [
+          {
+            'type': 'Feature',
+            'geometry': {
+              'type': 'Point',
+              'coordinates': [point.longitude, point.latitude],
+            },
+            'properties': {},
           },
-        ),
-      );
+        ],
+      };
 
-      // 1. Outer Ring (White with Navy Stroke)
-      await controller.addCircleLayer(
-        'dest-source',
-        'dest-layer-outer',
-        const CircleLayerProperties(
-          circleColor: '#FFFFFF',
-          circleRadius: 10,
-          circleStrokeWidth: 2,
-          circleStrokeColor: '#0F172A',
-        ),
-      );
+      // 1. Try to update existing source first
+      bool sourceExists = true;
+      try {
+        await controller.setGeoJsonSource(sourceId, geoJson);
+      } catch (_) {
+        sourceExists = false;
+      }
 
-      // 2. Inner Dot (Red)
-      await controller.addCircleLayer(
-        'dest-source',
-        'dest-layer-inner',
-        const CircleLayerProperties(circleColor: '#EF4444', circleRadius: 6),
-      );
-    } catch (_) {}
+      // 2. If source didn't exist, we must add Source AND Layers
+      if (!sourceExists) {
+        await controller.addSource(
+          sourceId,
+          GeojsonSourceProperties(data: geoJson),
+        );
+
+        // Add Outer Ring
+        await controller.addCircleLayer(
+          sourceId,
+          'dest-layer-outer',
+          const CircleLayerProperties(
+            circleColor: '#FFFFFF',
+            circleRadius: 10,
+            circleStrokeWidth: 2,
+            circleStrokeColor: '#0F172A',
+          ),
+        );
+
+        // Add Inner Dot
+        await controller.addCircleLayer(
+          sourceId,
+          'dest-layer-inner',
+          const CircleLayerProperties(circleColor: '#EF4444', circleRadius: 6),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error updating destination marker: $e");
+    }
   }
 
-  // Helper to remove both layers
+  // ✅ CRASH PROOF FIX: Separate Try/Catch blocks to prevent Zombie Sources
   Future<void> _removeDestinationMarker() async {
     final controller = await _controllerCompleter.future;
+
+    // 1. Try Remove Inner Layer
     try {
       await controller.removeLayer('dest-layer-inner');
+    } catch (_) {}
+
+    // 2. Try Remove Outer Layer
+    try {
       await controller.removeLayer('dest-layer-outer');
+    } catch (_) {}
+
+    // 3. Try Remove Source INDEPENDENTLY
+    try {
       await controller.removeSource('dest-source');
     } catch (_) {}
   }
@@ -937,7 +1010,7 @@ Future<void> _stopJourney() async {
 
   Future<void> _updateTravelledPolyline() async {
     if (_routeTaken.length < 2) return;
-    final controller = await _controllerCompleter.future;
+
     final data = {
       'type': 'FeatureCollection',
       'features': [
@@ -954,21 +1027,23 @@ Future<void> _stopJourney() async {
       ],
     };
 
-    if (_isTravelledLineLayerAdded) {
-      await controller.setGeoJsonSource('rt-source', data);
-    } else {
+    // 1. Use the helper to safely Add or Update the Source
+    await _addOrUpdateGeoJsonSource('rt-source', data);
+
+    // 2. Ensure the Layer exists (The source is now guaranteed to exist)
+    if (!_isTravelledLineLayerAdded) {
+      final controller = await _controllerCompleter.future;
       try {
-        await controller.addSource(
-          'rt-source',
-          GeojsonSourceProperties(data: data),
-        );
+        // Note: We don't add the source here because the helper above just did it.
         await controller.addLineLayer(
           'rt-source',
           'rt-line',
           const LineLayerProperties(lineColor: '#EF4444', lineWidth: 6.0),
         );
         _isTravelledLineLayerAdded = true;
-      } catch (_) {}
+      } catch (_) {
+        // Ignore if layer already exists or other minor issues
+      }
     }
   }
 
@@ -1092,7 +1167,10 @@ Future<void> _stopJourney() async {
                   filled: true,
                   fillColor: Colors.white,
                   prefixIcon: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Color(0xFF0F172A)),
+                    icon: const Icon(
+                      Icons.arrow_back,
+                      color: Color(0xFF0F172A),
+                    ),
                     onPressed: () {
                       setState(() {
                         _isSelectionMode = false;
@@ -1106,7 +1184,10 @@ Future<void> _stopJourney() async {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : IconButton(
-                          icon: const Icon(Icons.search, color: Color(0xFF0F172A)),
+                          icon: const Icon(
+                            Icons.search,
+                            color: Color(0xFF0F172A),
+                          ),
                           onPressed: () =>
                               _performSearch(_searchController.text),
                         ),
@@ -1286,7 +1367,10 @@ Future<void> _stopJourney() async {
             child: TextField(
               controller: _destinationController,
               readOnly: true,
-              style: TextStyle(color: Color(0xFF0F172A), fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.w600,
+              ),
               decoration: InputDecoration(
                 prefixIcon: Icon(
                   isPlanned ? Icons.explore : Icons.location_on_outlined,

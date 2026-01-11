@@ -1,6 +1,7 @@
 // lib/technicalSide/screens/all_masons_screen.dart
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/services.dart'; 
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/technicalSide/models/mason_pc_model.dart';
@@ -107,12 +108,69 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
                       Text(
                         mason.name,
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: _textDark,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      
+                      const SizedBox(height: 6), 
+                     // 2. (NEW) Copyable Phone Row
+                      // We use GestureDetector to catch the tap specifically on this row
+                      GestureDetector(
+                        onTap: () async {
+                          if (mason.phoneNumber.isEmpty) return;
+                          
+                          // A. Copy to Clipboard
+                          await Clipboard.setData(
+                            ClipboardData(text: mason.phoneNumber),
+                          );
+                          
+                          // B. Show Feedback
+                          if (mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text("Copied: ${mason.phoneNumber}"),
+                                backgroundColor: _cardNavy,
+                                duration: const Duration(seconds: 1),
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        // HitTestBehavior.opaque ensures even the empty space between text and icon is clickable
+                        behavior: HitTestBehavior.opaque,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min, // Wrap content only
+                          children: [
+                            const Icon(Icons.phone, size: 12, color: _textGrey),
+                            const SizedBox(width: 4),
+                            Text(
+                              mason.phoneNumber.isNotEmpty
+                                  ? mason.phoneNumber
+                                  : "No Phone",
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: _textGrey,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Visual Cue for Copy
+                            if (mason.phoneNumber.isNotEmpty)
+                              const Icon(
+                                Icons.copy_rounded,
+                                size: 16,
+                                color: Colors.blueAccent, // Highlight color
+                              ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
                       const Text(
                         "Bag Lift History",
                         style: TextStyle(fontSize: 12, color: _textGrey),

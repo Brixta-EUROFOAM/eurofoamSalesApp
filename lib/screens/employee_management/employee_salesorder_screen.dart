@@ -1,21 +1,29 @@
-import 'package:salesmanapp/models/employee_model.dart';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as IO;
-import 'package:hive/hive.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 
-part 'employee_salesorder_screen.g.dart';
+import 'package:salesmanapp/models/employee_model.dart';
 
-@HiveType(typeId: 0)
-class ChatMessage extends HiveObject {
-  @HiveField(0)
+class ChatMessage {
   final String text;
-
-  @HiveField(1)
   final String role;
 
   ChatMessage({required this.text, required this.role});
+
+  Map<String, dynamic> toJson() => {
+        'text': text,
+        'role': role,
+      };
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    return ChatMessage(
+      text: json['text'] as String,
+      role: json['role'] as String,
+    );
+  }
 }
 
 class SalesOrderScreen extends StatefulWidget {
@@ -27,16 +35,17 @@ class SalesOrderScreen extends StatefulWidget {
 }
 
 class _SalesOrderScreenState extends State<SalesOrderScreen> {
-  // --- (All your logic remains unchanged) ---
   final TextEditingController _textController = TextEditingController();
   final List<ChatMessage> _messages = [];
   final ScrollController _scrollController = ScrollController();
-  
+
   late IO.Socket _socket;
+  late SharedPreferences _prefs;
+
   bool _isConnected = false;
   bool _isLoading = false;
 
-  late Box<ChatMessage> _chatBox;
+  static const String _chatStorageKey = 'sales_order_chat';
 
   @override
   void initState() {
@@ -45,80 +54,100 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
   }
 
   Future<void> _initializeChat() async {
-    if (!Hive.isAdapterRegistered(0)) {
-       Hive.registerAdapter(ChatMessageAdapter());
+    _prefs = await SharedPreferences.getInstance();
+
+    final stored = _prefs.getString(_chatStorageKey);
+    if (stored != null) {
+      final List decoded = jsonDecode(stored);
+      _messages.addAll(
+        decoded
+            .map((e) => ChatMessage.fromJson(e))
+            .toList()
+            .reversed,
+      );
     }
-    _chatBox = await Hive.openBox<ChatMessage>('sales_order_chat');
-    if (mounted) {
-      setState(() {
-        _messages.addAll(_chatBox.values.toList().reversed);
-      });
-    }
+
+    if (mounted) setState(() {});
     _connectToSocket();
   }
 
   void _connectToSocket() {
     const socketUrl = 'https://python-ai-agent.onrender.com';
-    _socket = IO.io(socketUrl, <String, dynamic>{
-      'path': '/socket.io',
-      'transports': ['websocket', 'polling'], 
-      'autoConnect': false,
-    });
+
+    _socket = IO.io(
+      socketUrl,
+      <String, dynamic>{
+        'path': '/socket.io',
+        'transports': ['websocket', 'polling'],
+        'autoConnect': false,
+      },
+    );
+
     _socket.connect();
+
     _socket.onConnect((_) {
-      debugPrint('Socket connected');
-      if(mounted) setState(() => _isConnected = true);
+      if (mounted) setState(() => _isConnected = true);
     });
+
     _socket.onDisconnect((_) {
-      debugPrint('Socket disconnected');
-      if(mounted) setState(() => _isConnected = false);
+      if (mounted) setState(() => _isConnected = false);
     });
-    _socket.on('connect_error', (data) => debugPrint('Connect Error: $data'));
-    _socket.on('error', (data) => debugPrint('Socket Error: $data'));
+
     _socket.on('ready', (_) {
-       if (_messages.isEmpty) {
-         _addMessage(
-           text: "Hello! I'm CemTemBot, ready to assist. What can I get for you?",
-           role: 'assistant'
-         );
-       }
-    });
-    _socket.on('status', (data) {
-      if (data is Map && data['typing'] is bool) {
-        if(mounted) setState(() => _isLoading = data['typing']);
+      if (_messages.isEmpty) {
+        _addMessage(
+          text: "Hello! I'm CemTemBot, ready to assist. What can I get for you?",
+          role: 'assistant',
+        );
       }
     });
+
+    _socket.on('status', (data) {
+      if (data is Map && data['typing'] is bool) {
+        if (mounted) setState(() => _isLoading = data['typing']);
+      }
+    });
+
     _socket.on('bot_message', (data) {
       if (data is Map && data['text'] is String) {
         _addMessage(text: data['text'], role: 'assistant');
       }
-       if(mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     });
   }
 
   void _addMessage({required String text, required String role}) {
     final message = ChatMessage(text: text, role: role);
-    _chatBox.add(message);
+
     if (mounted) {
       setState(() {
         _messages.insert(0, message);
       });
     }
+
+    _persistMessages();
     _scrollToBottom();
   }
-  
+
+  void _persistMessages() {
+    final jsonList = _messages
+        .reversed
+        .map((m) => m.toJson())
+        .toList();
+
+    _prefs.setString(_chatStorageKey, jsonEncode(jsonList));
+  }
+
   void _handleSubmitted(String text) {
     if (text.trim().isEmpty || !_isConnected) return;
+
     _textController.clear();
     _addMessage(text: text, role: 'user');
-    if(mounted) {
-      setState(() {
-        _isLoading = true;
-      });
-    }
+
+    if (mounted) setState(() => _isLoading = true);
     _socket.emit('send_message', {'text': text});
   }
-  
+
   void _scrollToBottom() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -147,16 +176,16 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
             child: ListView.builder(
               controller: _scrollController,
               reverse: true,
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               itemCount: _messages.length,
-              itemBuilder: (_, int index) => _ChatMessageBubble(message: _messages[index]),
+              itemBuilder: (_, i) =>
+                  _ChatMessageBubble(message: _messages[i]),
             ),
           ),
           if (_isLoading) const _TypingIndicator(),
           _buildTextComposer(),
-          
-          // This padding adds space for your floating nav bar
-          const SizedBox(height: 80), 
+          const SizedBox(height: 80),
         ],
       ),
     );
@@ -164,19 +193,22 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
 
   Widget _buildStatusBanner() {
     final theme = Theme.of(context);
-    
-    // --- ✅ CRITIQUE #1: Using primary color (2-shade) ---
+
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      color: theme.colorScheme.primary, 
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      color: theme.colorScheme.primary,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.support_agent, color: theme.colorScheme.onPrimary, size: 16),
+          Icon(Icons.support_agent,
+              color: theme.colorScheme.onPrimary, size: 16),
           const SizedBox(width: 8),
           Text(
             "CemTemBot Status:",
-            style: TextStyle(color: theme.colorScheme.onPrimary.withOpacity(0.8), fontSize: 12),
+            style: TextStyle(
+              color: theme.colorScheme.onPrimary.withOpacity(0.8),
+              fontSize: 12,
+            ),
           ),
           const SizedBox(width: 8),
           Container(
@@ -184,17 +216,21 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
             height: 8,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              // --- ✅ CRITIQUE #8: Softer Colors ---
-              color: _isConnected ? const Color(0xFF4CAF50) : const Color(0xFFE57373),
+              color: _isConnected
+                  ? const Color(0xFF4CAF50)
+                  : const Color(0xFFE57373),
             ),
           ),
           const SizedBox(width: 4),
           Text(
             _isConnected ? "Connected" : "Disconnected",
             style: TextStyle(
-                color: _isConnected ? const Color(0xFF4CAF50) : const Color(0xFFE57373),
-                fontSize: 12,
-                fontWeight: FontWeight.bold),
+              color: _isConnected
+                  ? const Color(0xFF4CAF50)
+                  : const Color(0xFFE57373),
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ],
       ),
@@ -203,52 +239,52 @@ class _SalesOrderScreenState extends State<SalesOrderScreen> {
 
   Widget _buildTextComposer() {
     final theme = Theme.of(context);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-      color: theme.scaffoldBackgroundColor, 
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: theme.scaffoldBackgroundColor,
       child: Card(
-        // --- ✅ CRITIQUE #5: Create a single capsule ---
-        // We use a Card as the capsule container
         elevation: 0,
         color: theme.colorScheme.surface,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30.0),
+          borderRadius: BorderRadius.circular(30),
           side: theme.brightness == Brightness.light
-              ? BorderSide(color: theme.colorScheme.onSurface.withOpacity(0.1))
-              : BorderSide.none
+              ? BorderSide(
+                  color: theme.colorScheme.onSurface.withOpacity(0.1),
+                )
+              : BorderSide.none,
         ),
-        clipBehavior: Clip.antiAlias,
         child: Row(
           children: [
             Expanded(
               child: TextField(
                 controller: _textController,
+                enabled: _isConnected,
                 onSubmitted: _handleSubmitted,
                 decoration: InputDecoration(
-                  hintText: _isConnected ? 'Type your order...' : 'Connecting...',
-                  hintStyle: TextStyle(color: theme.colorScheme.onSurface.withOpacity(0.5)),
-                  // Remove all internal borders
+                  hintText:
+                      _isConnected ? 'Type your order...' : 'Connecting...',
                   border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  filled: false, // The card handles the fill
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 14),
                 ),
-                style: TextStyle(color: theme.colorScheme.onSurface),
-                enabled: _isConnected,
               ),
             ),
             IconButton(
-              // --- ✅ CRITIQUE #6: Use filled icon ---
-              icon: Icon(Icons.send, 
-                color: _isConnected ? theme.colorScheme.secondary : theme.disabledColor
+              icon: Icon(
+                Icons.send,
+                color: _isConnected
+                    ? theme.colorScheme.secondary
+                    : theme.disabledColor,
               ),
-              onPressed: _isConnected ? () => _handleSubmitted(_textController.text) : null,
+              onPressed: _isConnected
+                  ? () => _handleSubmitted(_textController.text)
+                  : null,
             ),
           ],
         ),
       ),
-    ).animate().slide(begin: const Offset(0, 0.5), duration: 200.ms, curve: Curves.easeOut);
+    ).animate().slide(begin: const Offset(0, 0.5), duration: 200.ms);
   }
 }
 
@@ -262,64 +298,43 @@ class _ChatMessageBubble extends StatelessWidget {
     final isUser = message.role == 'user';
 
     return Padding(
-      // --- ✅ CRITIQUE #10: Consistent spacing ---
-      padding: const EdgeInsets.symmetric(vertical: 10.0),
-      // --- END FIX ---
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isUser)
             CircleAvatar(
-              backgroundColor: theme.colorScheme.surface, 
-              child: Icon(Icons.support_agent, color: theme.colorScheme.onSurface),
+              backgroundColor: theme.colorScheme.surface,
+              child: Icon(Icons.support_agent,
+                  color: theme.colorScheme.onSurface),
             ),
           const SizedBox(width: 8),
           Flexible(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.75),
-              child: Container(
-                // --- ✅ CRITIQUE #4: Add +4px padding ---
-                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
-                decoration: BoxDecoration(
+            child: Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: isUser
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.surface,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                message.text,
+                style: TextStyle(
                   color: isUser
-                      ? theme.colorScheme.primary
-                      : theme.colorScheme.surface,
-                  // --- ✅ CRITIQUE #9: Consistent 16px corners ---
-                  borderRadius: isUser
-                      ? const BorderRadius.only(
-                          topLeft: Radius.circular(16.0),
-                          bottomLeft: Radius.circular(16.0),
-                          topRight: Radius.circular(16.0),
-                        )
-                      : const BorderRadius.only(
-                          topRight: Radius.circular(16.0),
-                          bottomRight: Radius.circular(16.0),
-                          topLeft: Radius.circular(16.0),
-                        ),
-                ),
-                child: Text(
-                  message.text,
-                  style: TextStyle(
-                    color: isUser ? theme.colorScheme.onPrimary : theme.colorScheme.onSurface,
-                    fontSize: 16,
-                    // --- ✅ CRITIQUE #3: Increased line height ---
-                    height: 1.4,
-                  ),
+                      ? theme.colorScheme.onPrimary
+                      : theme.colorScheme.onSurface,
+                  height: 1.4,
                 ),
               ),
             ),
           ),
-          if (isUser) ...[
-            const SizedBox(width: 8),
-            CircleAvatar(
-              backgroundColor: theme.colorScheme.secondary,
-              child: Icon(Icons.person, color: theme.colorScheme.onSecondary),
-            ),
-          ]
         ],
       ),
-    ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.5, end: 0);
+    ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.3);
   }
 }
 
@@ -331,56 +346,48 @@ class _TypingIndicator extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 16.0),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
           CircleAvatar(
             backgroundColor: theme.colorScheme.surface,
-            child: Icon(Icons.support_agent, color: theme.colorScheme.onSurface),
+            child: Icon(Icons.support_agent,
+                color: theme.colorScheme.onSurface),
           ),
           const SizedBox(width: 12),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 12.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
               color: theme.colorScheme.surface,
-              // --- ✅ CRITIQUE #9: Consistent 16px corners ---
-              borderRadius: const BorderRadius.only(
-                topRight: Radius.circular(16.0),
-                bottomRight: Radius.circular(16.0),
-                topLeft: Radius.circular(16.0),
-              ),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildDot(0, theme),
-                const SizedBox(width: 5),
-                _buildDot(1, theme),
-                const SizedBox(width: 5),
-                _buildDot(2, theme),
-              ],
+              children: List.generate(
+                3,
+                (i) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.onSurface.withOpacity(0.7),
+                      shape: BoxShape.circle,
+                    ),
+                  )
+                      .animate()
+                      .scaleY(
+                        delay: (i * 200).ms,
+                        duration: 400.ms,
+                      )
+                      .then(delay: 800.ms)
+                      .scaleY(duration: 400.ms),
+                ),
+              ),
             ),
           ),
         ],
       ),
     ).animate(onComplete: (c) => c.repeat()).shimmer(duration: 1200.ms);
-  }
-
-  Widget _buildDot(int index, ThemeData theme) {
-    return Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(
-        color: theme.colorScheme.onSurface.withOpacity(0.7),
-        shape: BoxShape.circle,
-      ),
-    ).animate().scaleY(
-      delay: (index * 200).ms,
-      duration: 400.ms,
-      curve: Curves.easeInOut,
-    ).then(delay: 800.ms).scaleY(
-      duration: 400.ms,
-      curve: Curves.easeInOut,
-    );
   }
 }

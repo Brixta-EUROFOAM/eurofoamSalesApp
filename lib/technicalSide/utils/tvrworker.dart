@@ -18,7 +18,7 @@ class TvrBackgroundWorker {
     required bool clearDrafts,
   }) async {
     
-    // 1. Generate Unique ID (e.g., "1715609200000")
+    // 1. Generate Unique ID
     final String taskId = DateTime.now().millisecondsSinceEpoch.toString();
     
     // 2. 💾 INSTANT DISK SAVE (The "Safety Box")
@@ -40,12 +40,12 @@ class TvrBackgroundWorker {
       _clearUiDrafts(); 
     }
 
-    // 4. ⚡ START UPLOAD (Independent "Thread")
-    // We do NOT await this. We let the UI thread go free.
-    _executeUploadTask(taskId, backupData, apiService).then((success) {
+    // 4. ⚡ START UPLOAD
+    // CRITICAL FIX: We encode and decode the map.
+    final sanitizedData = jsonDecode(jsonEncode(backupData));
+
+    _executeUploadTask(taskId, sanitizedData, apiService).then((success) {
       if (success) {
-        // 🌟 PIGGYBACK: If this succeeded, it means we have internet!
-        // Let's quickly check if we have any stuck 9:00 AM reports and flush them.
         retryStuckQueue(apiService);
       }
     });
@@ -62,6 +62,7 @@ class TvrBackgroundWorker {
     try {
       // Rehydrate Model & Files from the saved JSON
       TechnicalVisitReport payload = TechnicalVisitReport.fromJson(data['payload']);
+
       final File? inTimeFile = data['inTimePath'] != null ? File(data['inTimePath']) : null;
       final File outTimeFile = File(data['outTimePath']);
       final File? sitePhotoFile = data['sitePhotoPath'] != null ? File(data['sitePhotoPath']) : null;
@@ -163,26 +164,44 @@ class TvrBackgroundWorker {
 extension TvrCopyWith on TechnicalVisitReport {
   TechnicalVisitReport copyWith({String? inTimeImageUrl, String? outTimeImageUrl, String? sitePhotoUrl}) {
     return TechnicalVisitReport(
-      userId: userId, reportDate: reportDate, visitType: visitType, visitCategory: visitCategory,
-      customerType: customerType, checkInTime: checkInTime, checkOutTime: checkOutTime,
-      // Update fields if provided, else keep existing
+      // Required fields
+      userId: userId,
+      reportDate: reportDate,
+      visitType: visitType,
+      siteNameConcernedPerson: siteNameConcernedPerson,
+      phoneNo: phoneNo,
+      siteVisitBrandInUse: siteVisitBrandInUse,
+      influencerType: influencerType,
+      clientsRemarks: clientsRemarks,
+      salespersonRemarks: salespersonRemarks,
+      checkInTime: checkInTime,
+      
+      // Updates
       inTimeImageUrl: inTimeImageUrl ?? this.inTimeImageUrl,
       outTimeImageUrl: outTimeImageUrl ?? this.outTimeImageUrl,
       sitePhotoUrl: sitePhotoUrl ?? this.sitePhotoUrl,
-      // Copy rest
-      purposeOfVisit: purposeOfVisit, siteNameConcernedPerson: siteNameConcernedPerson,
-      phoneNo: phoneNo, whatsappNo: whatsappNo, siteAddress: siteAddress, marketName: marketName,
-      region: region, area: area, latitude: latitude, longitude: longitude,
-      siteVisitStage: siteVisitStage, constAreaSqFt: constAreaSqFt, siteVisitBrandInUse: siteVisitBrandInUse,
+
+      // Nullables
+      whatsappNo: whatsappNo, emailId: emailId, siteAddress: siteAddress,
+      marketName: marketName, region: region, area: area, latitude: latitude, longitude: longitude,
+      visitCategory: visitCategory, customerType: customerType, purposeOfVisit: purposeOfVisit,
+      siteVisitStage: siteVisitStage, constAreaSqFt: constAreaSqFt,
       currentBrandPrice: currentBrandPrice, siteStock: siteStock, estRequirement: estRequirement,
       supplyingDealerName: supplyingDealerName, nearbyDealerName: nearbyDealerName,
-      associatedPartyName: associatedPartyName, isConverted: isConverted, conversionType: conversionType,
-      conversionFromBrand: conversionFromBrand, conversionQuantityValue: conversionQuantityValue,
-      conversionQuantityUnit: conversionQuantityUnit, isTechService: isTechService,
-      serviceDesc: serviceDesc, influencerName: influencerName, influencerPhone: influencerPhone,
-      influencerProductivity: influencerProductivity, isSchemeEnrolled: isSchemeEnrolled,
-      influencerType: influencerType, clientsRemarks: clientsRemarks, salespersonRemarks: salespersonRemarks,
-      timeSpentinLoc: timeSpentinLoc, pjpId: pjpId, masonId: masonId, siteId: siteId, siteVisitType: siteVisitType
+      associatedPartyName: associatedPartyName, channelPartnerVisit: channelPartnerVisit,
+      isConverted: isConverted, conversionType: conversionType, conversionFromBrand: conversionFromBrand,
+      conversionQuantityValue: conversionQuantityValue, conversionQuantityUnit: conversionQuantityUnit,
+      isTechService: isTechService, serviceDesc: serviceDesc, serviceType: serviceType,
+      dhalaiVerificationCode: dhalaiVerificationCode, isVerificationStatus: isVerificationStatus,
+      qualityComplaint: qualityComplaint, influencerName: influencerName, influencerPhone: influencerPhone,
+      isSchemeEnrolled: isSchemeEnrolled, influencerProductivity: influencerProductivity,
+      promotionalActivity: promotionalActivity, checkOutTime: checkOutTime, timeSpentinLoc: timeSpentinLoc,
+      
+      // Meta
+      firstVisitTime: firstVisitTime, lastVisitTime: lastVisitTime, firstVisitDay: firstVisitDay,
+      lastVisitDay: lastVisitDay, siteVisitsCount: siteVisitsCount, otherVisitsCount: otherVisitsCount,
+      totalVisitsCount: totalVisitsCount, siteVisitType: siteVisitType, meetingId: meetingId,
+      pjpId: pjpId, masonId: masonId, siteId: siteId, createdAt: createdAt, updatedAt: updatedAt,
     );
   }
 }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
-import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 // import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
@@ -167,7 +166,6 @@ Future<void> main() async {
   debugPrint("NOTIFICATIONS INITIALIZED.");
 
   await dotenv.load(fileName: ".env");
-  await Hive.initFlutter();
 
   final radarPublishableKey = dotenv.env['RADAR_API_KEY'];
   if (radarPublishableKey != null) {
