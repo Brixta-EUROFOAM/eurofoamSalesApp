@@ -152,36 +152,93 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
 
   Future<void> _saveDrafts() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // 1. Text Controllers
     _controllers.forEach((key, c) => prefs.setString('tvr_ctrl_$key', c.text));
-    prefs.setString('tvr_val_cust_type', _values['selectedCustomerType'] ?? "");
+
+    // 2. Booleans
     prefs.setBool('tvr_val_is_converted', _values['isConverted'] ?? false);
     prefs.setBool('tvr_val_is_bag_picked', _values['isBagPicked'] ?? false);
+    prefs.setBool('tvr_val_is_tech', _values['isTechService'] ?? false);
+    prefs.setBool('tvr_val_is_scheme', _values['isSchemeEnrolled'] ?? false);
+
+    // 3. Dropdowns (Crucial - prevents "N/A" on upload)
+    final dropdowns = [
+      'selectedCustomerType', 'selectedVisitType', 'selectedVisitCategory',
+      'selectedRegion', 'selectedUnit', 'selectedStage', 'selectedSiteVisitType',
+      'conversionType', 'conversionFromBrand', 'selectedServiceType', 
+      'selectedInfluencerType'
+    ];
+    for (var k in dropdowns) {
+      if (_values[k] != null) prefs.setString('tvr_val_$k', _values[k]);
+    }
+
+    // 4. Arrays (Brands/InfluencerTypes)
     if (_values['brandsInUse'] != null) {
-      prefs.setStringList('tvr_val_brands', _values['brandsInUse']);
+      prefs.setStringList('tvr_val_brands', (_values['brandsInUse'] as List).cast<String>());
+    }
+
+    // 5. Check-In Data (To survive process death)
+    if (_values['checkInTime'] != null) {
+      prefs.setString('tvr_val_checkin', (_values['checkInTime'] as DateTime).toIso8601String());
+    }
+    if (_values['inTimeImageUrl'] != null) {
+      prefs.setString('tvr_val_in_img_url', _values['inTimeImageUrl']);
+    }
+    if (_values['sitePhotoUrl'] != null) {
+      prefs.setString('tvr_val_site_img_url', _values['sitePhotoUrl']);
     }
   }
 
   Future<void> _loadDrafts() async {
-    if (_values['selectedSite'] != null) {
-      _onSiteSelected(_values['selectedSite']);
-    }
-
-    if (_values['selectedDealer'] != null) {
-      _onDealerSelected(_values['selectedDealer']);
-    }
-
-    if (_values['selectedMason'] != null) {
-      _onMasonSelected(_values['selectedMason']);
-    }
     final prefs = await SharedPreferences.getInstance();
+    
+    // Restore objects if passed via navigation
+    if (_values['selectedSite'] != null) _onSiteSelected(_values['selectedSite']);
+    if (_values['selectedDealer'] != null) _onDealerSelected(_values['selectedDealer']);
+    if (_values['selectedMason'] != null) _onMasonSelected(_values['selectedMason']);
+
+    // Check if draft exists
     if (!prefs.containsKey('tvr_ctrl_remarks')) return;
 
     setState(() {
-      _controllers.forEach(
-        (key, c) => c.text = prefs.getString('tvr_ctrl_$key') ?? "",
-      );
-      _values['selectedCustomerType'] = prefs.getString('tvr_val_cust_type');
+      // 1. Controllers
+      _controllers.forEach((key, c) => c.text = prefs.getString('tvr_ctrl_$key') ?? "");
+
+      // 2. Booleans
       _values['isConverted'] = prefs.getBool('tvr_val_is_converted') ?? false;
+      _values['isBagPicked'] = prefs.getBool('tvr_val_is_bag_picked') ?? false;
+      _values['isTechService'] = prefs.getBool('tvr_val_is_tech') ?? false;
+      _values['isSchemeEnrolled'] = prefs.getBool('tvr_val_is_scheme') ?? false;
+
+      // 3. Dropdowns
+      final dropdowns = [
+        'selectedCustomerType', 'selectedVisitType', 'selectedVisitCategory',
+        'selectedRegion', 'selectedUnit', 'selectedStage', 'selectedSiteVisitType',
+        'conversionType', 'conversionFromBrand', 'selectedServiceType', 
+        'selectedInfluencerType'
+      ];
+      for (var k in dropdowns) {
+        if (prefs.containsKey('tvr_val_$k')) {
+          _values[k] = prefs.getString('tvr_val_$k');
+        }
+      }
+
+      // 4. Arrays
+      if (prefs.containsKey('tvr_val_brands')) {
+        _values['brandsInUse'] = prefs.getStringList('tvr_val_brands');
+      }
+
+      // 5. Check-In & Images
+      if (_values['checkInTime'] == null && prefs.containsKey('tvr_val_checkin')) {
+        _values['checkInTime'] = DateTime.parse(prefs.getString('tvr_val_checkin')!);
+      }
+      if (prefs.containsKey('tvr_val_in_img_url')) {
+        _values['inTimeImageUrl'] = prefs.getString('tvr_val_in_img_url');
+      }
+      if (prefs.containsKey('tvr_val_site_img_url')) {
+        _values['sitePhotoUrl'] = prefs.getString('tvr_val_site_img_url');
+      }
     });
   }
 
@@ -819,6 +876,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       conversionQuantityValue: double.tryParse(_controllers['qty']?.text ?? ''),
       conversionQuantityUnit: _values['selectedUnit'],
       isTechService: _values['isTechService'],
+      serviceType: _values['selectedServiceType'],
       serviceDesc: _controllers['serviceDesc']?.text,
       influencerName: _controllers['influencerName']?.text,
       influencerPhone: _controllers['influencerPhone']?.text,
