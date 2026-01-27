@@ -87,6 +87,6 @@ class TechnicalFlags {
     //new feature
     unplannedJourney: true,
 
-    showDbViewer: true,
+    showDbViewer: false,
   );
 }
