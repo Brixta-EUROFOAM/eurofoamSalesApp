@@ -574,6 +574,18 @@ class $JourneyBreadcrumbsTable extends JourneyBreadcrumbs
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _totalDistanceMeta = const VerificationMeta(
+    'totalDistance',
+  );
+  @override
+  late final GeneratedColumn<double> totalDistance = GeneratedColumn<double>(
+    'total_distance',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0.0),
+  );
   static const VerificationMeta _speedMeta = const VerificationMeta('speed');
   @override
   late final GeneratedColumn<double> speed = GeneratedColumn<double>(
@@ -623,6 +635,7 @@ class $JourneyBreadcrumbsTable extends JourneyBreadcrumbs
     latitude,
     longitude,
     h3Index,
+    totalDistance,
     speed,
     heading,
     accuracy,
@@ -676,6 +689,15 @@ class $JourneyBreadcrumbsTable extends JourneyBreadcrumbs
       );
     } else if (isInserting) {
       context.missing(_h3IndexMeta);
+    }
+    if (data.containsKey('total_distance')) {
+      context.handle(
+        _totalDistanceMeta,
+        totalDistance.isAcceptableOrUnknown(
+          data['total_distance']!,
+          _totalDistanceMeta,
+        ),
+      );
     }
     if (data.containsKey('speed')) {
       context.handle(
@@ -732,6 +754,10 @@ class $JourneyBreadcrumbsTable extends JourneyBreadcrumbs
         DriftSqlType.string,
         data['${effectivePrefix}h3_index'],
       )!,
+      totalDistance: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}total_distance'],
+      )!,
       speed: attachedDatabase.typeMapping.read(
         DriftSqlType.double,
         data['${effectivePrefix}speed'],
@@ -764,6 +790,7 @@ class JourneyBreadcrumb extends DataClass
   final double latitude;
   final double longitude;
   final String h3Index;
+  final double totalDistance;
   final double? speed;
   final double? heading;
   final double? accuracy;
@@ -774,6 +801,7 @@ class JourneyBreadcrumb extends DataClass
     required this.latitude,
     required this.longitude,
     required this.h3Index,
+    required this.totalDistance,
     this.speed,
     this.heading,
     this.accuracy,
@@ -787,6 +815,7 @@ class JourneyBreadcrumb extends DataClass
     map['latitude'] = Variable<double>(latitude);
     map['longitude'] = Variable<double>(longitude);
     map['h3_index'] = Variable<String>(h3Index);
+    map['total_distance'] = Variable<double>(totalDistance);
     if (!nullToAbsent || speed != null) {
       map['speed'] = Variable<double>(speed);
     }
@@ -807,6 +836,7 @@ class JourneyBreadcrumb extends DataClass
       latitude: Value(latitude),
       longitude: Value(longitude),
       h3Index: Value(h3Index),
+      totalDistance: Value(totalDistance),
       speed: speed == null && nullToAbsent
           ? const Value.absent()
           : Value(speed),
@@ -831,6 +861,7 @@ class JourneyBreadcrumb extends DataClass
       latitude: serializer.fromJson<double>(json['latitude']),
       longitude: serializer.fromJson<double>(json['longitude']),
       h3Index: serializer.fromJson<String>(json['h3Index']),
+      totalDistance: serializer.fromJson<double>(json['totalDistance']),
       speed: serializer.fromJson<double?>(json['speed']),
       heading: serializer.fromJson<double?>(json['heading']),
       accuracy: serializer.fromJson<double?>(json['accuracy']),
@@ -846,6 +877,7 @@ class JourneyBreadcrumb extends DataClass
       'latitude': serializer.toJson<double>(latitude),
       'longitude': serializer.toJson<double>(longitude),
       'h3Index': serializer.toJson<String>(h3Index),
+      'totalDistance': serializer.toJson<double>(totalDistance),
       'speed': serializer.toJson<double?>(speed),
       'heading': serializer.toJson<double?>(heading),
       'accuracy': serializer.toJson<double?>(accuracy),
@@ -859,6 +891,7 @@ class JourneyBreadcrumb extends DataClass
     double? latitude,
     double? longitude,
     String? h3Index,
+    double? totalDistance,
     Value<double?> speed = const Value.absent(),
     Value<double?> heading = const Value.absent(),
     Value<double?> accuracy = const Value.absent(),
@@ -869,6 +902,7 @@ class JourneyBreadcrumb extends DataClass
     latitude: latitude ?? this.latitude,
     longitude: longitude ?? this.longitude,
     h3Index: h3Index ?? this.h3Index,
+    totalDistance: totalDistance ?? this.totalDistance,
     speed: speed.present ? speed.value : this.speed,
     heading: heading.present ? heading.value : this.heading,
     accuracy: accuracy.present ? accuracy.value : this.accuracy,
@@ -881,6 +915,9 @@ class JourneyBreadcrumb extends DataClass
       latitude: data.latitude.present ? data.latitude.value : this.latitude,
       longitude: data.longitude.present ? data.longitude.value : this.longitude,
       h3Index: data.h3Index.present ? data.h3Index.value : this.h3Index,
+      totalDistance: data.totalDistance.present
+          ? data.totalDistance.value
+          : this.totalDistance,
       speed: data.speed.present ? data.speed.value : this.speed,
       heading: data.heading.present ? data.heading.value : this.heading,
       accuracy: data.accuracy.present ? data.accuracy.value : this.accuracy,
@@ -898,6 +935,7 @@ class JourneyBreadcrumb extends DataClass
           ..write('latitude: $latitude, ')
           ..write('longitude: $longitude, ')
           ..write('h3Index: $h3Index, ')
+          ..write('totalDistance: $totalDistance, ')
           ..write('speed: $speed, ')
           ..write('heading: $heading, ')
           ..write('accuracy: $accuracy, ')
@@ -913,6 +951,7 @@ class JourneyBreadcrumb extends DataClass
     latitude,
     longitude,
     h3Index,
+    totalDistance,
     speed,
     heading,
     accuracy,
@@ -927,6 +966,7 @@ class JourneyBreadcrumb extends DataClass
           other.latitude == this.latitude &&
           other.longitude == this.longitude &&
           other.h3Index == this.h3Index &&
+          other.totalDistance == this.totalDistance &&
           other.speed == this.speed &&
           other.heading == this.heading &&
           other.accuracy == this.accuracy &&
@@ -939,6 +979,7 @@ class JourneyBreadcrumbsCompanion extends UpdateCompanion<JourneyBreadcrumb> {
   final Value<double> latitude;
   final Value<double> longitude;
   final Value<String> h3Index;
+  final Value<double> totalDistance;
   final Value<double?> speed;
   final Value<double?> heading;
   final Value<double?> accuracy;
@@ -950,6 +991,7 @@ class JourneyBreadcrumbsCompanion extends UpdateCompanion<JourneyBreadcrumb> {
     this.latitude = const Value.absent(),
     this.longitude = const Value.absent(),
     this.h3Index = const Value.absent(),
+    this.totalDistance = const Value.absent(),
     this.speed = const Value.absent(),
     this.heading = const Value.absent(),
     this.accuracy = const Value.absent(),
@@ -962,6 +1004,7 @@ class JourneyBreadcrumbsCompanion extends UpdateCompanion<JourneyBreadcrumb> {
     required double latitude,
     required double longitude,
     required String h3Index,
+    this.totalDistance = const Value.absent(),
     this.speed = const Value.absent(),
     this.heading = const Value.absent(),
     this.accuracy = const Value.absent(),
@@ -979,6 +1022,7 @@ class JourneyBreadcrumbsCompanion extends UpdateCompanion<JourneyBreadcrumb> {
     Expression<double>? latitude,
     Expression<double>? longitude,
     Expression<String>? h3Index,
+    Expression<double>? totalDistance,
     Expression<double>? speed,
     Expression<double>? heading,
     Expression<double>? accuracy,
@@ -991,6 +1035,7 @@ class JourneyBreadcrumbsCompanion extends UpdateCompanion<JourneyBreadcrumb> {
       if (latitude != null) 'latitude': latitude,
       if (longitude != null) 'longitude': longitude,
       if (h3Index != null) 'h3_index': h3Index,
+      if (totalDistance != null) 'total_distance': totalDistance,
       if (speed != null) 'speed': speed,
       if (heading != null) 'heading': heading,
       if (accuracy != null) 'accuracy': accuracy,
@@ -1005,6 +1050,7 @@ class JourneyBreadcrumbsCompanion extends UpdateCompanion<JourneyBreadcrumb> {
     Value<double>? latitude,
     Value<double>? longitude,
     Value<String>? h3Index,
+    Value<double>? totalDistance,
     Value<double?>? speed,
     Value<double?>? heading,
     Value<double?>? accuracy,
@@ -1017,6 +1063,7 @@ class JourneyBreadcrumbsCompanion extends UpdateCompanion<JourneyBreadcrumb> {
       latitude: latitude ?? this.latitude,
       longitude: longitude ?? this.longitude,
       h3Index: h3Index ?? this.h3Index,
+      totalDistance: totalDistance ?? this.totalDistance,
       speed: speed ?? this.speed,
       heading: heading ?? this.heading,
       accuracy: accuracy ?? this.accuracy,
@@ -1042,6 +1089,9 @@ class JourneyBreadcrumbsCompanion extends UpdateCompanion<JourneyBreadcrumb> {
     }
     if (h3Index.present) {
       map['h3_index'] = Variable<String>(h3Index.value);
+    }
+    if (totalDistance.present) {
+      map['total_distance'] = Variable<double>(totalDistance.value);
     }
     if (speed.present) {
       map['speed'] = Variable<double>(speed.value);
@@ -1069,10 +1119,421 @@ class JourneyBreadcrumbsCompanion extends UpdateCompanion<JourneyBreadcrumb> {
           ..write('latitude: $latitude, ')
           ..write('longitude: $longitude, ')
           ..write('h3Index: $h3Index, ')
+          ..write('totalDistance: $totalDistance, ')
           ..write('speed: $speed, ')
           ..write('heading: $heading, ')
           ..write('accuracy: $accuracy, ')
           ..write('recordedAt: $recordedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $JourneyOpsQueueTable extends JourneyOpsQueue
+    with TableInfo<$JourneyOpsQueueTable, JourneyOpsQueueData> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $JourneyOpsQueueTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _opIdMeta = const VerificationMeta('opId');
+  @override
+  late final GeneratedColumn<String> opId = GeneratedColumn<String>(
+    'op_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _journeyIdMeta = const VerificationMeta(
+    'journeyId',
+  );
+  @override
+  late final GeneratedColumn<String> journeyId = GeneratedColumn<String>(
+    'journey_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<int> userId = GeneratedColumn<int>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _typeMeta = const VerificationMeta('type');
+  @override
+  late final GeneratedColumn<String> type = GeneratedColumn<String>(
+    'type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadMeta = const VerificationMeta(
+    'payload',
+  );
+  @override
+  late final GeneratedColumn<String> payload = GeneratedColumn<String>(
+    'payload',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    opId,
+    journeyId,
+    userId,
+    type,
+    payload,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'journey_ops_queue';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<JourneyOpsQueueData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('op_id')) {
+      context.handle(
+        _opIdMeta,
+        opId.isAcceptableOrUnknown(data['op_id']!, _opIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_opIdMeta);
+    }
+    if (data.containsKey('journey_id')) {
+      context.handle(
+        _journeyIdMeta,
+        journeyId.isAcceptableOrUnknown(data['journey_id']!, _journeyIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_journeyIdMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('type')) {
+      context.handle(
+        _typeMeta,
+        type.isAcceptableOrUnknown(data['type']!, _typeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_typeMeta);
+    }
+    if (data.containsKey('payload')) {
+      context.handle(
+        _payloadMeta,
+        payload.isAcceptableOrUnknown(data['payload']!, _payloadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {opId};
+  @override
+  JourneyOpsQueueData map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return JourneyOpsQueueData(
+      opId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}op_id'],
+      )!,
+      journeyId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}journey_id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}user_id'],
+      )!,
+      type: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}type'],
+      )!,
+      payload: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $JourneyOpsQueueTable createAlias(String alias) {
+    return $JourneyOpsQueueTable(attachedDatabase, alias);
+  }
+}
+
+class JourneyOpsQueueData extends DataClass
+    implements Insertable<JourneyOpsQueueData> {
+  final String opId;
+  final String journeyId;
+  final int userId;
+  final String type;
+  final String payload;
+  final DateTime createdAt;
+  const JourneyOpsQueueData({
+    required this.opId,
+    required this.journeyId,
+    required this.userId,
+    required this.type,
+    required this.payload,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['op_id'] = Variable<String>(opId);
+    map['journey_id'] = Variable<String>(journeyId);
+    map['user_id'] = Variable<int>(userId);
+    map['type'] = Variable<String>(type);
+    map['payload'] = Variable<String>(payload);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    return map;
+  }
+
+  JourneyOpsQueueCompanion toCompanion(bool nullToAbsent) {
+    return JourneyOpsQueueCompanion(
+      opId: Value(opId),
+      journeyId: Value(journeyId),
+      userId: Value(userId),
+      type: Value(type),
+      payload: Value(payload),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory JourneyOpsQueueData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return JourneyOpsQueueData(
+      opId: serializer.fromJson<String>(json['opId']),
+      journeyId: serializer.fromJson<String>(json['journeyId']),
+      userId: serializer.fromJson<int>(json['userId']),
+      type: serializer.fromJson<String>(json['type']),
+      payload: serializer.fromJson<String>(json['payload']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'opId': serializer.toJson<String>(opId),
+      'journeyId': serializer.toJson<String>(journeyId),
+      'userId': serializer.toJson<int>(userId),
+      'type': serializer.toJson<String>(type),
+      'payload': serializer.toJson<String>(payload),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+    };
+  }
+
+  JourneyOpsQueueData copyWith({
+    String? opId,
+    String? journeyId,
+    int? userId,
+    String? type,
+    String? payload,
+    DateTime? createdAt,
+  }) => JourneyOpsQueueData(
+    opId: opId ?? this.opId,
+    journeyId: journeyId ?? this.journeyId,
+    userId: userId ?? this.userId,
+    type: type ?? this.type,
+    payload: payload ?? this.payload,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  JourneyOpsQueueData copyWithCompanion(JourneyOpsQueueCompanion data) {
+    return JourneyOpsQueueData(
+      opId: data.opId.present ? data.opId.value : this.opId,
+      journeyId: data.journeyId.present ? data.journeyId.value : this.journeyId,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      type: data.type.present ? data.type.value : this.type,
+      payload: data.payload.present ? data.payload.value : this.payload,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('JourneyOpsQueueData(')
+          ..write('opId: $opId, ')
+          ..write('journeyId: $journeyId, ')
+          ..write('userId: $userId, ')
+          ..write('type: $type, ')
+          ..write('payload: $payload, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(opId, journeyId, userId, type, payload, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is JourneyOpsQueueData &&
+          other.opId == this.opId &&
+          other.journeyId == this.journeyId &&
+          other.userId == this.userId &&
+          other.type == this.type &&
+          other.payload == this.payload &&
+          other.createdAt == this.createdAt);
+}
+
+class JourneyOpsQueueCompanion extends UpdateCompanion<JourneyOpsQueueData> {
+  final Value<String> opId;
+  final Value<String> journeyId;
+  final Value<int> userId;
+  final Value<String> type;
+  final Value<String> payload;
+  final Value<DateTime> createdAt;
+  final Value<int> rowid;
+  const JourneyOpsQueueCompanion({
+    this.opId = const Value.absent(),
+    this.journeyId = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.type = const Value.absent(),
+    this.payload = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  JourneyOpsQueueCompanion.insert({
+    required String opId,
+    required String journeyId,
+    required int userId,
+    required String type,
+    required String payload,
+    required DateTime createdAt,
+    this.rowid = const Value.absent(),
+  }) : opId = Value(opId),
+       journeyId = Value(journeyId),
+       userId = Value(userId),
+       type = Value(type),
+       payload = Value(payload),
+       createdAt = Value(createdAt);
+  static Insertable<JourneyOpsQueueData> custom({
+    Expression<String>? opId,
+    Expression<String>? journeyId,
+    Expression<int>? userId,
+    Expression<String>? type,
+    Expression<String>? payload,
+    Expression<DateTime>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (opId != null) 'op_id': opId,
+      if (journeyId != null) 'journey_id': journeyId,
+      if (userId != null) 'user_id': userId,
+      if (type != null) 'type': type,
+      if (payload != null) 'payload': payload,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  JourneyOpsQueueCompanion copyWith({
+    Value<String>? opId,
+    Value<String>? journeyId,
+    Value<int>? userId,
+    Value<String>? type,
+    Value<String>? payload,
+    Value<DateTime>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return JourneyOpsQueueCompanion(
+      opId: opId ?? this.opId,
+      journeyId: journeyId ?? this.journeyId,
+      userId: userId ?? this.userId,
+      type: type ?? this.type,
+      payload: payload ?? this.payload,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (opId.present) {
+      map['op_id'] = Variable<String>(opId.value);
+    }
+    if (journeyId.present) {
+      map['journey_id'] = Variable<String>(journeyId.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<int>(userId.value);
+    }
+    if (type.present) {
+      map['type'] = Variable<String>(type.value);
+    }
+    if (payload.present) {
+      map['payload'] = Variable<String>(payload.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('JourneyOpsQueueCompanion(')
+          ..write('opId: $opId, ')
+          ..write('journeyId: $journeyId, ')
+          ..write('userId: $userId, ')
+          ..write('type: $type, ')
+          ..write('payload: $payload, ')
+          ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1085,6 +1546,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $JourneysTable journeys = $JourneysTable(this);
   late final $JourneyBreadcrumbsTable journeyBreadcrumbs =
       $JourneyBreadcrumbsTable(this);
+  late final $JourneyOpsQueueTable journeyOpsQueue = $JourneyOpsQueueTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1092,6 +1556,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     journeys,
     journeyBreadcrumbs,
+    journeyOpsQueue,
   ];
 }
 
@@ -1470,6 +1935,7 @@ typedef $$JourneyBreadcrumbsTableCreateCompanionBuilder =
       required double latitude,
       required double longitude,
       required String h3Index,
+      Value<double> totalDistance,
       Value<double?> speed,
       Value<double?> heading,
       Value<double?> accuracy,
@@ -1483,6 +1949,7 @@ typedef $$JourneyBreadcrumbsTableUpdateCompanionBuilder =
       Value<double> latitude,
       Value<double> longitude,
       Value<String> h3Index,
+      Value<double> totalDistance,
       Value<double?> speed,
       Value<double?> heading,
       Value<double?> accuracy,
@@ -1549,6 +2016,11 @@ class $$JourneyBreadcrumbsTableFilterComposer
 
   ColumnFilters<String> get h3Index => $composableBuilder(
     column: $table.h3Index,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get totalDistance => $composableBuilder(
+    column: $table.totalDistance,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1625,6 +2097,11 @@ class $$JourneyBreadcrumbsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get totalDistance => $composableBuilder(
+    column: $table.totalDistance,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<double> get speed => $composableBuilder(
     column: $table.speed,
     builder: (column) => ColumnOrderings(column),
@@ -1689,6 +2166,11 @@ class $$JourneyBreadcrumbsTableAnnotationComposer
 
   GeneratedColumn<String> get h3Index =>
       $composableBuilder(column: $table.h3Index, builder: (column) => column);
+
+  GeneratedColumn<double> get totalDistance => $composableBuilder(
+    column: $table.totalDistance,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<double> get speed =>
       $composableBuilder(column: $table.speed, builder: (column) => column);
@@ -1766,6 +2248,7 @@ class $$JourneyBreadcrumbsTableTableManager
                 Value<double> latitude = const Value.absent(),
                 Value<double> longitude = const Value.absent(),
                 Value<String> h3Index = const Value.absent(),
+                Value<double> totalDistance = const Value.absent(),
                 Value<double?> speed = const Value.absent(),
                 Value<double?> heading = const Value.absent(),
                 Value<double?> accuracy = const Value.absent(),
@@ -1777,6 +2260,7 @@ class $$JourneyBreadcrumbsTableTableManager
                 latitude: latitude,
                 longitude: longitude,
                 h3Index: h3Index,
+                totalDistance: totalDistance,
                 speed: speed,
                 heading: heading,
                 accuracy: accuracy,
@@ -1790,6 +2274,7 @@ class $$JourneyBreadcrumbsTableTableManager
                 required double latitude,
                 required double longitude,
                 required String h3Index,
+                Value<double> totalDistance = const Value.absent(),
                 Value<double?> speed = const Value.absent(),
                 Value<double?> heading = const Value.absent(),
                 Value<double?> accuracy = const Value.absent(),
@@ -1801,6 +2286,7 @@ class $$JourneyBreadcrumbsTableTableManager
                 latitude: latitude,
                 longitude: longitude,
                 h3Index: h3Index,
+                totalDistance: totalDistance,
                 speed: speed,
                 heading: heading,
                 accuracy: accuracy,
@@ -1876,6 +2362,235 @@ typedef $$JourneyBreadcrumbsTableProcessedTableManager =
       JourneyBreadcrumb,
       PrefetchHooks Function({bool journeyId})
     >;
+typedef $$JourneyOpsQueueTableCreateCompanionBuilder =
+    JourneyOpsQueueCompanion Function({
+      required String opId,
+      required String journeyId,
+      required int userId,
+      required String type,
+      required String payload,
+      required DateTime createdAt,
+      Value<int> rowid,
+    });
+typedef $$JourneyOpsQueueTableUpdateCompanionBuilder =
+    JourneyOpsQueueCompanion Function({
+      Value<String> opId,
+      Value<String> journeyId,
+      Value<int> userId,
+      Value<String> type,
+      Value<String> payload,
+      Value<DateTime> createdAt,
+      Value<int> rowid,
+    });
+
+class $$JourneyOpsQueueTableFilterComposer
+    extends Composer<_$AppDatabase, $JourneyOpsQueueTable> {
+  $$JourneyOpsQueueTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get opId => $composableBuilder(
+    column: $table.opId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get journeyId => $composableBuilder(
+    column: $table.journeyId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get type => $composableBuilder(
+    column: $table.type,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$JourneyOpsQueueTableOrderingComposer
+    extends Composer<_$AppDatabase, $JourneyOpsQueueTable> {
+  $$JourneyOpsQueueTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get opId => $composableBuilder(
+    column: $table.opId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get journeyId => $composableBuilder(
+    column: $table.journeyId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get type => $composableBuilder(
+    column: $table.type,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$JourneyOpsQueueTableAnnotationComposer
+    extends Composer<_$AppDatabase, $JourneyOpsQueueTable> {
+  $$JourneyOpsQueueTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get opId =>
+      $composableBuilder(column: $table.opId, builder: (column) => column);
+
+  GeneratedColumn<String> get journeyId =>
+      $composableBuilder(column: $table.journeyId, builder: (column) => column);
+
+  GeneratedColumn<int> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get type =>
+      $composableBuilder(column: $table.type, builder: (column) => column);
+
+  GeneratedColumn<String> get payload =>
+      $composableBuilder(column: $table.payload, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$JourneyOpsQueueTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $JourneyOpsQueueTable,
+          JourneyOpsQueueData,
+          $$JourneyOpsQueueTableFilterComposer,
+          $$JourneyOpsQueueTableOrderingComposer,
+          $$JourneyOpsQueueTableAnnotationComposer,
+          $$JourneyOpsQueueTableCreateCompanionBuilder,
+          $$JourneyOpsQueueTableUpdateCompanionBuilder,
+          (
+            JourneyOpsQueueData,
+            BaseReferences<
+              _$AppDatabase,
+              $JourneyOpsQueueTable,
+              JourneyOpsQueueData
+            >,
+          ),
+          JourneyOpsQueueData,
+          PrefetchHooks Function()
+        > {
+  $$JourneyOpsQueueTableTableManager(
+    _$AppDatabase db,
+    $JourneyOpsQueueTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$JourneyOpsQueueTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$JourneyOpsQueueTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$JourneyOpsQueueTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> opId = const Value.absent(),
+                Value<String> journeyId = const Value.absent(),
+                Value<int> userId = const Value.absent(),
+                Value<String> type = const Value.absent(),
+                Value<String> payload = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => JourneyOpsQueueCompanion(
+                opId: opId,
+                journeyId: journeyId,
+                userId: userId,
+                type: type,
+                payload: payload,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String opId,
+                required String journeyId,
+                required int userId,
+                required String type,
+                required String payload,
+                required DateTime createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => JourneyOpsQueueCompanion.insert(
+                opId: opId,
+                journeyId: journeyId,
+                userId: userId,
+                type: type,
+                payload: payload,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$JourneyOpsQueueTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $JourneyOpsQueueTable,
+      JourneyOpsQueueData,
+      $$JourneyOpsQueueTableFilterComposer,
+      $$JourneyOpsQueueTableOrderingComposer,
+      $$JourneyOpsQueueTableAnnotationComposer,
+      $$JourneyOpsQueueTableCreateCompanionBuilder,
+      $$JourneyOpsQueueTableUpdateCompanionBuilder,
+      (
+        JourneyOpsQueueData,
+        BaseReferences<
+          _$AppDatabase,
+          $JourneyOpsQueueTable,
+          JourneyOpsQueueData
+        >,
+      ),
+      JourneyOpsQueueData,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -1884,4 +2599,6 @@ class $AppDatabaseManager {
       $$JourneysTableTableManager(_db, _db.journeys);
   $$JourneyBreadcrumbsTableTableManager get journeyBreadcrumbs =>
       $$JourneyBreadcrumbsTableTableManager(_db, _db.journeyBreadcrumbs);
+  $$JourneyOpsQueueTableTableManager get journeyOpsQueue =>
+      $$JourneyOpsQueueTableTableManager(_db, _db.journeyOpsQueue);
 }

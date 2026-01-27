@@ -42,8 +42,9 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  static const String _baseUrl = 'http://13.203.79.51'; //aws
+  static const String _baseUrl = 'http://13.234.76.191'; //aws
   //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  //static const String _baseUrl = 'https://mycocoserver2.onrender.com'; // mycocoserver2.onrender
 
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
@@ -494,7 +495,7 @@ class ApiService {
     required String siteId,
   }) async {
     final queryString = 'masonId=$masonId&siteId=$siteId';
-    
+
     // We use the generic _get helper
     return _get('mason-stats?$queryString', (json) {
       // The backend returns { "data": { "overall": 100, "site": 50 } }
@@ -539,7 +540,7 @@ class ApiService {
     }
   }
 
-Future<Pjp> createPjp(Pjp pjp) async {
+  Future<Pjp> createPjp(Pjp pjp) async {
     final Map<String, dynamic> payload = Map<String, dynamic>.from(
       pjp.toJson(),
     );
@@ -581,7 +582,7 @@ Future<Pjp> createPjp(Pjp pjp) async {
     final body = {
       'userId': userId,
       'createdById': createdById,
-      'dealerIds': dealerIds, 
+      'dealerIds': dealerIds,
       'siteIds': siteIds,
       'baseDate': baseDate.toIso8601String().split('T').first,
       'batchSizePerDay': batchSizePerDay,
@@ -673,7 +674,20 @@ Future<Pjp> createPjp(Pjp pjp) async {
     String? endDate,
     String? status,
   }) async {
-    throw Exception('Failed to fetch daily tasks.');
+    // Build query parameters based on your backend logic
+    final queryParams = <String, String>{
+      if (startDate != null) 'startDate': startDate,
+      if (endDate != null) 'endDate': endDate,
+      if (status != null) 'status': status,
+    };
+
+    final queryString = Uri(queryParameters: queryParams).query;
+  
+    final endpoint = 'daily-tasks/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
+    return _get(
+      endpoint,
+      (json) => (json as List).map((item) => DailyTask.fromJson(item)).toList(),
+    );
   }
 
   Future<DailyTask> createDailyTask(DailyTask task) async {
@@ -685,6 +699,7 @@ Future<Pjp> createPjp(Pjp pjp) async {
   }
 
   Future<void> deleteDailyTask(String taskId) => _delete('daily-tasks/$taskId');
+  
   Future<List<LeaveApplication>> fetchLeaveApplicationsForUser(
     int userId, {
     String? startDate,
@@ -725,14 +740,28 @@ Future<Pjp> createPjp(Pjp pjp) async {
   }
 
   Future<void> deleteDvr(String dvrId) => _delete('daily-visit-reports/$dvrId');
+  
   Future<List<TechnicalVisitReport>> fetchTvrsForUser(
     int userId, {
     String? startDate,
     String? endDate,
     String? visitType,
-    String? serviceType,
+    int? limit,
   }) async {
-    throw Exception('Failed to fetch TVRs.');
+    final queryParams = <String, String>{
+      if (startDate != null) 'startDate': startDate,
+      if (endDate != null) 'endDate': endDate,
+      if (visitType != null) 'visitType': visitType,
+      if (limit != null) 'limit': limit.toString(),
+    };
+
+    final queryString = Uri(queryParameters: queryParams).query;
+    final endpoint = 'technical-visit-reports/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
+
+    return _get(
+      endpoint,
+      (json) => (json as List).map((item) => TechnicalVisitReport.fromJson(item)).toList(),
+    );
   }
 
   Future<TechnicalVisitReport> createTvr(TechnicalVisitReport tvr) async {

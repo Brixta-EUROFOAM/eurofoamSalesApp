@@ -34,6 +34,11 @@ class TvrInputField extends StatelessWidget {
         _Label(label: label, isRequired: isRequired),
         const SizedBox(height: 8),
         TextFormField(
+          validator: isRequired
+              ? (v) => (v == null || v.trim().isEmpty)
+                    ? '$label is required'
+                    : null
+              : null,
           controller: controller,
           keyboardType: keyboardType,
           maxLines: maxLines,
@@ -93,6 +98,9 @@ class TvrDropdownField extends StatelessWidget {
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: value,
+          validator: isRequired
+          ? (v) => v == null ? '$label is required' : null
+          : null,
           isExpanded: true,
           dropdownColor: Colors.white,
           style: const TextStyle(

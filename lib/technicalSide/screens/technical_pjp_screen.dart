@@ -15,10 +15,10 @@ import 'package:salesmanapp/features/technicalPjpcreate/pjp_create_results.dart'
 import 'package:salesmanapp/features/technicalPjpshowcreateOptions/create_option_controller.dart';
 import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart';
 
-// 🔥 Feature Imports for Robust Journey Start
-import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_controller.dart';
-import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_result.dart';
-import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_capabilities.dart';
+// 🔥 Feature Imports
+
+// State Imports
+import 'package:salesmanapp/services/states/pjpStates/startJourney.dart';
 
 class TechnicalPjpScreen extends StatefulWidget {
   final Employee employee;
@@ -41,19 +41,75 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
   // Track selected date
   DateTime _selectedDate = DateTime.now();
 
-  // --- FINTECH THEME PALETTE ---
-  final Color _bgLight = const Color(0xFFF3F4F6);
-  final Color _cardNavy = const Color(0xFF0F172A);
-  final Color _textDark = const Color(0xFF111827);
-  final Color _textGrey = const Color(0xFF6B7280);
+  // 🔥 State Machine
+  late JourneyStateMachine _journeyManager;
+
+  // --- 🎨 PREMIUM THEME PALETTE ---
+  final Color _bgLight = const Color(0xFFF8FAFC); // Slate 50 (Crisper white)
+  final Color _cardNavy = const Color(0xFF0F172A); // Deep Navy
+  final Color _textDark = const Color(0xFF1E293B); // Slate 800
+  final Color _textGrey = const Color(0xFF64748B); // Slate 500
   final Color _surfaceWhite = Colors.white;
-  final Color _accentGreen = const Color(0xFF10B981);
+  final Color _accentGreen = const Color(0xFF10B981); // Emerald
+  final Color _accentBlue = const Color(0xFF3B82F6); // Royal Blue
 
   @override
   void initState() {
     final flags = context.read<TechnicalFlags>();
     super.initState();
     if (flags.createPjp) refreshPjpList();
+
+    // 🔥 Initialize Machine & Listener
+    _journeyManager = JourneyStateMachine(
+      apiService: _apiService,
+      flags: flags,
+    );
+    _journeyManager.addListener(_onJourneyStateChanged);
+  }
+
+  @override
+  void dispose() {
+    // 🔥 Cleanup Listener
+    _journeyManager.removeListener(_onJourneyStateChanged);
+    _journeyManager.dispose();
+    super.dispose();
+  }
+
+  // 🔥 Handle Side Effects (Navigation/Snackbars) & UI Rebuilds
+  void _onJourneyStateChanged() {
+    // 1. Trigger rebuild to show/hide spinner
+    final state = _journeyManager.value;
+
+    if (state is JourneyProcessing || state is JourneyIdle) {
+      setState(() {});
+    }
+
+    if (state is JourneySuccess) {
+      // ✅ SUCCESS: Navigate
+      widget.onStartJourney({
+        'pjp': state.pjp,
+        'displayName': state.result.displayName,
+        'destination': state.result.destination,
+        'journeyMode': JourneyMode.planned,
+        'isSite': state.result.isSite,
+        'site': null,
+        'dealer': null,
+      });
+
+      _journeyManager.reset();
+    } else if (state is JourneyFailure) {
+      // ❌ FAILURE: Show error
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(state.errorMessage),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+
+      _journeyManager.reset();
+    }
   }
 
   void refreshPjpList() {
@@ -78,46 +134,55 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
     try {
       final controller = AppKernel.instance.feature<CreateOptionController>();
       final options = controller.getOptions();
-      final isDark = Theme.of(context).brightness == Brightness.dark;
+      //final isDark = Theme.of(context).brightness == Brightness.dark;
 
       showModalBottomSheet(
         context: context,
-        backgroundColor: Theme.of(context).cardColor,
+        backgroundColor: Colors.white,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         builder: (_) {
           return SafeArea(
             child: Wrap(
               children: [
                 Padding(
-                  padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
                   child: Text(
-                    "Plan Visit",
+                    "Plan New Visit",
                     style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: _cardNavy,
+                      letterSpacing: -0.5,
                     ),
                   ),
                 ),
 
                 ...options.map((option) {
                   return ListTile(
-                    leading: Icon(option.icon, color: option.iconColor),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                    leading: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: _bgLight,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(option.icon, color: _cardNavy),
+                    ),
                     title: Text(
                       option.title,
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : const Color(0xFF111827),
+                        color: _textDark,
+                        fontSize: 16,
                       ),
                     ),
                     subtitle: Text(
                       option.subtitle,
                       style: TextStyle(
-                        color: isDark
-                            ? Colors.white70
-                            : const Color(0xFF6B7280),
+                        color: _textGrey,
+                        fontSize: 13,
                       ),
                     ),
                     onTap: () {
@@ -135,6 +200,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
                     },
                   );
                 }),
+                const SizedBox(height: 20),
               ],
             ),
           );
@@ -147,7 +213,7 @@ class TechnicalPjpScreenState extends State<TechnicalPjpScreen> {
     }
   }
 
-void _showSingleCreateForm() {
+  void _showSingleCreateForm() {
     try {
       final controller = AppKernel.instance.feature<PjpCreateController>();
       final result = controller.startSingle();
@@ -157,8 +223,7 @@ void _showSingleCreateForm() {
           context: context,
           isScrollControlled: true,
           backgroundColor: Colors.transparent,
-          // ⚡ FIX: This freezes the sheet so it doesn't move when you drag the map
-          enableDrag: false, 
+          enableDrag: false,
           builder: (_) => CreateTechnicalPjpForm(
             employee: widget.employee,
             onPjpCreated: refreshPjpList,
@@ -166,16 +231,15 @@ void _showSingleCreateForm() {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     }
   }
 
   void _showBulkWizard() {
     try {
       final controller = AppKernel.instance.feature<PjpCreateController>();
-
       final result = controller.startBulk();
 
       if (result.mode == PjpCreateMode.bulk) {
@@ -196,86 +260,17 @@ void _showSingleCreateForm() {
     }
   }
 
-  // 🔥 CORE FIX: ROBUST START JOURNEY LOGIC USING PJP CONTROLLER
   Future<void> _startJourney(Pjp pjp) async {
-    // DEBUG: Start of Method
-    debugPrint("🚀 [TechnicalPjpScreen] _startJourney initiated for PJP ID: ${pjp.id}");
-    debugPrint("📝 [TechnicalPjpScreen] Raw AreaToBeVisited: '${pjp.areaToBeVisited}'");
-
-    // 1. Show Loading Indicator
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (c) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      // 2. Initialize the Controller
-      final flags = context.read<TechnicalFlags>();
-      final caps = PjpJourneyCapabilities.fromFlags(flags);
-      final controller = PjpJourneyController(
-        api: _apiService,
-        caps: caps,
-      );
-
-      debugPrint("⚙️ [TechnicalPjpScreen] Controller initialized. Caps enabled: ${caps.enabled}");
-
-      // 3. Resolve Location (Parses "Area|Lat|Lng", checks Status, fetches Site/Dealer Coords)
-      debugPrint("⏳ [TechnicalPjpScreen] Calling controller.start(pjp)...");
-      final PjpJourneyResult result = await controller.start(pjp);
-
-      debugPrint("✅ [TechnicalPjpScreen] Controller returned result:");
-      debugPrint("   -> DisplayName: ${result.displayName}");
-      debugPrint("   -> Destination: ${result.destination}");
-      debugPrint("   -> IsSite: ${result.isSite}");
-      debugPrint("   -> Entity Type: ${result.entity.runtimeType}");
-
-      // 4. Dismiss Loading Indicator
-      if (mounted) Navigator.pop(context);
-
-      // 5. Navigate with PRECISE data
-      debugPrint("🚀 [TechnicalPjpScreen] Calling widget.onStartJourney callback...");
-      
-      widget.onStartJourney({
-        'pjp': pjp,
-        'displayName': result.displayName, // Clean name from controller
-        'destination': result.destination, // Precise LatLng from controller
-        'journeyMode': JourneyMode.planned,
-        'isSite': result.isSite,
-        
-        // Explicitly NULL entities as requested (Just the area to be visited)
-        'site': null,
-        'dealer': null,
-      });
-
-    } catch (e) {
-      // Dismiss loader on error
-      if (mounted) Navigator.pop(context);
-      
-      debugPrint("❌ [TechnicalPjpScreen] Error starting journey: $e");
-
-      String msg = e.toString();
-      // Remove "Exception: " prefix if present for cleaner UI
-      if (msg.startsWith('Exception: ')) {
-        msg = msg.substring(11);
-      }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg), 
-          backgroundColor: Colors.red
-        ),
-      );
-    }
+    await _journeyManager.dispatch(StartJourneyIntent(pjp));
   }
-  // 🔥 NEW: Manually End PJP
-// 🔥 NEW: Manually End PJP
+
+  // 🔥 Manually End PJP
   Future<void> _completePjp(Pjp pjp) async {
-    // 1. Confirm Dialog
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("End Visit Plan?"),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("End Visit Plan?", style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text(
           "This will mark the PJP as COMPLETED.\n\n"
           "• You cannot start this journey again today.\n"
@@ -284,12 +279,18 @@ void _showSingleCreateForm() {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text("CANCEL"),
+            child: Text("CANCEL", style: TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
             onPressed: () => Navigator.pop(context, true),
-            child: const Text("END VISIT", style: TextStyle(color: Colors.white)),
+            child: const Text(
+              "END VISIT",
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
           ),
         ],
       ),
@@ -297,7 +298,6 @@ void _showSingleCreateForm() {
 
     if (confirm != true) return;
 
-    // 2. Loading
     if (!mounted) return;
     showDialog(
       context: context,
@@ -305,63 +305,71 @@ void _showSingleCreateForm() {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    // 3. API Call
     try {
       await _apiService.updatePjp(pjp.id, {'status': 'COMPLETED'});
-      if (mounted) Navigator.pop(context); // Pop loader
-      
-      refreshPjpList(); // Refresh to remove/update item
-      
+      if (mounted) Navigator.pop(context);
+      refreshPjpList();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Visit Marked as Completed"), 
-          backgroundColor: Colors.green
+        SnackBar(
+          content: const Text("Visit Marked as Completed"),
+          backgroundColor: _accentGreen,
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } catch (e) {
       if (mounted) Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to end: $e"), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text("Failed to end: $e"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }
+
   @override
   Widget build(BuildContext context) {
     final flags = context.read<TechnicalFlags>();
     final displayDate = DateFormat('d MMMM, yyyy').format(_selectedDate);
-    final displayDay = DateFormat('EEEE').format(_selectedDate);
     final isToday = DateUtils.isSameDay(_selectedDate, DateTime.now());
 
     return Scaffold(
       backgroundColor: _bgLight,
-
       appBar: AppBar(
         backgroundColor: _bgLight,
         elevation: 0,
         automaticallyImplyLeading: false,
         centerTitle: false,
-        toolbarHeight: 70,
+        toolbarHeight: 80, // Taller AppBar for modern look
         title: Padding(
-          padding: const EdgeInsets.only(left: 8.0),
+          padding: const EdgeInsets.only(left: 8.0, top: 10),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                isToday ? "My Visits (Today)" : "Visits",
+                isToday ? "Today's Plan" : "Scheduled Visits",
                 style: TextStyle(
-                  color: _textDark,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: -0.5,
+                  color: _cardNavy,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900, // Black weight
+                  letterSpacing: -1.0,
                 ),
               ),
-              Text(
-                "$displayDay, $displayDate",
-                style: TextStyle(
-                  color: _textGrey,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Icon(Icons.calendar_today_rounded, size: 14, color: _textGrey),
+                  const SizedBox(width: 6),
+                  Text(
+                    displayDate,
+                    style: TextStyle(
+                      color: _textGrey,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -369,51 +377,53 @@ void _showSingleCreateForm() {
         actions: [
           if (flags.createPjp)
             Padding(
-              padding: const EdgeInsets.only(right: 20.0),
-              child: InkWell(
-                onTap: _showCreateOptions,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _cardNavy,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _cardNavy.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.add, color: Colors.white, size: 18),
-                      SizedBox(width: 4),
-                      Text(
-                        "Plan Visit",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
+              padding: const EdgeInsets.only(right: 20.0, top: 10),
+              child: Center(
+                child: InkWell(
+                  onTap: _showCreateOptions,
+                  borderRadius: BorderRadius.circular(30),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 12,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _cardNavy,
+                      borderRadius: BorderRadius.circular(30),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _cardNavy.withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.add_rounded, color: Colors.white, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          "New Plan",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
         ],
       ),
-
       body: Column(
         children: [
-          if (flags.visits) _buildDateSelector(),
           const SizedBox(height: 10),
-
+          if (flags.visits) _buildDateSelector(),
+          const SizedBox(height: 16),
           Expanded(
             child: flags.pjpjourney
                 ? RefreshIndicator(
@@ -429,24 +439,20 @@ void _showSingleCreateForm() {
                             child: CircularProgressIndicator(color: _cardNavy),
                           );
                         }
-
                         if (!snapshot.hasData || snapshot.data!.isEmpty) {
                           return _buildEmptyState();
                         }
-
                         final pjps = snapshot.data!
                             .where((p) => p.status != 'COMPLETED')
                             .toList();
-
                         if (pjps.isEmpty) {
                           return _buildEmptyState();
                         }
-
                         return ListView.separated(
-                          padding: const EdgeInsets.fromLTRB(20, 10, 20, 80),
+                          padding: const EdgeInsets.fromLTRB(20, 10, 20, 100),
                           itemCount: pjps.length,
                           separatorBuilder: (_, __) =>
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16), // More spacing
                           itemBuilder: (context, index) {
                             return _buildVisitCard(pjps[index]);
                           },
@@ -463,12 +469,12 @@ void _showSingleCreateForm() {
 
   Widget _buildDateSelector() {
     return Container(
-      height: 90,
+      height: 100,
       color: _bgLight,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: 30, // Show previous 2 days + next 27 days
+        itemCount: 30,
         itemBuilder: (context, index) {
           final date = DateTime.now()
               .subtract(const Duration(days: 2))
@@ -478,26 +484,28 @@ void _showSingleCreateForm() {
 
           return GestureDetector(
             onTap: () => _onDateSelected(date),
-            child: Container(
-              width: 60,
-              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 64,
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
               decoration: BoxDecoration(
                 color: isSelected ? _cardNavy : Colors.white,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(20),
                 border: isToday && !isSelected
-                    ? Border.all(color: _cardNavy.withOpacity(0.3), width: 1)
+                    ? Border.all(color: _cardNavy.withOpacity(0.3), width: 1.5)
                     : null,
+                // 3D Shadow for Selected Item
                 boxShadow: isSelected
                     ? [
                         BoxShadow(
                           color: _cardNavy.withOpacity(0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 4),
+                          blurRadius: 12,
+                          offset: const Offset(0, 8),
                         ),
                       ]
                     : [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
+                          color: Colors.black.withOpacity(0.04),
                           blurRadius: 4,
                           offset: const Offset(0, 2),
                         ),
@@ -510,26 +518,27 @@ void _showSingleCreateForm() {
                     DateFormat('E').format(date).toUpperCase(),
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w800,
                       color: isSelected
-                          ? Colors.white.withOpacity(0.7)
+                          ? Colors.white.withOpacity(0.6)
                           : _textGrey,
+                      letterSpacing: 0.5,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   Text(
                     DateFormat('d').format(date),
                     style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
                       color: isSelected ? Colors.white : _textDark,
                     ),
                   ),
                   if (isToday)
                     Container(
-                      margin: const EdgeInsets.only(top: 4),
-                      width: 4,
-                      height: 4,
+                      margin: const EdgeInsets.only(top: 6),
+                      width: 5,
+                      height: 5,
                       decoration: BoxDecoration(
                         color: isSelected ? _accentGreen : _cardNavy,
                         shape: BoxShape.circle,
@@ -544,212 +553,234 @@ void _showSingleCreateForm() {
     );
   }
 
-Widget _buildVisitCard(Pjp pjp) {
+  Widget _buildVisitCard(Pjp pjp) {
     final flags = context.read<TechnicalFlags>();
-    // 1. Status Logic
     final isPending = pjp.status.toUpperCase() == 'PENDING';
     final isInProgress = pjp.status.toUpperCase() == 'IN_PROGRESS';
 
+    // 🔥 STATE CHECK
+    final currentState = _journeyManager.value;
+    final bool isStarting =
+        (currentState is JourneyProcessing) && (currentState.pjpId == pjp.id);
+    final bool isBusy = currentState is JourneyProcessing;
+
     final statusColor = isPending
         ? Colors.orange
-        : (isInProgress ? Colors.blue : _accentGreen);
+        : (isInProgress ? _accentBlue : _accentGreen);
     final statusText = isPending
         ? "PENDING"
         : (isInProgress ? "IN PROGRESS" : "APPROVED");
 
     String displayName = "Planned Area Visit";
-
     try {
       final parts = pjp.areaToBeVisited.split('|');
       if (parts.isNotEmpty && parts.first.trim().isNotEmpty) {
-        displayName = parts.first.trim(); // ✅ AREA NAME
+        displayName = parts.first.trim();
       }
     } catch (_) {}
 
-    // 3. Address Resolution
     String displayAddress = "";
     try {
       displayAddress = pjp.areaToBeVisited.split('|').first;
     } catch (_) {}
 
     return Slidable(
-      enabled: flags.pjpjourney && !isPending,
-      
-      // 🟢 SWIPE RIGHT -> START/RESUME JOURNEY
+      enabled: !isBusy && flags.pjpjourney && !isPending,
       startActionPane: ActionPane(
-        motion: const StretchMotion(),
+        motion: const BehindMotion(), // Smoother motion
         children: [
           SlidableAction(
             onPressed: (_) => _startJourney(pjp),
-            backgroundColor: _accentGreen,
-            foregroundColor: Colors.white,
-            icon: Icons.navigation,
-            label: isInProgress ? 'RESUME' : 'START',
-            borderRadius: const BorderRadius.horizontal(
-              left: Radius.circular(16),
-            ),
+            backgroundColor: _bgLight, // Blend with bg
+            foregroundColor: _accentGreen,
+            icon: Icons.navigation_rounded,
+            label: isInProgress ? 'Resume' : 'Start',
+            borderRadius: BorderRadius.circular(20),
           ),
         ],
       ),
-
-      // 🔴 SWIPE LEFT -> END PJP (The New Feature)
       endActionPane: ActionPane(
-        motion: const StretchMotion(),
+        motion: const BehindMotion(),
         children: [
           SlidableAction(
-            onPressed: (_) => _completePjp(pjp),
-            backgroundColor: Colors.red,
-            foregroundColor: Colors.white,
-            icon: Icons.check_circle_outline,
-            label: 'END PJP',
-            borderRadius: const BorderRadius.horizontal(
-              right: Radius.circular(16),
-            ),
+            onPressed: (_) => isBusy ? null : _completePjp(pjp),
+            backgroundColor: _bgLight,
+            foregroundColor: Colors.red,
+            icon: Icons.stop_circle_outlined,
+            label: 'End',
+            borderRadius: BorderRadius.circular(20),
           ),
         ],
       ),
-
+      // THE 3D CARD
       child: Container(
         decoration: BoxDecoration(
           color: _surfaceWhite,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
+          // ✨ 3D SHADOW EFFECT
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withOpacity(0.08),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
+              color: _cardNavy.withOpacity(0.08),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+            BoxShadow(
+              color: _cardNavy.withOpacity(0.03),
+              blurRadius: 5,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            // Tapping also starts the journey
-            onTap: () => flags.journey ? () => _startJourney(pjp) : null,
-            borderRadius: BorderRadius.circular(20),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    height: 48,
-                    width: 48,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(
-                      Icons.location_city_rounded,
-                      color: Color(0xFF2563EB),
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: (flags.journey && !isBusy)
+                    ? () => _startJourney(pjp)
+                    : null,
+                borderRadius: BorderRadius.circular(24),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Opacity(
+                    opacity: isStarting ? 0.5 : 1.0,
+                    child: Row(
                       children: [
+                        // ✨ LEADING ICON SQUIRCLE
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          margin: const EdgeInsets.only(bottom: 4),
+                          height: 56,
+                          width: 56,
                           decoration: BoxDecoration(
-                            color: statusColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4),
+                            color: isInProgress
+                                ? _accentBlue.withOpacity(0.1)
+                                : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(18),
                           ),
-                          child: Text(
-                            statusText,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: statusColor,
-                            ),
+                          child: Icon(
+                            isInProgress
+                                ? Icons.near_me_rounded
+                                : Icons.location_city_rounded,
+                            color: isInProgress ? _accentBlue : _cardNavy,
+                            size: 26,
                           ),
                         ),
-
-                        Text(
-                          displayName,
-                          style: TextStyle(
-                            color: _textDark,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-
-                        Text(
-                          displayAddress,
-                          style: TextStyle(
-                            color: _textGrey,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 12,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.location_on_outlined,
-                              color: _textGrey,
-                              size: 14,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                displayAddress,
+                        const SizedBox(width: 18),
+                        
+                        // ✨ TEXT CONTENT
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // STATUS PILL
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                margin: const EdgeInsets.only(bottom: 6),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  statusText,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900, // Chunky
+                                    color: statusColor,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                displayName,
                                 style: TextStyle(
-                                  color: _textGrey,
-                                  fontSize: 13,
+                                  color: _textDark,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 6),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_on,
+                                    color: _textGrey,
+                                    size: 14,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      displayAddress,
+                                      style: TextStyle(
+                                        color: _textGrey,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
+                        
+                        // ✨ TRAILING ACTION
+                        if (!isPending)
+                          Container(
+                            height: 40,
+                            width: 40,
+                            decoration: BoxDecoration(
+                              color: _bgLight,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.arrow_forward_rounded,
+                              color: _cardNavy,
+                              size: 20,
+                            ),
+                          )
+                        else
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Icon(Icons.lock_clock, size: 16, color: _textGrey),
+                          ),
                       ],
                     ),
                   ),
-
-                  // Updated Visual Cue: Small chevrons to show it slides both ways
-                  if (!isPending)
-                    Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.chevron_left, color: Colors.grey[300], size: 20),
-                        Icon(Icons.chevron_right, color: Colors.grey[300], size: 20),
-                      ],
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        "WAIT",
-                        style: TextStyle(
-                          color: Colors.grey,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                ],
+                ),
               ),
             ),
-          ),
+
+            // 🔥 SPINNER
+            if (isStarting)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: _accentGreen,
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -762,54 +793,56 @@ Widget _buildVisitCard(Pjp pjp) {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(32),
             decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  blurRadius: 20,
-                  offset: const Offset(0, 10),
+                  color: _cardNavy.withOpacity(0.1),
+                  blurRadius: 30,
+                  offset: const Offset(0, 15),
                 ),
               ],
             ),
             child: Icon(
-              Icons.calendar_today_rounded,
-              size: 40,
+              Icons.map_outlined,
+              size: 48,
               color: _textGrey.withOpacity(0.5),
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 32),
           Text(
-            "No Visits Planned",
+            "No Plans for Today",
             style: TextStyle(
               color: _textDark,
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              fontSize: 20,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            "Select another date above.",
-            style: TextStyle(color: _textGrey, fontSize: 14),
+            "Your schedule is clear.",
+            style: TextStyle(color: _textGrey, fontSize: 15),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 32),
           if (flags.createPjp)
-            OutlinedButton.icon(
+            ElevatedButton.icon(
               onPressed: _showCreateOptions,
-              icon: const Icon(Icons.add),
-              label: const Text("Create Plan"),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _cardNavy,
-                side: BorderSide(color: _cardNavy),
+              icon: const Icon(Icons.add_rounded),
+              label: const Text("Create New Plan"),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _cardNavy,
+                foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(30),
                 ),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
+                  horizontal: 32,
+                  vertical: 16,
                 ),
+                elevation: 8,
+                shadowColor: _cardNavy.withOpacity(0.4),
               ),
             ),
         ],

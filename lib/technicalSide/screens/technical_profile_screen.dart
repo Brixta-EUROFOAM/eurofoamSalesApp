@@ -4,21 +4,26 @@ import 'package:salesmanapp/models/employee_model.dart';
 import 'package:flutter/material.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/api/auth_service.dart';
-import 'package:intl/intl.dart'; 
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/widgets/theme_provider.dart';
-import 'package:url_launcher/url_launcher.dart'; // ✅ Added for launching the form
+import 'package:url_launcher/url_launcher.dart';
+
+// local drift db
+import 'package:drift_db_viewer/drift_db_viewer.dart';
+import 'package:salesmanapp/database/app_database.dart';
+import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 
 // --- Helper Data Class for Stats ---
 class TechnicalProfileStats {
-  final int activeSites;
-  final int pendingTvrs;
+  final int tvrsThisMonth;
+  final int tvrsTotal;
   final int upcomingVisits;
   final int completedTasks;
 
   TechnicalProfileStats({
-    required this.activeSites,
-    required this.pendingTvrs,
+    required this.tvrsThisMonth,
+    required this.tvrsTotal,
     required this.upcomingVisits,
     required this.completedTasks,
   });
@@ -36,20 +41,20 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
   final ApiService _apiService = ApiService();
   late Future<TechnicalProfileStats> _statsFuture;
 
-  // --- FINTECH THEME PALETTE ---
-  final Color _bgLight       = const Color(0xFFF3F4F6); // Corporate Light Grey
-  final Color _cardNavy      = const Color(0xFF0F172A); // Deep Navy
-  final Color _textDark      = const Color(0xFF111827); // Almost Black
-  final Color _textGrey      = const Color(0xFF6B7280); // Subtitles
-  final Color _surfaceWhite  = Colors.white;
-  final Color _dangerRed     = const Color(0xFFEF4444);
+  // --- 🎨 PREMIUM THEME PALETTE ---
+  final Color _bgLight = const Color(0xFFF8FAFC); // Slate 50
+  final Color _cardNavy = const Color(0xFF0F172A); // Deep Navy
+  final Color _textDark = const Color(0xFF1E293B); // Slate 800
+  final Color _textGrey = const Color(0xFF64748B); // Slate 500
+  final Color _surfaceWhite = Colors.white;
+  final Color _dangerRed = const Color(0xFFEF4444);
 
   @override
   void initState() {
     super.initState();
     _statsFuture = _fetchProfileStats();
   }
-  
+
   Future<void> _refreshStats() async {
     if (mounted) {
       setState(() {
@@ -66,51 +71,63 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
     final today = DateTime.now();
     final todayString = DateFormat('yyyy-MM-dd').format(today);
 
+    final startOfMonth = DateTime(today.year, today.month, 1);
+    final endOfMonth = DateTime(today.year, today.month + 1, 0);
+    final startMonthStr = DateFormat('yyyy-MM-dd').format(startOfMonth);
+    final endMonthStr = DateFormat('yyyy-MM-dd').format(endOfMonth);
+
     try {
       final List<dynamic> results = await Future.wait([
-        Future.value([]), // 1. Active Sites Placeholder
-        _apiService.fetchTvrsForUser(uid, startDate: todayString, endDate: todayString), // 2. TVRs
-        _apiService.fetchPjpsForUser(uid, status: 'APPROVED', startDate: todayString, endDate: todayString), // 3. PJPs
-        _apiService.fetchDailyTasksForUser(uid, status: 'Completed'), // 4. Tasks
+        Future.value([]),
+        // 1 TVRs THIS MONTH
+        _apiService.fetchTvrsForUser(uid, startDate: startMonthStr, endDate: endMonthStr),
+        // 2 TVRs ALL TIME
+        _apiService.fetchTvrsForUser(uid, limit: 10000),
+        // 3 PJPs
+        _apiService.fetchPjpsForUser(uid, status: 'APPROVED', startDate: todayString, endDate: todayString),
+        // 4 Tasks
+        _apiService.fetchDailyTasksForUser(uid, status: 'Completed'),
       ]);
 
-      final tvrsList = (results[1] is List) ? results[1] as List : [];
-      final pjpList = (results[2] is List) ? results[2] as List : [];
-      final tasksList = (results[3] is List) ? results[3] as List : [];
+      final tvrsThisMonth = results[1] as List;
+      final tvrsTotal = results[2] as List;
+      final pjpList = (results[3] is List) ? results[3] as List : [];
+      final tasksList = (results[4] is List) ? results[4] as List : [];
 
       return TechnicalProfileStats(
-        activeSites: 12, // Dummy data for now
-        pendingTvrs: tvrsList.length, 
+        tvrsThisMonth: tvrsThisMonth.length,
+        tvrsTotal: tvrsTotal.length,
         upcomingVisits: pjpList.length,
         completedTasks: tasksList.length,
       );
     } catch (e) {
-      return TechnicalProfileStats(activeSites: 0, pendingTvrs: 0, upcomingVisits: 0, completedTasks: 0);
+      debugPrint("Error fetching stats: $e");
+      return TechnicalProfileStats(
+        tvrsThisMonth: 0,
+        tvrsTotal: 0,
+        upcomingVisits: 0,
+        completedTasks: 0,
+      );
     }
   }
 
   String getInitials() {
-    String firstNameInitial = widget.employee.firstName?.isNotEmpty == true
-        ? widget.employee.firstName![0]
-        : '';
-    String lastNameInitial = widget.employee.lastName?.isNotEmpty == true
-        ? widget.employee.lastName![0]
-        : '';
+    String firstNameInitial = widget.employee.firstName?.isNotEmpty == true ? widget.employee.firstName![0] : '';
+    String lastNameInitial = widget.employee.lastName?.isNotEmpty == true ? widget.employee.lastName![0] : '';
     return (firstNameInitial + lastNameInitial).toUpperCase();
   }
 
-  // ✅ Function to open the Google Form
   Future<void> _launchDeleteAccountUrl() async {
-    final Uri url = Uri.parse('https://docs.google.com/forms/d/e/1FAIpQLSdq-4YaYoEckyD7H_fYl_L-ordLQIdC7RSiqmQd9w054G2Zkg/viewform?usp=publish-editor');
+    final Uri url = Uri.parse(
+      'https://docs.google.com/forms/d/e/1FAIpQLSdq-4YaYoEckyD7H_fYl_L-ordLQIdC7RSiqmQd9w054G2Zkg/viewform?usp=publish-editor',
+    );
     try {
       if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
         throw Exception('Could not launch url');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open the form. Please contact support.')),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open the form. Please contact support.')));
       }
     }
   }
@@ -118,24 +135,18 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    
+    final flags = context.read<TechnicalFlags>();
+
     return Scaffold(
       backgroundColor: _bgLight,
-      // --- CLEAN APP BAR ---
       appBar: AppBar(
         backgroundColor: _bgLight,
         elevation: 0,
         centerTitle: true,
-        automaticallyImplyLeading: false, // Clean look
-        leadingWidth: 64,
+        automaticallyImplyLeading: false,
         title: Text(
           'PROFILE',
-          style: TextStyle(
-            color: _textDark,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
-          ),
+          style: TextStyle(color: _textDark, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 1.5),
         ),
       ),
       body: FutureBuilder<TechnicalProfileStats>(
@@ -144,128 +155,83 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
           if (snapshot.connectionState == ConnectionState.waiting && snapshot.data == null) {
             return Center(child: CircularProgressIndicator(color: _cardNavy));
           }
-          
-          final stats = snapshot.data ?? TechnicalProfileStats(
-            activeSites: 0, pendingTvrs: 0, upcomingVisits: 0, completedTasks: 0
-          );
+
+          final stats = snapshot.data ?? TechnicalProfileStats(tvrsThisMonth: 0, tvrsTotal: 0, upcomingVisits: 0, completedTasks: 0);
 
           return RefreshIndicator(
             onRefresh: _refreshStats,
-            color: _cardNavy, 
-            backgroundColor: Colors.white, 
+            color: _cardNavy,
+            backgroundColor: Colors.white,
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 120.0),
               children: [
-                
-                // --- 1. Clean Profile Header ---
+                // --- 1. PROFILE HEADER ---
                 _buildFintechProfileHeader(
                   initials: getInitials(),
                   displayName: widget.employee.displayName,
                   email: widget.employee.email ?? 'No email',
-                  role: "Technical Sales Employee",
+                  role: "Technical Sales",
                 ),
 
                 const SizedBox(height: 32),
 
-                // --- 2. OVERVIEW STATS (White Cards) ---
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      "Overview Stats",
-                      style: TextStyle(color: _textDark, fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    Icon(Icons.bar_chart, color: _textGrey, size: 20),
-                  ],
-                ),
+                // --- 2. OVERVIEW STATS ---
+                Text("Overview", style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
-                
-                Column(
+
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        // _buildStatCard(
-                        //   title: "Active Sites",
-                        //   value: stats.activeSites.toString(),
-                        //   icon: Icons.apartment,
-                        //   iconColor: Colors.blueAccent,
-                        //   iconBg: const Color(0xFFEFF6FF),
-                        // ),
-                        // const SizedBox(width: 16),
-                        // _buildStatCard(
-                        //   title: "Visits Today",
-                        //   value: stats.upcomingVisits.toString(),
-                        //   icon: Icons.map,
-                        //   iconColor: Colors.orange,
-                        //   iconBg: const Color(0xFFFFF7ED),
-                        // ),
-                      ],
+                    _buildStatCard(
+                      title: "TVRs",
+                      value: stats.tvrsThisMonth.toString(),
+                      subtitle: "This month",
+                      footer: "Lifetime: ${stats.tvrsTotal}",
+                      icon: Icons.assignment_turned_in_rounded,
+                      iconColor: Colors.purple,
+                      iconBg: const Color(0xFFFAF5FF),
                     ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        // _buildStatCard(
-                        //   title: "TVRs Done",
-                        //   value: stats.pendingTvrs.toString(),
-                        //   icon: Icons.assignment_turned_in,
-                        //   iconColor: Colors.purple,
-                        //   iconBg: const Color(0xFFFAF5FF),
-                        // ),
-                        // const SizedBox(width: 16),
-                        // _buildStatCard(
-                        //   title: "Tasks Done",
-                        //   value: stats.completedTasks.toString(),
-                        //   icon: Icons.check_circle,
-                        //   iconColor: Colors.green,
-                        //   iconBg: const Color(0xFFF0FDF4),
-                        // ),
-                      ],
-                    ),
+                    const SizedBox(width: 16),
+                    // _buildStatCard(
+                    //   title: "Visits",
+                    //   value: stats.upcomingVisits.toString(),
+                    //   subtitle: "Scheduled Today",
+                    //   icon: Icons.calendar_today_rounded,
+                    //   iconColor: Colors.blue,
+                    //   iconBg: const Color(0xFFEFF6FF),
+                    // ),
                   ],
                 ),
 
                 const SizedBox(height: 32),
 
-                // --- 3. Settings Section ---
-                Text(
-                  "App Settings",
-                  style: TextStyle(color: _textDark, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                // --- 3. SETTINGS ---
+                Text("Preferences", style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
 
                 Container(
                   padding: const EdgeInsets.all(20.0),
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(24),
                     boxShadow: [
-                       BoxShadow(color: Colors.grey.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 5))
+                      BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8)),
                     ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Theme Preference', 
-                        style: TextStyle(color: _textGrey, fontWeight: FontWeight.w600, fontSize: 14)
-                      ),
+                      Text('App Theme', style: TextStyle(color: _textGrey, fontWeight: FontWeight.w600, fontSize: 13)),
                       const SizedBox(height: 16),
-                      
-                      // Segmented Button Styled for Light Theme
                       SizedBox(
                         width: double.infinity,
                         child: SegmentedButton<ThemeMode>(
                           style: ButtonStyle(
                             backgroundColor: MaterialStateProperty.resolveWith<Color>((states) {
-                              if (states.contains(MaterialState.selected)) {
-                                return _cardNavy;
-                              }
+                              if (states.contains(MaterialState.selected)) return _cardNavy;
                               return _bgLight;
                             }),
                             foregroundColor: MaterialStateProperty.resolveWith<Color>((states) {
-                              if (states.contains(MaterialState.selected)) {
-                                return Colors.white;
-                              }
+                              if (states.contains(MaterialState.selected)) return Colors.white;
                               return _textGrey;
                             }),
                             side: MaterialStateProperty.all(BorderSide.none),
@@ -277,7 +243,7 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                             ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined, size: 18)),
                             ButtonSegment(value: ThemeMode.system, label: Text('Auto'), icon: Icon(Icons.phone_android_outlined, size: 18)),
                           ],
-                          selected: { themeProvider.themeMode },
+                          selected: {themeProvider.themeMode},
                           onSelectionChanged: (Set<ThemeMode> newSelection) {
                             themeProvider.setThemeMode(newSelection.first);
                           },
@@ -286,42 +252,55 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                     ],
                   ),
                 ),
-                
-                const SizedBox(height: 32),
 
-                // --- 4. ✅ Account Actions (Dropdown) ---
-                Text(
-                  "Account Management",
-                  style: TextStyle(color: _textDark, fontSize: 18, fontWeight: FontWeight.bold),
-                ),
+                //  ----- DEBUG TOOLS -----
+                if (flags.showDbViewer) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: _surfaceWhite,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.purple.withOpacity(0.2)),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                      leading: const Icon(Icons.storage, color: Colors.purple),
+                      title: const Text("Local Database", style: TextStyle(color: Colors.purple, fontWeight: FontWeight.w600)),
+                      trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.purple),
+                      onTap: () {
+                        final db = AppDatabase.instance;
+                        Navigator.of(context).push(MaterialPageRoute(builder: (context) => DriftDbViewer(db)));
+                      },
+                    ),
+                  ),
+                ],
+
+                // --- 4. ACCOUNT ACTIONS ---
+                const SizedBox(height: 32),
+                Text("Account", style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 16),
 
                 Container(
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                       BoxShadow(color: Colors.grey.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 5))
-                    ],
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8))],
                   ),
                   child: Theme(
-                    // Remove internal divider line
                     data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
                     child: ExpansionTile(
-                      leading: Icon(Icons.shield_outlined, color: _cardNavy),
-                      title: Text(
-                        'Privacy & Security', 
-                        style: TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 15)
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: _cardNavy.withOpacity(0.05), borderRadius: BorderRadius.circular(10)),
+                        child: Icon(Icons.shield_outlined, color: _cardNavy, size: 20),
                       ),
+                      title: Text('Privacy & Security', style: TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 15)),
                       childrenPadding: const EdgeInsets.only(bottom: 12),
                       children: [
                         ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 0),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 24),
                           leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                          title: const Text(
-                            "Request Account Deletion",
-                            style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600, fontSize: 14),
-                          ),
+                          title: const Text("Request Account Deletion", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600, fontSize: 14)),
                           trailing: const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
                           onTap: _launchDeleteAccountUrl,
                         ),
@@ -330,7 +309,6 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                   ),
                 ),
 
-                // --- 5. Logout Button ---
                 const SizedBox(height: 32),
                 _LogoutButton(color: _dangerRed),
               ],
@@ -356,46 +334,31 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 4),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 15, offset: const Offset(0, 8))
-            ]
+            boxShadow: [BoxShadow(color: _cardNavy.withOpacity(0.15), blurRadius: 20, offset: const Offset(0, 10))],
           ),
           child: CircleAvatar(
-            radius: 45,
+            radius: 50,
             backgroundColor: _cardNavy,
             child: Text(
               initials,
-              style: const TextStyle(fontSize: 30, color: Colors.white, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 32, color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1),
             ),
           ),
         ),
-        const SizedBox(height: 16),
-        Text(
-          displayName,
-          style: TextStyle(
-            fontSize: 22, 
-            fontWeight: FontWeight.bold, 
-            color: _textDark,
-            letterSpacing: 0.5,
-          ),
-        ),
+        const SizedBox(height: 20),
+        Text(displayName, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: _textDark, letterSpacing: -0.5)),
         const SizedBox(height: 4),
-        Text(email, style: TextStyle(color: _textGrey, fontSize: 14)),
-        const SizedBox(height: 12),
+        Text(email, style: TextStyle(color: _textGrey, fontSize: 14, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 16),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: _cardNavy.withOpacity(0.05),
+            color: _cardNavy.withOpacity(0.08),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
-            role.toUpperCase(), 
-            style: TextStyle(
-              color: _cardNavy, 
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
-              letterSpacing: 0.5
-            )
+            role.toUpperCase(),
+            style: TextStyle(color: _cardNavy, fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1),
           ),
         ),
       ],
@@ -405,49 +368,36 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
   Widget _buildStatCard({
     required String title,
     required String value,
+    String? subtitle,
+    String? footer,
     required IconData icon,
     required Color iconColor,
     required Color iconBg,
   }) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: _surfaceWhite,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(color: Colors.grey.withOpacity(0.08), blurRadius: 15, offset: const Offset(0, 5))
-          ],
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 15, offset: const Offset(0, 8))],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: iconBg,
-                borderRadius: BorderRadius.circular(12),
-              ),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(14)),
               child: Icon(icon, color: iconColor, size: 24),
             ),
-            const SizedBox(height: 16),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 24, 
-                fontWeight: FontWeight.bold, 
-                color: _textDark
-              ),
-            ),
+            const SizedBox(height: 20),
+            Text(value, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: _textDark, letterSpacing: -1)),
             const SizedBox(height: 4),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 13, 
-                fontWeight: FontWeight.w500, 
-                color: _textGrey
-              ),
-            ),
+            Text(subtitle != null ? "$title\n$subtitle" : title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _textGrey, height: 1.2)),
+            if (footer != null) ...[
+              const SizedBox(height: 8),
+              Text(footer, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _textGrey.withOpacity(0.7))),
+            ],
           ],
         ),
       ),
@@ -463,10 +413,7 @@ class _LogoutButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return ElevatedButton.icon(
       icon: const Icon(Icons.logout_rounded, size: 20),
-      label: const Text(
-        'Log Out',
-        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-      ),
+      label: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
       onPressed: () async {
         await AuthService().logout();
         if (context.mounted) {
@@ -475,14 +422,10 @@ class _LogoutButton extends StatelessWidget {
       },
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
-        foregroundColor: color, // Red Text
+        foregroundColor: color,
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: color.withOpacity(0.3), width: 1),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: color.withOpacity(0.2))),
         padding: const EdgeInsets.symmetric(vertical: 18),
-        shadowColor: Colors.transparent,
       ),
     );
   }

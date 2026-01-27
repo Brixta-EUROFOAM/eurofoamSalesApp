@@ -8,8 +8,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // ⚡ ADDED
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:camera/camera.dart'; // CAMERA BY NATIVE DART
+import 'package:geocoding/geocoding.dart'; //  Geocoding location name in checkIn
 
 // --- FORMS IMPORTS ---
 import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
@@ -21,7 +22,7 @@ import 'package:salesmanapp/technicalSide/screens/forms/add_site_form.dart';
 import 'package:salesmanapp/technicalSide/screens/all_masons_screen.dart';
 
 // ---------------------------------------------------------------------------
-// 🟢 INTERNAL CAMERA SCREEN (Copy to bottom of technical_dashboard_screen.dart)
+// 🟢 INTERNAL CAMERA SCREEN
 // ---------------------------------------------------------------------------
 class _InlineCameraScreen extends StatefulWidget {
   const _InlineCameraScreen();
@@ -35,7 +36,6 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
   Future<void>? _initializeControllerFuture;
   bool _isTakingPicture = false;
 
-  // ⚡ NEW: Store list of cameras to enable switching
   List<CameraDescription> _cameras = [];
   int _selectedCameraIdx = 0;
 
@@ -45,29 +45,23 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
     _setupCameras();
   }
 
-  // 1. One-time setup: Get all cameras and find the selfie one
   Future<void> _setupCameras() async {
     try {
       _cameras = await availableCameras();
       if (_cameras.isEmpty) return;
 
-      // Find the index of the front camera, or default to 0 (back)
       _selectedCameraIdx = _cameras.indexWhere(
         (c) => c.lensDirection == CameraLensDirection.front,
       );
 
       if (_selectedCameraIdx == -1) _selectedCameraIdx = 0;
-
-      // Initialize the selected camera
       _initCamera(_cameras[_selectedCameraIdx]);
     } catch (e) {
       debugPrint("Camera setup error: $e");
     }
   }
 
-  // 2. Init specific camera (Re-used when flipping)
   Future<void> _initCamera(CameraDescription cameraDescription) async {
-    // If a controller exists, dispose it cleanly before creating a new one
     if (_controller != null) {
       await _controller!.dispose();
     }
@@ -83,10 +77,8 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
     });
   }
 
-  // 3. The Flip Logic
   void _toggleCamera() {
     if (_cameras.length < 2) return;
-
     final newIndex = (_selectedCameraIdx + 1) % _cameras.length;
     _selectedCameraIdx = newIndex;
     _initCamera(_cameras[_selectedCameraIdx]);
@@ -107,11 +99,8 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
 
     try {
       setState(() => _isTakingPicture = true);
-      // Optional: Turn flash off to avoid crashes on some low-end devices
       await _controller!.setFlashMode(FlashMode.off);
-
       final image = await _controller!.takePicture();
-
       if (!mounted) return;
       Navigator.pop(context, image.path);
     } catch (e) {
@@ -132,21 +121,16 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
               _controller != null) {
             return Stack(
               children: [
-                // 1. Camera Preview
                 Center(child: CameraPreview(_controller!)),
-
-                // 2. Controls Overlay
                 SafeArea(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // --- TOP BAR: Close & Flip ---
                       Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            // Close Button
                             IconButton(
                               icon: const Icon(
                                 Icons.close,
@@ -155,8 +139,6 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
                               ),
                               onPressed: () => Navigator.pop(context),
                             ),
-
-                            // Flip Button (Hidden if only 1 camera exists)
                             if (_cameras.length > 1)
                               IconButton(
                                 icon: const Icon(
@@ -169,10 +151,8 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
                           ],
                         ),
                       ),
-
-                      // --- BOTTOM BAR: Shutter Button ---
                       Padding(
-                        padding: const EdgeInsets.only(bottom: 30),
+                        padding: const EdgeInsets.only(bottom: 40),
                         child: InkWell(
                           onTap: _takePicture,
                           child: Container(
@@ -217,7 +197,7 @@ class TechnicalDashboardScreen extends StatefulWidget {
 class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     with WidgetsBindingObserver {
   final ApiService _apiService = ApiService();
-  final ImagePicker _picker = ImagePicker(); // ⚡ Instantiated once
+  final ImagePicker _picker = ImagePicker();
 
   bool _attendanceEnabled(BuildContext context) {
     final flags = context.read<TechnicalFlags>();
@@ -230,15 +210,15 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   bool _isDayComplete = false;
 
   DateTime? _lastCheckInTime;
-
   String _greeting = 'Good Morning';
 
-  // --- FINTECH THEME PALETTE ---
-  final Color _bgLight = const Color(0xFFF3F4F6);
-  final Color _cardNavy = const Color(0xFF0F172A);
-  final Color _textDark = const Color(0xFF111827);
-  final Color _textGrey = const Color(0xFF6B7280);
+  // --- 🎨 PREMIUM THEME PALETTE ---
+  final Color _bgLight = const Color(0xFFF8FAFC); // Slate 50
+  final Color _cardNavy = const Color(0xFF0F172A); // Deep Navy
+  final Color _textDark = const Color(0xFF1E293B); // Slate 800
+  final Color _textGrey = const Color(0xFF64748B); // Slate 500
   final Color _surfaceWhite = Colors.white;
+  //final Color _accentGreen = const Color(0xFF10B981); // Emerald
 
   @override
   void initState() {
@@ -246,23 +226,17 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     WidgetsBinding.instance.addObserver(this);
     _setGreeting();
     refreshData();
-
-    // 🚀 PROCESS DEATH RECOVERY
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _attemptAttendanceRecovery();
     });
   }
 
-  // 🛡️ RECOVERY LOGIC
   Future<void> _attemptAttendanceRecovery() async {
     if (!Platform.isAndroid) return;
-
     final LostDataResponse response = await _picker.retrieveLostData();
     if (response.isEmpty || response.file == null) return;
 
     final File recoveredImage = File(response.file!.path);
-
-    // Check what we were doing before the crash
     final prefs = await SharedPreferences.getInstance();
     final String? pendingAction = prefs.getString('attendance_pending_action');
 
@@ -273,23 +247,9 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       _toast('Recovering Check-Out...');
       _processCheckOut(recoveredImage);
     }
-
-    // Clear the flag
     await prefs.remove('attendance_pending_action');
   }
 
-  // Helper to set the flag before opening camera
-  // Future<void> _setPendingAction(String action) async {
-  //   final prefs = await SharedPreferences.getInstance();
-  //   await prefs.setString('attendance_pending_action', action);
-  // }
-
-  // Future<void> _clearPendingAction() async {
-  //   final prefs = await SharedPreferences.getInstance();
-  //   await prefs.remove('attendance_pending_action');
-  // }
-
-  // Simple refresh to update greeting or check status if needed
   void refreshData() {
     if (mounted) {
       setState(() {
@@ -326,12 +286,13 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
 
       if (mounted) {
         setState(() {
-          // 1. If checkOutTime exists, they are done for the day
+          // If checkOutTime is NOT null, the user has already finished their shift.
           if (att.checkOutTime != null) {
-            _isCheckedIn = false;
-            _isDayComplete = true;
+            _isCheckedIn =
+                false; // This switches the UI from "Checked In" to "Ready to Start"
+            _isDayComplete = true; // This prevents them from checking in again
           } else {
-            // 2. If no checkOutTime, they are currently checked in
+            // User is currently in the middle of a shift
             _isCheckedIn = true;
             _isDayComplete = false;
           }
@@ -343,7 +304,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         if (mounted) {
           setState(() {
             _isCheckedIn = false;
-            _isDayComplete = false; // New day, or no record yet
+            _isDayComplete = false;
           });
         }
       }
@@ -361,26 +322,19 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     }
   }
 
-  // Future<File?> _captureImage() async {
-  //   // ⚡ KEY: imageQuality 50 to save RAM
-  //   final XFile? image = await _picker.pickImage(
-  //     source: ImageSource.camera,
-  //     imageQuality: 50,
-  //   );
-  //   return image == null ? null : File(image.path);
-  // }
-
-  // ... (Dialogs and Geolocator Helpers remain the same) ...
   Future<bool> _showLocationDisclosureDialog() async {
     return await showDialog(
           context: context,
           barrierDismissible: false,
           builder: (context) => AlertDialog(
-            title: Row(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Row(
               children: [
-                Icon(Icons.location_on, color: _cardNavy),
-                const SizedBox(width: 8),
-                const Text("Location Access"),
+                Icon(Icons.location_on),
+                SizedBox(width: 8),
+                Text("Location Access"),
               ],
             ),
             content: const Text(
@@ -391,7 +345,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text("DENY", style: TextStyle(color: Colors.grey)),
+                child: const Text("DENY"),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(backgroundColor: _cardNavy),
@@ -413,7 +367,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       builder: (ctx) => AlertDialog(
         title: const Text("Permission Required"),
         content: const Text(
-          "Location permission is permanently denied. Please enable it in App Settings to mark attendance.",
+          "Location permission is permanently denied. Enable it in settings.",
         ),
         actions: [
           TextButton(
@@ -425,10 +379,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
               Navigator.pop(ctx);
               Geolocator.openAppSettings();
             },
-            child: const Text(
-              "OPEN SETTINGS",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            child: const Text("SETTINGS"),
           ),
         ],
       ),
@@ -436,28 +387,20 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   }
 
   Future<Position?> _getCurrentPosition() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      _toast(
-        "Location services are disabled. Please enable GPS.",
-        isError: true,
-      );
+      _toast("Location services are disabled.", isError: true);
       return null;
     }
 
-    permission = await Geolocator.checkPermission();
+    LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       if (!mounted) return null;
       final bool userAgreed = await _showLocationDisclosureDialog();
-
       if (!userAgreed) {
-        _toast("Location is required for Attendance.", isError: true);
+        _toast("Location is required.", isError: true);
         return null;
       }
-
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         _toast("Location permission denied.", isError: true);
@@ -480,61 +423,57 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     }
   }
 
-  // --- 🟢 CHECK IN FLOW ---
+  Future<String> _resolveAddress(double lat, double lng) async {
+    try {
+      List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
+      if (placemarks.isNotEmpty) {
+        Placemark place = placemarks[0];
+        return "${place.street}, ${place.subLocality}, ${place.locality}";
+      }
+    } catch (e) {
+      debugPrint("Geocoding failed: $e");
+    }
+    return "Lat: $lat, Lng: $lng";
+  }
 
-  // 1. Trigger (User Click)
   Future<void> _handleCheckIn() async {
-    if (_isDayComplete || _isCheckedIn) return;
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-
-    // 🛑 PRE-FLIGHT CHECK 1: Already Checked In?
+    if (_isDayComplete) {
+      _toast("Attendance for today is already completed.", isError: true);
+      return;
+    }
     if (_isCheckedIn) {
       _toast("You are already checked in.", isError: true);
       return;
     }
 
-    // 🛑 PRE-FLIGHT CHECK 2: Already Finished Day?
-    // We call the API one last time to be absolutely sure before opening camera
+    ScaffoldMessenger.of(context).removeCurrentSnackBar();
     setState(() => _isCheckingIn = true);
     await _checkAttendanceStatus();
     setState(() => _isCheckingIn = false);
 
     if (_isDayComplete) {
       _toast(
-        "You have already completed your attendance for today.",
+        "Syncing: You have already completed your attendance for today.",
         isError: true,
       );
       return;
     }
 
-    if (_isCheckedIn) {
-      _toast("Syncing: You are already checked in.");
-      return;
-    }
-
-    // 🟢 1. Open Inline Camera (App stays alive)
     final String? imagePath = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
     );
 
-    // 2. Handle Cancellation
     if (imagePath == null) return;
-
-    // 3. Process immediately (No need for complicated recovery logic)
     await _processCheckIn(File(imagePath));
   }
 
-  // 2. Processing (Called by Normal Flow OR Recovery Flow)
   Future<void> _processCheckIn(File imageFile) async {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).removeCurrentSnackBar();
     setState(() => _isCheckingIn = true);
 
     try {
-      debugPrint("⚡ [Parallel] Starting GPS and Upload...");
-
       final results = await Future.wait([
         _getCurrentPosition().timeout(const Duration(seconds: 10)),
         _apiService.uploadImageToR2(imageFile),
@@ -545,11 +484,16 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
 
       if (position == null) throw Exception("Location verification failed.");
 
+      String address = "Live Location";
+      try {
+        address = await _resolveAddress(position.latitude, position.longitude);
+      } catch (_) {}
+
       final checkInData = {
         'userId': int.parse(widget.employee.id),
         'role': 'TECHNICAL',
         'attendanceDate': DateTime.now().toIso8601String(),
-        'locationName': 'Live Location',
+        'locationName': address,
         'inTimeLatitude': position.latitude,
         'inTimeLongitude': position.longitude,
         'inTimeImageUrl': imageUrl,
@@ -561,29 +505,21 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       if (mounted) {
         setState(() {
           _isCheckedIn = true;
-          _isDayComplete = false; // ⚡ ADD THIS LINE: Reset day complete status
+          _isDayComplete = false;
           _lastCheckInTime = newAtt.createdAt;
         });
         _toast('Check-in successful!', isError: false);
       }
     } catch (e) {
       debugPrint("🚨 Check-In Error: $e");
+      final errorStr = e.toString().toLowerCase();
 
-      // 🛑 FIXED LOGIC:
-      // Don't blindly set true. Check if the server actually thinks we are IN.
-      if (e.toString().toLowerCase().contains("already checked in") ||
-          e.toString().toLowerCase().contains("exists")) {
+      if (errorStr.contains("already checked in") ||
+          errorStr.contains("exists")) {
         _toast("Syncing status...");
+        await _checkAttendanceStatus(); // Force sync state from server
 
-        // 1. Fetch the TRUTH from the server
-        await _checkAttendanceStatus();
-
-        // 2. Only say "Checked In" if the server confirms it
-        if (_isCheckedIn) {
-          _toast("Resumed session: You were already checked in.");
-        } else {
-          // If _checkAttendanceStatus set it to false, it means the user
-          // has already finished their day (Checked In -> Checked Out).
+        if (mounted && _isDayComplete) {
           _toast(
             "You have already completed your attendance for today.",
             isError: true,
@@ -596,20 +532,11 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       if (mounted) setState(() => _isCheckingIn = false);
     }
   }
-  // --- 🔴 CHECK OUT FLOW ---
 
-  // 1. Trigger (User Click)
   Future<void> _handleCheckOut() async {
     if (_isDayComplete || !_isCheckedIn) return;
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
 
-    // 🛑 PRE-FLIGHT CHECK 1: Are they even checked in?
-    if (!_isCheckedIn) {
-      _toast("You cannot check out without checking in first.", isError: true);
-      return;
-    }
-
-    // 1 hr time lock
+    // Guard against checking out too early
     if (_lastCheckInTime != null) {
       final difference = DateTime.now().difference(_lastCheckInTime!);
       if (difference.inMinutes < 60) {
@@ -621,27 +548,20 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       }
     }
 
-    // 🟢 1. Open Inline Camera
     final String? imagePath = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
     );
 
-    // 2. Handle Cancellation
     if (imagePath == null) return;
-
-    // 3. Process
     await _processCheckOut(File(imagePath));
   }
 
-  // 2. Processing (Called by Normal Flow OR Recovery Flow)
   Future<void> _processCheckOut(File imageFile) async {
     if (!mounted) return;
     setState(() => _isCheckingOut = true);
 
     try {
-      debugPrint("🚀 [OUT] Starting GPS and Upload...");
-
       final results = await Future.wait([
         _getCurrentPosition().timeout(
           const Duration(seconds: 10),
@@ -665,28 +585,28 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         'outTimeLongitude': position.longitude,
       };
 
-      // ⚡ Await the call so we can catch the error properly
       await _apiService.checkOut(checkOutData);
 
       if (mounted) {
         setState(() {
-          _isCheckedIn = false;
-          _isDayComplete = true; // ⚡ ADD THIS LINE: Lock the UI for the day
+          _isCheckedIn = false; // Back to "Ready to Start" UI
+          _isDayComplete = true; // Lock the buttons
         });
         _toast('Checked out successfully!', isError: false);
       }
     } catch (e) {
       debugPrint("🚨 Check-Out Error: $e");
+      final errorStr = e.toString().toLowerCase();
 
-      // 🛑 ZOMBIE STATE FIX:
-      // If server says "Attendance not found" or "Already checked out",
-      // it means the App was wrong to think we were Checked In.
-      // We must force the App to 'Checked Out' state.
-      if (e.toString().toLowerCase().contains("not found") ||
-          e.toString().toLowerCase().contains("no attendance") ||
-          e.toString().toLowerCase().contains("already")) {
+      if (errorStr.contains("not found") ||
+          errorStr.contains("no attendance") ||
+          errorStr.contains("already")) {
         if (mounted) {
-          setState(() => _isCheckedIn = false);
+          setState(() {
+            _isCheckedIn = false;
+            _isDayComplete =
+                true; // Lock state even on "already checked out" error
+          });
         }
         _toast("Syncing: You are already checked out.");
       } else {
@@ -881,17 +801,24 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         backgroundColor: _bgLight,
         elevation: 0,
         automaticallyImplyLeading: false,
-        toolbarHeight: 70,
+        toolbarHeight: 80,
         title: Row(
           children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: Colors.grey[300],
-              backgroundImage: const NetworkImage(
-                "https://picsum.photos/200/300?grayscale",
+            Container(
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: _cardNavy, width: 2),
+              ),
+              child: CircleAvatar(
+                radius: 20,
+                backgroundColor: Colors.grey[300],
+                backgroundImage: const NetworkImage(
+                  "https://picsum.photos/200/300?grayscale",
+                ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -899,7 +826,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                   _greeting,
                   style: TextStyle(
                     color: _textGrey,
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -907,8 +834,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                   widget.employee.displayName,
                   style: TextStyle(
                     color: _textDark,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
@@ -919,7 +846,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
@@ -932,7 +859,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                 ],
               ),
               child: const Icon(
-                Icons.notifications_none,
+                Icons.notifications_none_rounded,
                 color: Colors.black87,
               ),
             ),
@@ -943,183 +870,158 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         onRefresh: _handleRefresh,
         child: ListView(
           padding: const EdgeInsets.all(20.0),
-          children:
-              [
-                    // 1. HERO CARD
-                    if (_attendanceEnabled(context))
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: _cardNavy,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _cardNavy.withOpacity(0.4),
-                              blurRadius: 16,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  "Attendance Status",
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.7),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                const Icon(
-                                  Icons.more_horiz,
-                                  color: Colors.white54,
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 24),
-                            Text(
-                              _isCheckedIn
-                                  ? "You are Checked In"
-                                  : "Ready to Start?",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.location_on,
-                                  color: Colors.white.withOpacity(0.7),
-                                  size: 14,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Area: $userArea',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.7),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 32),
-
-                            Row(
-                              children: [
-                                // CHECK IN BUTTON
-                                Expanded(
-                                  child: _buildGlassButton(
-                                    label: "CHECK IN",
-                                    icon: Icons.arrow_downward,
-                                    isLoading: _isCheckingIn,
-                                    isActive: !_isCheckedIn,
-                                    onTap: () {
-                                      if (_isCheckingIn || _isCheckingOut)
-                                        return; // Prevent double taps
-
-                                      if (_isCheckedIn) {
-                                        _toast(
-                                          "You are already checked in.",
-                                          isError: true,
-                                        );
-                                      } else if (_isDayComplete) {
-                                        // ⚡ TRAP: Button looks active, but shows warning instead of camera
-                                        _toast(
-                                          "You have already completed your attendance for today.",
-                                          isError: true,
-                                        );
-                                      } else {
-                                        // Normal flow
-                                        _handleCheckIn();
-                                      }
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-
-                                // CHECK OUT BUTTON
-                                Expanded(
-                                  child: _buildGlassButton(
-                                    label: "CHECK OUT",
-                                    icon: Icons.arrow_upward,
-                                    isLoading: _isCheckingOut,
-                                    isActive: _isCheckedIn && !_isDayComplete,
-                                    onTap:
-                                        (!_isCheckedIn ||
-                                            _isDayComplete ||
-                                            _isCheckingIn ||
-                                            _isCheckingOut)
-                                        ? null
-                                        : _handleCheckOut,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-
-                    const SizedBox(height: 32),
-
-                    // 2. OPERATIONS HEADER
+          children: [
+            // 1. HERO ATTENDANCE CARD
+            if (_attendanceEnabled(context))
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(28),
+                decoration: BoxDecoration(
+                  color: _cardNavy,
+                  borderRadius: BorderRadius.circular(32),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _cardNavy.withOpacity(0.4),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
+                        // Text("Today's Status", style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14, fontWeight: FontWeight.w600)),
+                        // Container(
+                        //   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        //   decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                        //   child: Text(_isCheckedIn ? "ONLINE" : "OFFLINE", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                        // )
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      _isCheckedIn ? "You are Checked In" : "Ready to Start?",
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_rounded,
+                          color: Colors.white.withOpacity(0.7),
+                          size: 16,
+                        ),
+                        const SizedBox(width: 4),
                         Text(
-                          "Categories Of Work",
+                          'Area: $userArea',
                           style: TextStyle(
-                            color: _textDark,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                            color: Colors.white.withOpacity(0.7),
+                            fontSize: 14,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 32),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildGlassButton(
+                            label: "CHECK IN",
+                            icon: Icons.login_rounded,
+                            isLoading: _isCheckingIn,
+                            isActive: !_isCheckedIn,
+                            onTap: () {
+                              if (_isCheckingIn || _isCheckingOut) return;
+                              if (_isCheckedIn) {
+                                _toast(
+                                  "You are already checked in.",
+                                  isError: true,
+                                );
+                              } else if (_isDayComplete) {
+                                _toast(
+                                  "You have already completed your attendance for today.",
+                                  isError: true,
+                                );
+                              } else {
+                                _handleCheckIn();
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildGlassButton(
+                            label: "CHECK OUT",
+                            icon: Icons.logout_rounded,
+                            isLoading: _isCheckingOut,
+                            isActive: _isCheckedIn && !_isDayComplete,
+                            onTap:
+                                (!_isCheckedIn ||
+                                    _isDayComplete ||
+                                    _isCheckingIn ||
+                                    _isCheckingOut)
+                                ? null
+                                : _handleCheckOut,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
 
-                    // 3. FINTECH STYLE LIST ITEMS
-                    // Mason Operations
-                    if (flags.masonManagement)
-                      _buildFintechCard(
-                        title: "Mason Management",
-                        subtitle: "Masons, KYC, Bag Lifts",
-                        icon: Icons.handyman_outlined,
-                        iconColor: Colors.orange,
-                        iconBg: const Color(0xFFFFF7ED),
-                        actionText: "4 Actions",
-                        onTap: () => _showMasonActions(context),
-                      ),
+            const SizedBox(height: 32),
 
-                    const SizedBox(height: 16),
+            // 2. OPERATIONS HEADER
+            Text(
+              "Operations",
+              style: TextStyle(
+                color: _textDark,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 16),
 
-                    // Technical Operations
-                    if (flags.technicalOps)
-                      _buildFintechCard(
-                        title: "Technical Ops",
-                        subtitle: "TVR, Site Registration, Add Dealer",
-                        icon: Icons.architecture,
-                        iconColor: const Color(0xFF0F766E),
-                        iconBg: const Color(0xFFECFEFF),
-                        actionText: "3 Actions",
-                        onTap: () => _showTechnicalActions(context),
-                      ),
-                  ]
-                  .animate(interval: 50.ms)
-                  .fadeIn(duration: 400.ms)
-                  .slideY(begin: 0.1, end: 0, curve: Curves.easeOut),
+            // 3. MASON MANAGEMENT
+            if (flags.masonManagement)
+              _buildFintechCard(
+                title: "Mason Management",
+                subtitle: "Masons, KYC, Bag Lifts",
+                icon: Icons.handyman_rounded,
+                iconColor: Colors.orange,
+                iconBg: const Color(0xFFFFF7ED),
+                actionText: "Manage",
+                onTap: () => _showMasonActions(context),
+              ),
+
+            const SizedBox(height: 16),
+
+            // 4. TECHNICAL OPS
+            if (flags.technicalOps)
+              _buildFintechCard(
+                title: "Technical Ops",
+                subtitle: "TVR, Site Registration, Add Dealer",
+                icon: Icons.architecture_rounded,
+                iconColor: const Color(0xFF0F766E),
+                iconBg: const Color(0xFFECFEFF),
+                actionText: "Open",
+                onTap: () => _showTechnicalActions(context),
+              ),
+          ].animate(interval: 50.ms).fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0, curve: Curves.easeOut),
         ),
       ),
     );
@@ -1138,13 +1040,24 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.symmetric(vertical: 16),
           decoration: BoxDecoration(
-            color: isActive ? Colors.white : Colors.white.withOpacity(0.15),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.2)),
+            color: isActive ? Colors.white : Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: isActive ? Colors.white : Colors.white.withOpacity(0.2),
+            ),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [],
           ),
           child: isLoading
               ? Center(
@@ -1170,8 +1083,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                       label,
                       style: TextStyle(
                         color: isActive ? _cardNavy : Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13,
                       ),
                     ),
                   ],
@@ -1193,12 +1106,17 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     return Container(
       decoration: BoxDecoration(
         color: _surfaceWhite,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.08),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
+            color: _cardNavy.withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: _cardNavy.withOpacity(0.02),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -1206,20 +1124,20 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24),
           child: Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(20.0),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: iconBg,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  child: Icon(icon, color: iconColor, size: 26),
+                  child: Icon(icon, color: iconColor, size: 28),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 18),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1229,7 +1147,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                         style: TextStyle(
                           color: _textDark,
                           fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -1240,12 +1158,32 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                     ],
                   ),
                 ),
-                Text(
-                  actionText,
-                  style: TextStyle(
-                    color: iconColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _bgLight,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        actionText,
+                        style: TextStyle(
+                          color: iconColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 14,
+                        color: iconColor,
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -1266,7 +1204,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   }) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(vertical: 8),
-      onTap: onTap,
       leading: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
@@ -1277,13 +1214,18 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       ),
       title: Text(
         title,
-        style: TextStyle(color: _textDark, fontWeight: FontWeight.bold),
+        style: TextStyle(
+          color: _textDark,
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
       ),
       subtitle: Text(
         subtitle,
-        style: TextStyle(color: _textGrey, fontSize: 12),
+        style: TextStyle(color: _textGrey, fontSize: 13),
       ),
-      trailing: Icon(Icons.chevron_right, color: Colors.grey[300]),
+      trailing: Icon(Icons.chevron_right_rounded, color: _textGrey),
+      onTap: onTap,
     );
   }
 }

@@ -1,24 +1,18 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:http/http.dart' as http;
 import 'package:maplibre_gl/maplibre_gl.dart';
-import 'package:polyline_codec/polyline_codec.dart';
 import 'package:slide_to_act/slide_to_act.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:salesmanapp/models/geotracking_data_model.dart';
-
 // Core & Models
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 import 'package:salesmanapp/core/app_kernel.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
-
 // Features
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_result.dart';
@@ -29,8 +23,13 @@ import 'package:salesmanapp/features/launchgooglemapsJourneyscreen/googlemaps_co
 import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart';
 import 'package:salesmanapp/features/JourneyModeController/journey_mode_controller.dart';
 import 'package:salesmanapp/features/journeylocation/journeylocation_controller.dart';
-import 'package:salesmanapp/features/journeylocation/journeylocation_results.dart';
 import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_controller.dart';
+import 'package:salesmanapp/services/states/journeyStates/journey_screen_state.dart';
+import 'package:salesmanapp/database/app_database.dart';
+
+
+// --- 🚀 NEW UI IMPORTS ---
+import 'package:salesmanapp/technicalSide/screens/journeyUi/journey_overlay_manager.dart';
 
 class TechnicalJourneyScreen extends StatefulWidget {
   final Employee employee;
@@ -62,50 +61,37 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   late Future<String> _styleFuture;
   late final MapSelectionController _mapSelectionController = AppKernel.instance
       .feature<MapSelectionController>();
-
   final _searchController = TextEditingController();
   bool _isSearching = false;
   String? _currentGeoTrackingDbId;
   double _totalDistanceTravelled = 0.0;
   LatLng? _lastRecordedLocation;
 
+  final _journeyStartMachine = JourneyStartStateMachine();
   // UI State
   String _distanceDisplay = "Initializing...";
   final _destinationController = TextEditingController();
   late JourneyMode _journeyMode;
   bool _isSelectionMode = false;
-
+  final _mapInitMachine = MapInitStateMachine();
   final String? _stadiaApiKey = dotenv.env['STADIA_API_KEY'];
   final String? _radarApiKey = dotenv.env['RADAR_API_KEY'];
   Pjp? _backupPlannedPjp;
   LatLng? _backupDestination;
-
   // Journey State
   bool _isJourneyActive = false;
-
-  // 🔒 Anti-Spam Flag
   bool _hasArrived = false;
-
-  // Stream Subscriptions
   StreamSubscription? _distanceSub;
   StreamSubscription? _posSub;
   StreamSubscription? _eventSub;
-
-  // Data Holding State
   Pjp? _currentPjp;
   bool _isSiteVisit = true;
-
   LatLng? _currentUserLocation;
   LatLng? _destinationLocation;
   final List<LatLng> _routeTaken = [];
-
-  // Map State Flags
-  bool _isUserLocationLayerAdded = false;
+  final _journeyStopMachine = JourneyStopStateMachine();
   bool _isRouteLineLayerAdded = false;
-  bool _isTravelledLineLayerAdded = false;
-  //delay for polyline
   DateTime _lastPolylineUpdate = DateTime.fromMillisecondsSinceEpoch(0);
-
   bool _canUpdatePolyline() {
     final now = DateTime.now();
     if (now.difference(_lastPolylineUpdate).inMilliseconds < 500) {
@@ -115,17 +101,16 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     return true;
   }
 
+  bool _restoreChecked = false;
+
   static const _initialCameraPosition = CameraPosition(
     target: LatLng(26.1445, 91.7362),
     zoom: 12,
   );
-
   // Theme
   final Color _bgLight = const Color(0xFFF3F4F6);
   final Color _cardNavy = const Color(0xFF0F172A);
-  final Color _textDark = const Color(0xFF111827);
   final Color _textGrey = const Color(0xFF6B7280);
-  final Color _surfaceWhite = Colors.white;
   final Color _dangerRed = const Color(0xFFEF4444);
 
   @override
@@ -133,19 +118,42 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     super.initState();
     debugPrint("🚀 [TechnicalJourneyScreen] initState called");
     flags = context.read<TechnicalFlags>();
-
+    _mapInitMachine.addListener(() {
+      if (!mounted) return;
+      if (_isJourneyActive) return;
+      final state = _mapInitMachine.value;
+      setState(() {
+        if (state is MapInitProcessing) {
+          _distanceDisplay = state.statusMessage;
+        } else if (state is MapInitReady) {
+          _distanceDisplay = state.displayMessage;
+          if (state.finalUserLocation != null) {
+            _currentUserLocation = state.finalUserLocation;
+          }
+        }
+      });
+    });
+    _journeyStartMachine.addListener(() {
+      final state = _journeyStartMachine.value;
+      if (!mounted) return;
+      if (state is JourneyStartProcessing) {
+        setState(() => _distanceDisplay = state.message);
+      } else if (state is JourneyStartFailure) {
+        _showError(state.error);
+        setState(() => _isJourneyActive = false);
+      } else if (state is JourneyStartSuccess) {
+        _handleJourneyStartSuccess(state);
+      }
+    });
     final modeController = AppKernel.instance.feature<JourneyModeController>();
-
     if (widget.initialJourneyData != null) {
       _processInitialDataSynchronously(widget.initialJourneyData!);
     } else {
       _journeyMode = modeController.defaultMode(hasPjp: false).mode;
     }
-
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       Radar.setUserId(widget.employee.id);
       Radar.setDescription(widget.employee.displayName);
-
       if (flags.journeyNotifications) {
         try {
           await AppKernel.instance
@@ -153,11 +161,198 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
               .initNotifications();
         } catch (_) {}
       }
+      _checkActiveSession();
     });
-
     if (flags.journeyMap) {
       _styleFuture = _readStyle();
     }
+  }
+
+  void _onDistanceUpdate(double dist) {
+    if (mounted) {
+      setState(() {
+        _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km";
+      });
+    }
+  }
+
+  void _onLocationUpdate(LatLng latLng) {
+    if (_lastRecordedLocation != null) {
+      final dist = Geolocator.distanceBetween(
+        _lastRecordedLocation!.latitude,
+        _lastRecordedLocation!.longitude,
+        latLng.latitude,
+        latLng.longitude,
+      );
+      _totalDistanceTravelled += dist;
+    }
+    _lastRecordedLocation = latLng;
+    _currentUserLocation = latLng;
+
+    _routeTaken.add(latLng);
+    _drawUserLocationPointer(latLng);
+
+    if (_canUpdatePolyline()) {
+      _updateTravelledPolyline();
+    }
+  }
+
+  Future<void> _checkActiveSession() async {
+    if (_restoreChecked) return;
+    _restoreChecked = true;
+
+    final restoreMachine = RestoreJourneyStateMachine();
+
+    // 1. Listen for the Result
+    restoreMachine.addListener(() {
+      final state = restoreMachine.value;
+      if (state is RestoreResumed) {
+        _handleRestoreSuccess(state.snapshot);
+      }
+    });
+
+    // 2. Dispatch Intent with Tools
+    await restoreMachine.dispatch(
+      RestoreJourneyIntent(
+        askUser: _askUserToResume,
+        trackingController: AppKernel.instance
+            .feature<JourneyTrackingController>(),
+        db: AppDatabase.instance,
+      ),
+    );
+  }
+
+  void _handleRestoreSuccess(JourneyRestoreSnapshot snapshot) async {
+    // 1. Restore UI State
+    setState(() {
+      _isJourneyActive = true;
+      _currentGeoTrackingDbId = snapshot.journeyId;
+      _destinationController.text = snapshot.displayName ?? "Resumed Journey";
+
+      // 🔥 FIX: Overwrite "Location Found" immediately
+      _distanceDisplay =
+          "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
+
+      _totalDistanceTravelled = snapshot.distance;
+      _currentUserLocation = snapshot.lastPosition;
+
+      // 🔥 FIX: Restore path history
+      _routeTaken.clear();
+      _routeTaken.addAll(snapshot.path);
+      _lastRecordedLocation = snapshot.lastPosition;
+
+      // 🔥 FIX: Ensure UI shows active panel
+      _journeyMode = JourneyMode.planned;
+    });
+
+    // 2. Restore Map Visuals
+    final controller = await _controllerCompleter.future;
+
+    if (snapshot.path.isNotEmpty) {
+      await JourneyMapRenderer.updateTravelledPath(controller, snapshot.path);
+    }
+
+    if (snapshot.lastPosition != null) {
+      await JourneyMapRenderer.drawUserLocationPointer(
+        controller,
+        snapshot.lastPosition!,
+      );
+    }
+
+    if (snapshot.path.length >= 2) {
+      await JourneyMapRenderer.fitBounds(
+        controller,
+        snapshot.path.first,
+        snapshot.path.last,
+      );
+    }
+
+    // 3. Re-attach Streams (USING THE DEFINED HELPERS)
+    final tracking = AppKernel.instance.feature<JourneyTrackingController>();
+
+    _distanceSub = tracking.distanceStream.listen(_onDistanceUpdate);
+    _posSub = tracking.positionStream.listen(_onLocationUpdate);
+
+    _eventSub = tracking.eventStream.listen((event) {
+      if (event == JourneyTrackingEvent.arrived && !_hasArrived) {
+        _hasArrived = true;
+        _showArrivalDialog();
+      }
+    });
+  }
+
+  Future<bool> _askUserToResume(JourneyRestoreSnapshot snapshot) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text("Resume journey?"),
+            content: Text(
+              "You were travelling to ${snapshot.displayName}. Continue?",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("Discard"),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text("Resume"),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  void _handleJourneyStartSuccess(JourneyStartSuccess state) {
+    setState(() {
+      _currentPjp = state.pjp;
+      _currentGeoTrackingDbId = state.geoTrackingDbId;
+      _isJourneyActive = true;
+      _distanceDisplay = "0.00 km";
+      _routeTaken.clear();
+      _hasArrived = false;
+      _totalDistanceTravelled = 0.0;
+      _lastRecordedLocation = null;
+    });
+
+    // 👇 START STREAMS (Moved from the old method)
+    final tracking = AppKernel.instance.feature<JourneyTrackingController>();
+
+    _distanceSub = tracking.distanceStream.listen((dist) {
+      if (mounted) {
+        setState(
+          () => _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km",
+        );
+      }
+    });
+
+    _posSub = tracking.positionStream.listen((latLng) {
+      if (_lastRecordedLocation != null) {
+        final dist = Geolocator.distanceBetween(
+          _lastRecordedLocation!.latitude,
+          _lastRecordedLocation!.longitude,
+          latLng.latitude,
+          latLng.longitude,
+        );
+        _totalDistanceTravelled += dist;
+      }
+      _lastRecordedLocation = latLng;
+      _currentUserLocation = latLng;
+
+      _routeTaken.add(latLng);
+      _drawUserLocationPointer(latLng);
+      if (_canUpdatePolyline()) {
+        _updateTravelledPolyline();
+      }
+    });
+
+    _eventSub = tracking.eventStream.listen((event) {
+      if (event == JourneyTrackingEvent.arrived && !_hasArrived) {
+        _hasArrived = true;
+        _showArrivalDialog();
+      }
+    });
   }
 
   void _resetScreenState() async {
@@ -215,25 +410,21 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     super.dispose();
   }
 
-  void _onMapStyleLoaded() async {
-    if (!flags.journeyMap) return;
-
-    if (_destinationLocation != null) {
-      // 🔥 Draw the pointer immediately on load
-      _addDestinationMarker(_destinationLocation!);
-    }
-
-    await _determinePositionAndMoveCamera();
-
-    if (_destinationLocation != null && _currentUserLocation != null) {
-      await Future.delayed(const Duration(milliseconds: 100));
-      await _getDirectionsAndDrawRoute();
-      _fitBounds();
-
-      if (mounted) setState(() => _distanceDisplay = "Ready to start");
-    }
-
-    widget.onDestinationConsumed?.call();
+  void _onMapStyleLoaded() {
+    final intent = MapStyleLoadedIntent(
+      isMapEnabled: flags.journeyMap,
+      destination: _destinationLocation,
+      currentUserLocation: _currentUserLocation,
+      onDestinationConsumed: widget.onDestinationConsumed,
+      drawMarker: (pos) => _addDestinationMarker(pos),
+      determinePosition: () async {
+        await _determinePositionAndMoveCamera();
+        return _currentUserLocation;
+      },
+      drawRoute: (start, end) => _getDirectionsAndDrawRoute(),
+      fitBounds: () => _fitBounds(),
+    );
+    _mapInitMachine.dispatch(intent);
   }
 
   void _processNewJourneyData(Map<String, dynamic> journeyData) async {
@@ -255,21 +446,16 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
     _routeTaken.clear();
     await _removeRouteLine();
-
-    // 🔥 Update the visual pointer when new data comes in
     if (destination != null) {
       _addDestinationMarker(destination);
     }
-
     if (_currentUserLocation == null) {
       await _determinePositionAndMoveCamera();
     }
-
     if (_destinationLocation != null && _currentUserLocation != null) {
       await _getDirectionsAndDrawRoute();
       _fitBounds();
     }
-
     if (mounted) {
       setState(() => _distanceDisplay = "Ready to start");
     }
@@ -306,29 +492,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
           _addDestinationMarker(_destinationLocation!); // Restore pointer
           _getDirectionsAndDrawRoute();
         }
-      }
-    }
-  }
-
-  // ✅ FIX: Robust helper to Add OR Update without removing/re-adding
-  Future<void> _addOrUpdateGeoJsonSource(
-    String sourceId,
-    Map<String, dynamic> geoJson,
-  ) async {
-    final controller = await _controllerCompleter.future;
-
-    // Check if source exists by trying to update it first
-    try {
-      await controller.setGeoJsonSource(sourceId, geoJson);
-    } catch (e) {
-      // If update fails, it likely doesn't exist. Add it.
-      try {
-        await controller.addSource(
-          sourceId,
-          GeojsonSourceProperties(data: geoJson),
-        );
-      } catch (_) {
-        // Ignore if it already exists race condition
       }
     }
   }
@@ -381,156 +544,64 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _startJourney() async {
+    // 1. Guard Layer (Permissions)
     final hasPermission = await _ensureJourneyPermission();
     if (!hasPermission) return;
 
+    // 2. Validation
     if (_isJourneyActive || _destinationLocation == null) {
       _showError("Cannot start: No destination selected.");
       return;
     }
 
+    // OPTIMISTIC UPDATE: Move UI to Active State Immediately
+    // This destroys the green slider and builds the active panel instantly.
     setState(() {
-      _distanceDisplay = "Initializing...";
-      _totalDistanceTravelled = 0.0;
-      _lastRecordedLocation = null;
-      _hasArrived = false;
+      _isJourneyActive = true;
+      _distanceDisplay = "Starting...";
     });
 
-    try {
-      final tracking = AppKernel.instance.feature<JourneyTrackingController>();
-      final api = ApiService();
-
-      if (_currentPjp == null && _journeyMode == JourneyMode.unplanned) {
-        final employeeId = int.parse(widget.employee.id);
-        final newPjp = Pjp(
-          id: '',
-          planDate: DateTime.now(),
-          userId: employeeId,
-          createdById: employeeId,
-          status: 'APPROVED',
-          verificationStatus: 'VERIFIED',
-          areaToBeVisited:
-              "${_destinationController.text}|${_destinationLocation!.latitude}|${_destinationLocation!.longitude}",
-          route: _destinationController.text,
-          description: "Unplanned / Ad-hoc Visit",
-          plannedNewSiteVisits: 0,
-          plannedFollowUpSiteVisits: 0,
-          plannedNewDealerVisits: 0,
-          plannedInfluencerVisits: 0,
-          noOfConvertedBags: 0,
-          noOfMasonPcSchemes: 0,
-          activityType: 'Unplanned',
-          createdAt: DateTime.now(),
-          updatedAt: DateTime.now(),
-        );
-        _currentPjp = await api.createPjp(newPjp);
-      }
-
-      if (_currentPjp == null) throw Exception("Failed to initialize visit");
-
-      final startPoint = GeoTrackingPoint(
-        userId: int.parse(widget.employee.id),
-        journeyId:
-            'JRN-${widget.employee.id}-${DateTime.now().millisecondsSinceEpoch}',
-        latitude: _currentUserLocation?.latitude ?? 0.0,
-        longitude: _currentUserLocation?.longitude ?? 0.0,
-        destLat: _destinationLocation?.latitude,
-        destLng: _destinationLocation?.longitude,
-        siteId: _isSiteVisit ? _currentPjp?.siteId : null,
-        dealerId: !_isSiteVisit ? _currentPjp?.dealerId : null,
-        isActive: true,
-        locationType: 'JOURNEY_START',
-        totalDistanceTravelled: 0.0,
-      );
-
-      _currentGeoTrackingDbId = await api.sendGeoTrackingPoint(startPoint);
-
-      if (_currentPjp?.id != null) {
-        await api.updatePjp(_currentPjp!.id, {'status': 'IN_PROGRESS'});
-      }
-
-      await tracking.startJourney(
-        pjp: _currentPjp!,
-        userId: int.parse(widget.employee.id),
-        destination: _destinationLocation!,
-        isSite: _isSiteVisit,
-      );
-
-      setState(() {
-        _isJourneyActive = true;
-        _distanceDisplay = "0.00 km";
-        _routeTaken.clear();
-      });
-
-      _distanceSub = tracking.distanceStream.listen((dist) {
-        if (mounted)
-          setState(
-            () => _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km",
-          );
-      });
-
-      _posSub = tracking.positionStream.listen((latLng) {
-        if (_lastRecordedLocation != null) {
-          final dist = Geolocator.distanceBetween(
-            _lastRecordedLocation!.latitude,
-            _lastRecordedLocation!.longitude,
-            latLng.latitude,
-            latLng.longitude,
-          );
-          _totalDistanceTravelled += dist;
-        }
-        _lastRecordedLocation = latLng;
-        _currentUserLocation = latLng;
-
-        _routeTaken.add(latLng);
-        _drawUserLocationPointer(latLng);
-        if (_canUpdatePolyline()) {
-          _updateTravelledPolyline();
-        }
-      });
-
-      _eventSub = tracking.eventStream.listen((event) {
-        if (event == JourneyTrackingEvent.arrived && !_hasArrived) {
-          _hasArrived = true;
-          _showArrivalDialog();
-        }
-      });
-    } catch (e) {
-      _showError("Failed to start: $e");
-      setState(() => _isJourneyActive = false);
-    }
+    // 3. Dispatch Intent to the Brain
+    _journeyStartMachine.dispatch(
+      StartJourneyIntent(
+        employee: widget.employee,
+        destinationLocation: _destinationLocation,
+        destinationName: _destinationController.text,
+        isSiteVisit: _isSiteVisit,
+        journeyMode: _journeyMode,
+        currentPjp: _currentPjp,
+        currentUserLocation: _currentUserLocation,
+        // Inject dependencies
+        trackingController: AppKernel.instance
+            .feature<JourneyTrackingController>(),
+        apiService: ApiService(),
+      ),
+    );
   }
 
   Future<void> _stopJourney() async {
     if (!_isJourneyActive) return;
 
-    final api = ApiService();
-    final checkInTime = DateTime.now();
+    // OPTIMISTIC UPDATE: Show feedback immediately
+    setState(() {
+      _distanceDisplay = "Stopping...";
+    });
 
-    if (_currentGeoTrackingDbId != null && _currentUserLocation != null) {
-      try {
-        final updateData = {
-          'isActive': false,
-          'totalDistanceTravelled': (_totalDistanceTravelled / 1000.0)
-              .toStringAsFixed(3),
-          'latitude': _currentUserLocation!.latitude,
-          'longitude': _currentUserLocation!.longitude,
-          'locationType': 'JOURNEY_END',
-          'checkOutTime': checkInTime.toIso8601String(),
-        };
-
-        await api.updateGeoTrackingPoint(_currentGeoTrackingDbId!, updateData);
-      } catch (e) {
-        debugPrint("⚠️ Failed to patch journey end: $e");
-      }
-    }
-
-    try {
-      final tracking = AppKernel.instance.feature<JourneyTrackingController>();
-      await tracking.stopJourney();
-    } catch (_) {}
-
-    _handleJourneyCleanup();
+    // Dispatch the Stop Intent to the Brain
+    await _journeyStopMachine.dispatch(
+      StopJourneyIntent(
+        userId: int.parse(widget.employee.id),
+        geoTrackingDbId: _currentGeoTrackingDbId,
+        currentUserLocation: _currentUserLocation,
+        totalDistanceTravelled: _totalDistanceTravelled,
+        // What to do when the logic finishes (Success or Fail)
+        onCleanup: () => _handleJourneyCleanup(),
+        // Inject Dependencies
+        apiService: ApiService(),
+        trackingController: AppKernel.instance
+            .feature<JourneyTrackingController>(),
+      ),
+    );
   }
 
   // ✅ CRASH PROOF FIX: Separate Try/Catch blocks
@@ -553,207 +624,78 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
   // ✅ CRASH PROOF FIX: Safe Update Logic
   Future<void> _getDirectionsAndDrawRoute() async {
+    // 1. Validate Data
     if (_currentUserLocation == null || _destinationLocation == null) return;
     if (_radarApiKey == null) return;
 
-    try {
-      final start =
-          '${_currentUserLocation!.latitude},${_currentUserLocation!.longitude}';
-      final end =
-          '${_destinationLocation!.latitude},${_destinationLocation!.longitude}';
+    // 2. Get Controller
+    final controller = await _controllerCompleter.future;
 
-      final uri = Uri.parse(
-        'https://api.radar.io/v1/route/directions?locations=$start|$end&mode=car&units=metric&geometry=polyline5',
-      );
+    // 3. Delegate the work to the Renderer (The Hands)
+    await JourneyMapRenderer.drawRoute(
+      controller: controller,
+      start: _currentUserLocation!,
+      end: _destinationLocation!,
+      apiKey: _radarApiKey,
+    );
 
-      final response = await http.get(
-        uri,
-        headers: {'Authorization': _radarApiKey},
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['routes'] != null && (data['routes'] as List).isNotEmpty) {
-          final geometry = data['routes'][0]['geometry']['polyline'];
-          final points = PolylineCodec.decode(geometry);
-          final coordinates = points.map((p) => [p[1], p[0]]).toList();
-
-          final geoJson = {
-            'type': 'FeatureCollection',
-            'features': [
-              {
-                'type': 'Feature',
-                'geometry': {'type': 'LineString', 'coordinates': coordinates},
-                'properties': {},
-              },
-            ],
-          };
-
-          final controller = await _controllerCompleter.future;
-          final sourceId = 'route-source';
-          final layerId = 'route-line';
-
-          // ---------------------------------------------------------
-          // ✅ SAFE UPDATE LOGIC (Prevents Crash)
-          // ---------------------------------------------------------
-
-          bool updatedSuccessfully = false;
-
-          // 1. If we think the layer exists, try to UPDATE the data first
-          if (_isRouteLineLayerAdded) {
-            try {
-              await controller.setGeoJsonSource(sourceId, geoJson);
-              updatedSuccessfully = true;
-            } catch (e) {
-              // If update fails, the source might be missing. We will re-add it below.
-              _isRouteLineLayerAdded = false;
-            }
-          }
-
-          // 2. Only if update failed (or it's the first time), ADD new source/layer
-          if (!updatedSuccessfully) {
-            // Cleanup leftovers safely (just in case)
-            try {
-              await controller.removeLayer(layerId);
-            } catch (_) {}
-            try {
-              await controller.removeSource(sourceId);
-            } catch (_) {}
-
-            await controller.addSource(
-              sourceId,
-              GeojsonSourceProperties(data: geoJson),
-            );
-            await controller.addLineLayer(
-              sourceId,
-              layerId,
-              const LineLayerProperties(
-                lineColor: '#0B4AA8',
-                lineWidth: 5.0,
-                lineOpacity: 0.8,
-                lineCap: 'round',
-                lineJoin: 'round',
-              ),
-            );
-            _isRouteLineLayerAdded = true;
-          }
-          // ---------------------------------------------------------
-        }
-      }
-    } catch (e) {
-      debugPrint("❌ Route Exception: $e");
-    } finally {
-      if (mounted) setState(() {});
-    }
+    // 4. Update UI (Only if you need to trigger a rebuild for other widgets)
+    if (mounted) setState(() {});
   }
 
   Future<bool> _ensureJourneyPermission() async {
-    bool serviceEnabled;
-    LocationPermission permission;
+    // Delegate to the Guard Layer
+    return await JourneyPermissionGuard.ensurePermissions(
+      // Callback 1: How do we ask the user for consent?
+      onShowDisclosure: () async {
+        if (!mounted) return false;
+        return await _showJourneyDisclosureDialog();
+      },
 
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      _showError("Location services are disabled. Please enable GPS.");
-      return false;
-    }
+      // Callback 2: How do we direct them to settings?
+      onShowSettings: () {
+        if (mounted) _showSettingsDialog();
+      },
 
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      if (!mounted) return false;
-      final bool userAgreed = await _showJourneyDisclosureDialog();
-
-      if (!userAgreed) {
-        _showError("Location is required to track your journey.");
-        return false;
-      }
-
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        _showError("Location permission denied.");
-        return false;
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      if (mounted) _showSettingsDialog();
-      return false;
-    }
-
-    return true;
+      // Callback 3: How do we show errors?
+      onError: (message) {
+        _showError(message);
+      },
+    );
   }
 
   Future<bool> _showJourneyDisclosureDialog() async {
-    return await showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            title: Row(
-              children: [
-                Icon(Icons.map, color: _cardNavy),
-                const SizedBox(width: 8),
-                const Expanded(child: Text("Allow Location Permissions")),
-              ],
-            ),
-            content: const Text(
-              "This app collects location data to enable [Salesman Route Tracking] "
-              "and [Distance Calculation] even when the app is closed or not in use.",
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text("DENY", style: TextStyle(color: Colors.grey)),
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(backgroundColor: _cardNavy),
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text(
-                  "ACCEPT",
-                  style: TextStyle(color: Colors.white),
-                ),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    return await JourneyDialogs.showDisclosure(
+      context: context,
+      primaryColor: _cardNavy, // Or whatever color variable you use
+    );
   }
 
   void _showSettingsDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Permission Required"),
-        content: const Text(
-          "Journey tracking requires location permission. Please enable it in Settings.",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("CANCEL"),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              Geolocator.openAppSettings();
-            },
-            child: const Text("OPEN SETTINGS"),
-          ),
-        ],
-      ),
-    );
+    JourneyDialogs.showSettings(context);
   }
 
   Future<void> _determinePositionAndMoveCamera() async {
     try {
-      final hasPermission = await _ensureJourneyPermission();
-      if (!hasPermission) return;
+      // 1. Ask LOGIC LAYER to get the location
+      //    (It internally handles Permissions, Guard checks, and AppKernel fetching)
+      final location = await JourneyLocationLogic.resolveCurrentLocation(
+        // Pass your permission wrapper
+        onEnsurePermissions: _ensureJourneyPermission,
 
-      final location = AppKernel.instance.feature<JourneyLocationController>();
-      final result = await location.resolveCurrentLocation();
+        // Pass the AppKernel fetcher
+        onFetchLocationFromController: () async {
+          return await AppKernel.instance
+              .feature<JourneyLocationController>()
+              .resolveCurrentLocation();
+        },
+      );
 
-      if (result.event == JourneyLocationEvent.granted &&
-          result.location != null) {
-        _currentUserLocation = result.location;
+      // 2. If valid location returned, update UI and Map
+      if (location != null) {
+        _currentUserLocation = location;
 
+        // Update UI Text
         if (mounted && !_isJourneyActive) {
           if (_distanceDisplay.contains("Waiting") ||
               _distanceDisplay.contains("Map")) {
@@ -761,15 +703,22 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
           }
         }
 
+        final controller = await _controllerCompleter.future;
+
+        // Move Camera (only if destination isn't set yet)
         if (_destinationLocation == null) {
-          final controller = await _controllerCompleter.future;
           await controller.animateCamera(
             CameraUpdate.newCameraPosition(
               CameraPosition(target: _currentUserLocation!, zoom: 15.0),
             ),
           );
         }
-        _drawUserLocationPointer(_currentUserLocation!);
+
+        // 3. Ask RENDERER LAYER to draw the Blue Dot
+        await JourneyMapRenderer.drawUserLocationPointer(
+          controller,
+          _currentUserLocation!,
+        );
       }
     } catch (e) {
       debugPrint("❌ _determinePositionAndMoveCamera Exception: $e");
@@ -777,94 +726,25 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _fitBounds() async {
-    try {
-      final controller = await _controllerCompleter.future;
-      final bounds = LatLngBounds(
-        southwest: LatLng(
-          _currentUserLocation!.latitude < _destinationLocation!.latitude
-              ? _currentUserLocation!.latitude
-              : _destinationLocation!.latitude,
-          _currentUserLocation!.longitude < _destinationLocation!.longitude
-              ? _currentUserLocation!.longitude
-              : _destinationLocation!.longitude,
-        ),
-        northeast: LatLng(
-          _currentUserLocation!.latitude > _destinationLocation!.latitude
-              ? _currentUserLocation!.latitude
-              : _destinationLocation!.latitude,
-          _currentUserLocation!.longitude > _destinationLocation!.longitude
-              ? _currentUserLocation!.longitude
-              : _destinationLocation!.longitude,
-        ),
-      );
-      await controller.animateCamera(
-        CameraUpdate.newLatLngBounds(
-          bounds,
-          left: 80,
-          top: 80,
-          right: 80,
-          bottom: 80,
-        ),
-      );
-    } catch (_) {}
+    if (_currentUserLocation == null || _destinationLocation == null) return;
+
+    // 1. Get Controller
+    final controller = await _controllerCompleter.future;
+
+    // 2. Delegate to Renderer
+    await JourneyMapRenderer.fitBounds(
+      controller,
+      _currentUserLocation!,
+      _destinationLocation!,
+    );
   }
 
   Future<void> _addDestinationMarker(LatLng point) async {
-    try {
-      final controller = await _controllerCompleter.future;
-      final sourceId = 'dest-source';
+    // 1. Get the controller
+    final controller = await _controllerCompleter.future;
 
-      final geoJson = {
-        'type': 'FeatureCollection',
-        'features': [
-          {
-            'type': 'Feature',
-            'geometry': {
-              'type': 'Point',
-              'coordinates': [point.longitude, point.latitude],
-            },
-            'properties': {},
-          },
-        ],
-      };
-
-      // 1. Try to update existing source first
-      bool sourceExists = true;
-      try {
-        await controller.setGeoJsonSource(sourceId, geoJson);
-      } catch (_) {
-        sourceExists = false;
-      }
-
-      // 2. If source didn't exist, we must add Source AND Layers
-      if (!sourceExists) {
-        await controller.addSource(
-          sourceId,
-          GeojsonSourceProperties(data: geoJson),
-        );
-
-        // Add Outer Ring
-        await controller.addCircleLayer(
-          sourceId,
-          'dest-layer-outer',
-          const CircleLayerProperties(
-            circleColor: '#FFFFFF',
-            circleRadius: 10,
-            circleStrokeWidth: 2,
-            circleStrokeColor: '#0F172A',
-          ),
-        );
-
-        // Add Inner Dot
-        await controller.addCircleLayer(
-          sourceId,
-          'dest-layer-inner',
-          const CircleLayerProperties(circleColor: '#EF4444', circleRadius: 6),
-        );
-      }
-    } catch (e) {
-      debugPrint("Error updating destination marker: $e");
-    }
+    // 2. Let the Renderer handle the dirty work
+    await JourneyMapRenderer.addDestinationMarker(controller, point);
   }
 
   // ✅ CRASH PROOF FIX: Separate Try/Catch blocks to prevent Zombie Sources
@@ -962,89 +842,19 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _drawUserLocationPointer(LatLng point) async {
+    // 1. Get Controller
     final controller = await _controllerCompleter.future;
-    final data = {
-      'type': 'FeatureCollection',
-      'features': [
-        {
-          'type': 'Feature',
-          'properties': {},
-          'geometry': {
-            'type': 'Point',
-            'coordinates': [point.longitude, point.latitude],
-          },
-        },
-      ],
-    };
 
-    if (_isUserLocationLayerAdded) {
-      try {
-        await controller.setGeoJsonSource('user-loc-s', data);
-      } catch (_) {}
-    } else {
-      try {
-        await controller.addSource(
-          'user-loc-s',
-          GeojsonSourceProperties(data: data),
-        );
-        await controller.addCircleLayer(
-          'user-loc-s',
-          'user-loc-c-o',
-          const CircleLayerProperties(
-            circleColor: '#FFFFFF',
-            circleRadius: 12.0,
-          ),
-        );
-        await controller.addCircleLayer(
-          'user-loc-s',
-          'user-loc-c-i',
-          const CircleLayerProperties(
-            circleColor: '#0B4AA8',
-            circleRadius: 8.0,
-          ),
-        );
-        _isUserLocationLayerAdded = true;
-      } catch (_) {}
-    }
+    // 2. Delegate to Renderer
+    await JourneyMapRenderer.drawUserLocationPointer(controller, point);
   }
 
   Future<void> _updateTravelledPolyline() async {
-    if (_routeTaken.length < 2) return;
+    // 1. Get Controller
+    final controller = await _controllerCompleter.future;
 
-    final data = {
-      'type': 'FeatureCollection',
-      'features': [
-        {
-          'type': 'Feature',
-          'properties': {},
-          'geometry': {
-            'type': 'LineString',
-            'coordinates': _routeTaken
-                .map((p) => [p.longitude, p.latitude])
-                .toList(),
-          },
-        },
-      ],
-    };
-
-    // 1. Use the helper to safely Add or Update the Source
-    await _addOrUpdateGeoJsonSource('rt-source', data);
-
-    // 2. Ensure the Layer exists (The source is now guaranteed to exist)
-    if (!_isTravelledLineLayerAdded) {
-      final controller = await _controllerCompleter.future;
-      try {
-        // Note: We don't add the source here because the helper above just did it.
-        await controller.addLineLayer(
-          'rt-source',
-          'rt-line',
-          const LineLayerProperties(lineColor: '#EF4444', lineWidth: 6.0),
-        );
-        _isTravelledLineLayerAdded = true;
-      } catch (_) {
-        // Ignore if layer already exists or other minor issues
-      }
-    }
+    // 2. Delegate to Renderer
+    await JourneyMapRenderer.updateTravelledPath(controller, _routeTaken);
   }
 
   Future<String> _resolveAddress(LatLng pos) async {
@@ -1100,7 +910,10 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     try {
       final nav = AppKernel.instance.feature<JourneyNavigationController>();
       await nav.launchGoogleMaps(_destinationLocation!);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint("Navigation Launch Error: $e");
+      _showError("Could not launch Google Maps");
+    }
   }
 
   void _showError(String message) {
@@ -1127,6 +940,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
     return Stack(
       children: [
+        // 1. MAP BACKGROUND (Unchanged)
         SizedBox.expand(
           child: FutureBuilder<String>(
             future: _styleFuture,
@@ -1146,6 +960,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
             },
           ),
         ),
+
+        // 2. SEARCH MODE UI (Unchanged)
         if (_isSelectionMode) ...[
           Positioned(
             top: 50,
@@ -1231,7 +1047,10 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
             ),
           ),
         ],
+
+        // 3. 🚀 THE ZOMATO-STYLE OVERLAY MANAGER
         if (!_isSelectionMode) ...[
+          // Recenter Button
           Positioned(
             top: 50,
             right: 16,
@@ -1246,51 +1065,38 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
               ),
             ),
           ),
-          DraggableScrollableSheet(
-            initialChildSize: 0.32,
-            minChildSize: 0.32,
-            maxChildSize: 0.5,
-            builder: (context, scrollController) {
-              return Container(
-                decoration: BoxDecoration(
-                  color: _surfaceWhite,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(30.0),
-                  ),
-                ),
-                child: ListView(
-                  controller: scrollController,
-                  padding: const EdgeInsets.all(24.0),
+
+          // The Manager
+          Positioned.fill(
+            child: SafeArea(
+              child: JourneyOverlayManager(
+                isJourneyActive: _isJourneyActive,
+                distance: _distanceDisplay,
+                
+                // INTENT: STOP
+                onStop: () async => await _stopJourney(),
+
+                // INTENT: NAVIGATE
+                onNavigate: _launchGoogleMapsNavigation,
+
+                // IDLE UI
+                idlePanel: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 5,
-                        margin: const EdgeInsets.only(bottom: 24.0),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                    _isJourneyActive
-                        ? _buildActiveJourneyPanel(context)
-                        : _buildIdleJourneyPanel(context),
+                    _buildIdleJourneyPanel(context),
                     const SizedBox(height: 24),
                     _StartJourneySlider(
                       key: ValueKey(_isJourneyActive),
-                      isJourneyActive: _isJourneyActive,
-                      onSlideAction: _isJourneyActive
-                          ? _stopJourney
-                          : _startJourney,
+                      isJourneyActive: false, // Always false here (idle mode)
+                      onSlideAction: _startJourney,
                       canStart: canStartJourney,
                       cardNavy: _cardNavy,
                       dangerRed: _dangerRed,
                     ),
                   ],
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ],
       ],
@@ -1356,12 +1162,21 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
           ],
         ),
         const SizedBox(height: 16),
+        // ✨ UPGRADED: Crisper Input Box
         Container(
-          height: 56,
+          height: 60,
           padding: const EdgeInsets.symmetric(horizontal: 4),
           decoration: BoxDecoration(
-            color: _bgLight,
-            borderRadius: BorderRadius.circular(16),
+            color: Colors.white, // Crisp white
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFFE2E8F0)), // Subtle border
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Center(
             child: TextField(
@@ -1369,7 +1184,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
               readOnly: true,
               style: TextStyle(
                 color: Color(0xFF0F172A),
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
               ),
               decoration: InputDecoration(
                 prefixIcon: Icon(
@@ -1428,97 +1244,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       ],
     );
   }
-
-  Widget _buildActiveJourneyPanel(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: _cardNavy,
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "DISTANCE",
-                      style: TextStyle(color: Colors.white60, fontSize: 10),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _distanceDisplay,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // 🔥 UPDATED: NAVIGATE BUTTON (Google Maps)
-              GestureDetector(
-                onTap: _launchGoogleMapsNavigation,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white12,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.directions,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    const Text(
-                      "NAVIGATE",
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Icon(Icons.flag_rounded, color: _textDark, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                _destinationController.text.toUpperCase(),
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: _textDark,
-                  fontSize: 12,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
 }
 
+// ✨✨✨ THE UPGRADED 3D START SLIDER ✨✨✨
 class _StartJourneySlider extends StatelessWidget {
   final bool isJourneyActive;
   final Future<void> Function() onSlideAction;
@@ -1537,36 +1265,46 @@ class _StartJourneySlider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String slideText = isJourneyActive
-        ? 'SLIDE TO END VISIT'
-        : 'SLIDE TO START';
-    final Color outerColor = isJourneyActive ? dangerRed : cardNavy;
-    final Icon sliderIcon = isJourneyActive
-        ? Icon(Icons.stop_rounded, color: dangerRed)
-        : Icon(Icons.arrow_forward_rounded, color: cardNavy);
     final bool isEnabled = canStart || isJourneyActive;
 
-    return SlideAction(
-      onSubmit: isEnabled
-          ? () async {
-              await onSlideAction();
-              return null;
-            }
-          : null,
-      innerColor: Colors.white,
-      outerColor: isEnabled ? outerColor : Colors.grey[300],
-      sliderButtonIcon: sliderIcon,
-      text: isEnabled ? slideText : 'LOADING DATA...',
-      enabled: isEnabled,
-      textStyle: TextStyle(
-        color: isEnabled ? Colors.white : Colors.grey[500],
-        fontSize: 14,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 1.0,
+    return Container(
+      // 🌟 PERFECTIONAL TOUCH: Floating Shadow
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: (isEnabled ? cardNavy : Colors.grey).withOpacity(0.35),
+            blurRadius: 25,
+            spreadRadius: -2,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
-      borderRadius: 20,
-      elevation: 0,
-      height: 64,
+      child: SlideAction(
+        onSubmit: isEnabled
+            ? () async {
+                await onSlideAction();
+                return null;
+              }
+            : null,
+        // 🌟 COLORS & STYLE
+        innerColor: Colors.white,
+        outerColor: isEnabled ? cardNavy : const Color(0xFFF1F5F9),
+        sliderButtonIcon: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0F172A), size: 26),
+        text: isEnabled ? 'SLIDE TO START VISIT' : 'SELECT DESTINATION FIRST',
+        enabled: isEnabled,
+        // 🌟 TYPOGRAPHY
+        textStyle: TextStyle(
+          color: isEnabled ? Colors.white : const Color(0xFF94A3B8),
+          fontSize: 15, // Slightly larger
+          fontWeight: FontWeight.w900, // Maximum bold
+          letterSpacing: 1.5, // Wider spacing
+        ),
+        borderRadius: 24, // Matches container
+        elevation: 0, // We handled shadow manually above
+        height: 76, // Taller and more touch-friendly
+        sliderRotate: false,
+      ),
     );
   }
 }

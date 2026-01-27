@@ -1,36 +1,46 @@
 import 'dart:async';
+//import 'dart:convert';  // breadcrumbs helper
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
-import 'package:flutter_radar/flutter_radar.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 
 // Project Imports
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
-import 'package:salesmanapp/models/geotracking_data_model.dart';
+import 'package:salesmanapp/services/journeyFgTaskHandler/journey_foreground_service.dart';
 import 'journey_tracking_capabilities.dart';
 import 'journey_tracking_result.dart';
+
+import 'package:salesmanapp/database/app_database.dart';
+import 'package:drift/drift.dart';
 
 class JourneyTrackingController {
   final JourneyTrackingCapabilities caps;
   final FlutterLocalNotificationsPlugin notifications;
   final ApiService api;
 
+  // ------- Local Db --------
+  final AppDatabase _db = AppDatabase.instance;
+  String? _currentLocalJourneyId;
+
   // ────────────────── INTERNAL STATE ──────────────────
   bool _isActive = false;
-  String? _currentPjpId;
-  String? _dbTrackingRecordId;
+  // String? _currentPjpId;
+
+  //int? _userId;  // breadcrumbs helper
   double _totalDistance = 0.0;
   Position? _lastPosition;
 
   StreamSubscription<Position>? _positionSubscription;
-  Timer? _radarPeriodicTimer; // For Radar reliability in background
 
   // ────────────────── STREAMS (UI READ-ONLY) ──────────────────
   final _distanceStreamController = StreamController<double>.broadcast();
   final _positionStreamController = StreamController<LatLng>.broadcast();
-  final _eventStreamController = StreamController<JourneyTrackingEvent>.broadcast();
+  final _eventStreamController =
+      StreamController<JourneyTrackingEvent>.broadcast();
 
   Stream<double> get distanceStream => _distanceStreamController.stream;
   Stream<LatLng> get positionStream => _positionStreamController.stream;
@@ -56,12 +66,21 @@ class JourneyTrackingController {
     );
   }
 
+  Future<void> _tryUpdatePjpOnline(String pjpId) async {
+    try {
+      await api.updatePjp(pjpId, {'status': 'IN_PROGRESS'});
+    } catch (_) {
+      // silent — sync worker will fix it
+    }
+  }
+
   // ────────────────── START JOURNEY ──────────────────
   Future<JourneyTrackingResult> startJourney({
     required Pjp pjp,
     required int userId,
     required LatLng destination,
     required bool isSite,
+    required String journeyId,
     String? siteId,
     String? dealerId,
   }) async {
@@ -73,52 +92,27 @@ class JourneyTrackingController {
     }
 
     try {
-      final initialPos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      Position? initialPos;
+      try {
+        initialPos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+      } catch (_) {
+        // allow journey to start without initial fix
+      }
 
       _lastPosition = initialPos;
       _totalDistance = 0.0;
       _isActive = true;
-      _currentPjpId = pjp.id;
+      // _currentPjpId = pjp.id;
+      _currentLocalJourneyId = journeyId;
+      //_userId = userId;   // breadcrumbs helper
 
-      // 1️⃣ Create backend tracking record
-      final startPoint = GeoTrackingPoint(
-        userId: userId,
-        journeyId: 'JRN-TECH-$userId-${DateTime.now().millisecondsSinceEpoch}',
-        latitude: initialPos.latitude,
-        longitude: initialPos.longitude,
-        destLat: destination.latitude,
-        destLng: destination.longitude,
-        siteId: isSite ? siteId : null,
-        dealerId: !isSite ? dealerId : null,
-        locationType: 'JOURNEY_START',
-        isActive: true,
-      );
-
-      _dbTrackingRecordId = await api.sendGeoTrackingPoint(startPoint);
-
-      // 2️⃣ Mark PJP IN_PROGRESS
-      await api.updatePjp(pjp.id, {'status': 'IN_PROGRESS'});
+      // NON-BLOCKING API CALL
+      unawaited(_tryUpdatePjpOnline(pjp.id));
 
       // 3️⃣ Start live tracking
       _startLivePositionTracking(destination);
-
-      if (caps.notifications) {
-        await _showTrackingNotification();
-      }
-
-      if (caps.radarTracking) {
-        await Radar.startTracking('responsive'); //
-        _setupRadarListeners();
-        
-        // Start periodic force-track to ensure geofence reliability
-        _radarPeriodicTimer?.cancel();
-        _radarPeriodicTimer = Timer.periodic(
-          const Duration(seconds: 30),
-          (_) => Radar.trackOnce(),
-        );
-      }
 
       _eventStreamController.add(JourneyTrackingEvent.started);
       return const JourneyTrackingResult(event: JourneyTrackingEvent.started);
@@ -126,7 +120,7 @@ class JourneyTrackingController {
       _isActive = false;
       return JourneyTrackingResult(
         event: JourneyTrackingEvent.error,
-        message: e.toString(),
+        message: "GPS Init Failed: $e",
       );
     }
   }
@@ -137,43 +131,64 @@ class JourneyTrackingController {
       return const JourneyTrackingResult(event: JourneyTrackingEvent.stopped);
     }
 
-    final checkOutTime = DateTime.now();
-
-    try {
-      // 1️⃣ Update final tracking stats in DB
-      if (_dbTrackingRecordId != null && _lastPosition != null) {
-        await api.updateGeoTrackingPoint(_dbTrackingRecordId!, {
-          'isActive': false,
-          'totalDistanceTravelled': (_totalDistance / 1000.0).toStringAsFixed(3),
-          'latitude': _lastPosition!.latitude,
-          'longitude': _lastPosition!.longitude,
-          'locationType': 'JOURNEY_END',
-          'checkOutTime': checkOutTime.toIso8601String(),
-        });
-      }
-
-      // 2️⃣ Complete PJP
-      // if (_currentPjpId != null) {
-      //   await api.updatePjp(_currentPjpId!, {'status': 'COMPLETED'});
-      // }
-    } catch (_) {
-      // Logic cleanup should proceed even if API PATCH fails
-    }
-
     _eventStreamController.add(JourneyTrackingEvent.stopped);
     _cleanup();
+
+    await JourneyForegroundService.stop();
 
     return const JourneyTrackingResult(event: JourneyTrackingEvent.stopped);
   }
 
   void _cleanup() {
     _isActive = false;
-    _currentPjpId = null;
-    _dbTrackingRecordId = null;
-    _radarPeriodicTimer?.cancel();
-    notifications.cancel(1);
+    // _currentPjpId = null;
+    // notifications.cancel(1);
     _positionSubscription?.cancel();
-    if (caps.radarTracking) Radar.stopTracking(); //
+  }
+
+  // ───────────── RESUME TRACKING INCASE OF CRASH ──────────────
+  Future<void> resumeJourney({
+    required String journeyId,
+    required String pjpId,
+    required LatLng destination,
+    required double initialDistance,
+    required LatLng? lastKnownPosition, // 🆕 REQUIRED: The end of the last line
+  }) async {
+    debugPrint("🔄 Resuming Journey: $journeyId from ${initialDistance}m");
+
+    _isActive = true;
+    _currentLocalJourneyId = journeyId;
+    // _currentPjpId = pjpId;
+    _totalDistance = initialDistance; // RESTORE STATE
+
+    // 🔥 FIX: Reconstruct the last Position object.
+    // This ensures the NEXT GPS point calculates distance from HERE,
+    // instead of treating the first new point as 0 movement.
+    if (lastKnownPosition != null) {
+      _lastPosition = Position(
+        latitude: lastKnownPosition.latitude,
+        longitude: lastKnownPosition.longitude,
+        timestamp: DateTime.now(),
+        accuracy: 0,
+        altitude: 0,
+        altitudeAccuracy: 0,
+        heading: 0,
+        headingAccuracy: 0,
+        speed: 0,
+        speedAccuracy: 0,
+      );
+    }
+
+    // Broadcast immediate update so UI doesn't show 0.00 temporarily
+    _distanceStreamController.add(_totalDistance);
+
+    // 1. Re-initialize GPS Stream
+    _startLivePositionTracking(destination);
+
+    // 2. Re-initialize Notification (so user knows it's back)
+    if (caps.notifications) {
+      await _showTrackingNotification();
+    }
   }
 
   // ────────────────── LIVE POSITION + DISTANCE ──────────────────
@@ -184,61 +199,64 @@ class JourneyTrackingController {
     );
 
     _positionSubscription =
-        Geolocator.getPositionStream(locationSettings: settings).listen(
-      (pos) {
-        if (_lastPosition != null) {
-          final gap = Geolocator.distanceBetween(
-            _lastPosition!.latitude,
-            _lastPosition!.longitude,
+        Geolocator.getPositionStream(locationSettings: settings).listen((pos) async {
+          if (_lastPosition != null) {
+            final gap = Geolocator.distanceBetween(
+              _lastPosition!.latitude,
+              _lastPosition!.longitude,
+              pos.latitude,
+              pos.longitude,
+            );
+
+            // Filter small jitter
+            if (gap > 2.0) {
+              _totalDistance += gap;
+              _distanceStreamController.add(_totalDistance);
+            }
+          }
+
+          _lastPosition = pos;
+          _positionStreamController.add(LatLng(pos.latitude, pos.longitude));
+
+          // Proximity Notification (100m)
+          final distToDest = Geolocator.distanceBetween(
             pos.latitude,
             pos.longitude,
+            destination.latitude,
+            destination.longitude,
           );
 
-          if (gap > 2.0) {
-            _totalDistance += gap;
-            _distanceStreamController.add(_totalDistance);
+          if (distToDest < 100) {
+            _showNearArrivalNotification();
           }
-        }
 
-        _lastPosition = pos;
-        _positionStreamController.add(LatLng(pos.latitude, pos.longitude));
-
-        // Proximity Notification (500m)
-        final distToDest = Geolocator.distanceBetween(
-          pos.latitude,
-          pos.longitude,
-          destination.latitude,
-          destination.longitude,
-        );
-
-        if (distToDest < 500) {
-          _showNearArrivalNotification();
-        }
-      },
-    );
+          // local db write for tracking journey breadcrumbs
+          try {
+            await _db.insertBreadcrumb(
+              JourneyBreadcrumbsCompanion.insert(
+                id: const Uuid().v4(),
+                journeyId: _currentLocalJourneyId ?? '',
+                latitude: pos.latitude,
+                longitude: pos.longitude,
+                h3Index: "0", 
+                totalDistance: Value(_totalDistance),
+                speed: Value(pos.speed),
+                heading: Value(pos.heading),
+                accuracy: Value(pos.accuracy),
+                recordedAt: DateTime.now(),
+              ),
+            );
+          } catch (e) {
+            debugPrint("Failed to save breadcrumb: $e");
+          }
+        });
   }
 
   // ────────────────── RADAR ──────────────────
-  void _setupRadarListeners() {
-    Radar.onEvents((result) {
-      if (!_isActive || _currentPjpId == null) return;
-
-      final events = result['events'] as List<dynamic>?;
-      final arrival = events?.firstWhere(
-        (e) =>
-            e['type'] == 'user.entered_geofence' &&
-            e['geofence']['externalId'] == _currentPjpId,
-        orElse: () => null,
-      );
-
-      if (arrival != null) {
-        onArrival();
-      }
-    });
-  }
-
   Future<void> onArrival() async {
-    _eventStreamController.add(JourneyTrackingEvent.arrived); // Notify UI for Dialog
+    _eventStreamController.add(
+      JourneyTrackingEvent.arrived,
+    ); // Notify UI for Dialog
     await stopJourney();
   }
 

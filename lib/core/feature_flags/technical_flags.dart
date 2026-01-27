@@ -29,6 +29,8 @@ class TechnicalFlags {
   //newfeature
   final bool unplannedJourney;
 
+  final bool showDbViewer;
+
   const TechnicalFlags({
     required this.attendance,
     required this.masonManagement,
@@ -53,6 +55,7 @@ class TechnicalFlags {
     required this.journeyNavigation,
     required this.journeyNotifications,
     required this.unplannedJourney,
+    required this.showDbViewer,
   });
 
   static const TechnicalFlags dev = TechnicalFlags(
@@ -83,5 +86,7 @@ class TechnicalFlags {
     journeyNotifications: true,
     //new feature
     unplannedJourney: true,
+
+    showDbViewer: false,
   );
 }

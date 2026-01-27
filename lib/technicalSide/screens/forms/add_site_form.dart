@@ -25,15 +25,13 @@ class _AddSiteFormState extends State<AddSiteForm> {
   final _concernedPersonController = TextEditingController();
   final _phoneController = TextEditingController();
   final _addressController = TextEditingController();
-  
   final _areaController = TextEditingController();
-  String? _selectedRegion;
   
+  String? _selectedRegion;
   String? _selectedStage;
   String? _selectedType;
   bool _isFetchingLocation = false;
   bool _isSubmitting = false;
-  
   Position? _currentPosition;
 
   // --- Association State ---
@@ -48,20 +46,19 @@ class _AddSiteFormState extends State<AddSiteForm> {
   ];
 
   // --- 🎨 FINTECH THEME PALETTE ---
-  static const Color _bgLight       = Color(0xFFF3F4F6); 
+  static const Color _bgLight       = Color(0xFFF8FAFC); // Slate 50
   static const Color _surfaceWhite  = Colors.white;
-  static const Color _cardNavy      = Color(0xFF0F172A); 
-  static const Color _textDark      = Color(0xFF111827); 
-  static const Color _textGrey      = Color(0xFF6B7280); 
-  static const Color _inputFill     = Color(0xFFF9FAFB); 
-  static const Color _accentGreen   = Color(0xFF10B981); 
+  static const Color _cardNavy      = Color(0xFF0F172A); // Deep Navy
+  static const Color _textDark      = Color(0xFF1E293B); // Slate 800
+  static const Color _textGrey      = Color(0xFF64748B); // Slate 500
+  static const Color _inputFill     = Color(0xFFF1F5F9); // Slate 100
+  static const Color _accentGreen   = Color(0xFF10B981); // Emerald
 
   @override
   void initState() {
     super.initState();
     _areaController.text = widget.employee.area ?? '';
-    
-    // Auto-select region if it matches one of the options
+    // Auto-select region if it matches
     if (widget.employee.region != null && _regionOptions.contains(widget.employee.region)) {
       _selectedRegion = widget.employee.region;
     }
@@ -91,7 +88,6 @@ class _AddSiteFormState extends State<AddSiteForm> {
       
       Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
 
-      // Reverse Geocode
       Map<String, String> addressDetails = {};
       try {
         addressDetails = await _apiService.reverseGeocodeWithRadar(
@@ -105,15 +101,12 @@ class _AddSiteFormState extends State<AddSiteForm> {
       if (mounted) {
         setState(() {
           _currentPosition = position;
-          
-          // --- ✅ Auto-fill Address Fields ---
           if (addressDetails['address']?.isNotEmpty == true) {
             _addressController.text = addressDetails['address']!;
           }
           if (addressDetails['area']?.isNotEmpty == true) {
             _areaController.text = addressDetails['area']!;
           }
-          
         });
       }
     } catch (e) {
@@ -156,32 +149,20 @@ class _AddSiteFormState extends State<AddSiteForm> {
     setState(() => _isSubmitting = true);
 
     try {
-      final List<String> dealerIds = _selectedDealers
-          .map((d) => d.id)
-          .whereType<String>() 
-          .toList();
-
-      final List<String> masonIds = _selectedMasons
-          .map((m) => m.id)
-          .whereType<String>() 
-          .toList();
+      final List<String> dealerIds = _selectedDealers.map((d) => d.id).whereType<String>().toList();
+      final List<String> masonIds = _selectedMasons.map((m) => m.id).whereType<String>().toList();
 
       final site = TechnicalSite(
         siteName: _siteNameController.text,
         concernedPerson: _concernedPersonController.text,
         phoneNo: _phoneController.text,
-        
-        // --- ✅ Mapped Fields ---
         address: _addressController.text,
-        area: _areaController.text,     // From Controller
+        area: _areaController.text,
         region: _selectedRegion!,
-        
         latitude: _currentPosition!.latitude,
         longitude: _currentPosition!.longitude,
-        
         siteType: _selectedType,
         stageOfConstruction: _selectedStage,
-        
         constructionStartDate: DateTime.now(),
         associatedDealerIds: dealerIds, 
         associatedMasonIds: masonIds,
@@ -211,10 +192,10 @@ class _AddSiteFormState extends State<AddSiteForm> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textDark, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text("Register New Site", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16)),
+        title: const Text("Register Site", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 18)),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20.0),
@@ -223,61 +204,39 @@ class _AddSiteFormState extends State<AddSiteForm> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // --- FORM CARD ---
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: _cardDecoration(),
+              // --- 1. SITE DETAILS CARD ---
+              _buildCard(
+                title: "Site Details",
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildSectionHeader("Site Details"),
-                    const SizedBox(height: 16),
                     _buildFintechInput(
                       controller: _siteNameController,
                       label: "Site Name",
                       hint: "e.g. Galaxy Apartments",
-                      icon: Icons.apartment,
+                      icon: Icons.apartment_rounded,
                     ),
                     const SizedBox(height: 16),
                     _buildFintechInput(
                       controller: _concernedPersonController,
                       label: "Concerned Person",
                       hint: "e.g. Mr. Rajesh Kumar",
-                      icon: Icons.person_outline,
+                      icon: Icons.person_rounded,
                     ),
                     const SizedBox(height: 16),
                     _buildFintechInput(
                       controller: _phoneController,
                       label: "Phone Number",
                       hint: "e.g. 9876543210",
-                      icon: Icons.phone_android,
+                      icon: Icons.phone_rounded,
                       keyboardType: TextInputType.phone,
                       validator: (v) => v!.length < 10 ? "Invalid Phone" : null,
                     ),
                     const SizedBox(height: 24),
-                    const Divider(color: Color(0xFFEEF2FF)),
-                    const SizedBox(height: 24),
-                    _buildSectionHeader("Classification"),
-                    const SizedBox(height: 16),
                     Row(
                       children: [
-                        Expanded(
-                          child: _buildFintechDropdown(
-                            value: _selectedType,
-                            label: "Type",
-                            items: _types,
-                            onChanged: (v) => setState(() => _selectedType = v),
-                          ),
-                        ),
+                        Expanded(child: _buildFintechDropdown(value: _selectedType, label: "Type", items: _types, onChanged: (v) => setState(() => _selectedType = v))),
                         const SizedBox(width: 16),
-                        Expanded(
-                          child: _buildFintechDropdown(
-                            value: _selectedStage,
-                            label: "Stage",
-                            items: _stages,
-                            onChanged: (v) => setState(() => _selectedStage = v),
-                          ),
-                        ),
+                        Expanded(child: _buildFintechDropdown(value: _selectedStage, label: "Stage", items: _stages, onChanged: (v) => setState(() => _selectedStage = v))),
                       ],
                     ),
                   ],
@@ -286,40 +245,28 @@ class _AddSiteFormState extends State<AddSiteForm> {
 
               const SizedBox(height: 20),
 
-              // --- LOCATION CARD (UPDATED) ---
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: _cardDecoration(),
+              // --- 2. LOCATION CARD ---
+              _buildCard(
+                title: "Geo-Tagging",
                 child: Column(
                   children: [
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(8)),
-                              child: const Icon(Icons.location_on, color: Colors.blueAccent, size: 20),
-                            ),
-                            const SizedBox(width: 12),
-                            const Text("Geo-Tagging", style: TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
-                          ],
-                        ),
-                        if (_isFetchingLocation)
-                          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                        else
-                          ElevatedButton.icon(
+                        Expanded(
+                          child: ElevatedButton.icon(
                             onPressed: _getLocation,
-                            icon: const Icon(Icons.my_location, size: 16),
-                            label: Text(_currentPosition == null ? "Fetch" : "Update"),
+                            icon: _isFetchingLocation 
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.my_location_rounded, size: 18),
+                            label: Text(_currentPosition == null ? "Fetch Location" : "Update Location"),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _cardNavy,
                               foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                             ),
                           ),
+                        ),
                       ],
                     ),
                     if (_currentPosition != null) ...[
@@ -333,13 +280,15 @@ class _AddSiteFormState extends State<AddSiteForm> {
                           border: Border.all(color: const Color(0xFFBBF7D0)),
                         ),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(Icons.check_circle, color: _accentGreen, size: 16),
-                            const SizedBox(width: 8),
-                            Text(
-                              "Captured: ${_currentPosition!.latitude.toStringAsFixed(4)}, ${_currentPosition!.longitude.toStringAsFixed(4)}",
-                              style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.bold, fontSize: 12),
+                            const Icon(Icons.check_circle_rounded, color: _accentGreen, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                "Captured: ${_currentPosition!.latitude.toStringAsFixed(4)}, ${_currentPosition!.longitude.toStringAsFixed(4)}",
+                                style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.bold, fontSize: 13),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ],
                         ),
@@ -349,31 +298,16 @@ class _AddSiteFormState extends State<AddSiteForm> {
                     _buildFintechInput(
                       controller: _addressController,
                       label: "Address / Landmark",
-                      hint: "Enter nearby landmark...",
-                      icon: Icons.map_outlined,
+                      hint: "Enter address...",
+                      icon: Icons.map_rounded,
                       maxLines: 2,
                     ),
                     const SizedBox(height: 16),
-                    // --- ✅ NEW: Region and Area Fields ---
                     Row(
                       children: [
-                        Expanded(
-                          child: _buildFintechDropdown(
-                            value: _selectedRegion,
-                            label: "Region",
-                            items: _regionOptions,
-                            onChanged: (v) => setState(() => _selectedRegion = v),
-                          ),
-                        ),
+                        Expanded(child: _buildFintechDropdown(value: _selectedRegion, label: "Region", items: _regionOptions, onChanged: (v) => setState(() => _selectedRegion = v))),
                         const SizedBox(width: 16),
-                        Expanded(
-                          child: _buildFintechInput(
-                            controller: _areaController,
-                            label: "Area",
-                            hint: "City/Area",
-                            icon: Icons.share_location,
-                          ),
-                        ),
+                        Expanded(child: _buildFintechInput(controller: _areaController, label: "Area", hint: "City/Town", icon: Icons.location_city_rounded)),
                       ],
                     ),
                   ],
@@ -382,79 +316,14 @@ class _AddSiteFormState extends State<AddSiteForm> {
               
               const SizedBox(height: 20),
 
-              // --- ASSOCIATIONS CARD ---
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: _cardDecoration(),
+              // --- 3. ASSOCIATIONS CARD ---
+              _buildCard(
+                title: "Associations",
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildSectionHeader("Associations"),
-                    const SizedBox(height: 16),
-                    
-                    // --- DEALERS SECTION ---
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text("Associated Dealers", style: TextStyle(fontWeight: FontWeight.w600, color: _textDark)),
-                        TextButton.icon(
-                          onPressed: _openDealerSearch,
-                          icon: const Icon(Icons.add_circle_outline, size: 16),
-                          label: const Text("Add"),
-                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                        )
-                      ],
-                    ),
-                    if (_selectedDealers.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8.0),
-                        child: Text("No dealers added", style: TextStyle(color: _textGrey, fontStyle: FontStyle.italic, fontSize: 13)),
-                      )
-                    else
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _selectedDealers.map((dealer) => Chip(
-                          label: Text(dealer.name),
-                          labelStyle: const TextStyle(fontSize: 12, color: _textDark),
-                          backgroundColor: _bgLight,
-                          deleteIcon: const Icon(Icons.close, size: 14, color: _textGrey),
-                          onDeleted: () => setState(() => _selectedDealers.remove(dealer)),
-                        )).toList(),
-                      ),
-                    
+                    _buildAssociationSection("Dealers", _selectedDealers, _openDealerSearch, (item) => setState(() => _selectedDealers.remove(item))),
                     const Divider(height: 32),
-
-                    // --- MASONS SECTION ---
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text("Associated Masons", style: TextStyle(fontWeight: FontWeight.w600, color: _textDark)),
-                        TextButton.icon(
-                          onPressed: _openMasonSearch,
-                          icon: const Icon(Icons.add_circle_outline, size: 16),
-                          label: const Text("Add"),
-                          style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
-                        )
-                      ],
-                    ),
-                    if (_selectedMasons.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8.0),
-                        child: Text("No masons added", style: TextStyle(color: _textGrey, fontStyle: FontStyle.italic, fontSize: 13)),
-                      )
-                    else
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _selectedMasons.map((mason) => Chip(
-                          label: Text(mason.name),
-                          labelStyle: const TextStyle(fontSize: 12, color: _textDark),
-                          backgroundColor: _bgLight,
-                          deleteIcon: const Icon(Icons.close, size: 14, color: _textGrey),
-                          onDeleted: () => setState(() => _selectedMasons.remove(mason)),
-                        )).toList(),
-                      ),
+                    _buildAssociationSection("Masons", _selectedMasons, _openMasonSearch, (item) => setState(() => _selectedMasons.remove(item))),
                   ],
                 ),
               ),
@@ -470,13 +339,12 @@ class _AddSiteFormState extends State<AddSiteForm> {
                     backgroundColor: _cardNavy,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 18),
-                    elevation: 4,
-                    shadowColor: _cardNavy.withOpacity(0.4),
+                    elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   ),
                   child: _isSubmitting 
                     ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
-                    : const Text("REGISTER SITE", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0, fontSize: 16)),
+                    : const Text("REGISTER SITE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5)),
                 ),
               ),
               const SizedBox(height: 40),
@@ -489,16 +357,23 @@ class _AddSiteFormState extends State<AddSiteForm> {
 
   // --- HELPER WIDGETS ---
 
-  BoxDecoration _cardDecoration() {
-    return BoxDecoration(
-      color: _surfaceWhite,
-      borderRadius: BorderRadius.circular(24),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+  Widget _buildCard({required String title, required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: _surfaceWhite,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: const TextStyle(color: _textDark, fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 20),
+          child,
+        ],
+      ),
     );
-  }
-
-  Widget _buildSectionHeader(String title) {
-    return Text(title.toUpperCase(), style: const TextStyle(color: _textGrey, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.0));
   }
 
   Widget _buildFintechInput({
@@ -513,7 +388,7 @@ class _AddSiteFormState extends State<AddSiteForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 13)),
+        Text(label, style: const TextStyle(color: _textGrey, fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -525,13 +400,12 @@ class _AddSiteFormState extends State<AddSiteForm> {
             filled: true,
             fillColor: _inputFill,
             hintText: hint,
-            hintStyle: const TextStyle(color: _textGrey, fontSize: 14),
+            hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
             prefixIcon: Icon(icon, color: _textGrey, size: 20),
-            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cardNavy, width: 1.5)),
-            errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.redAccent, width: 1)),
           ),
         ),
       ],
@@ -547,31 +421,63 @@ class _AddSiteFormState extends State<AddSiteForm> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 13)),
+        Text(label, style: const TextStyle(color: _textGrey, fontWeight: FontWeight.w600, fontSize: 13)),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
           value: value,
-          dropdownColor: _surfaceWhite, 
-          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500, fontSize: 14),
-          items: items.map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(color: _textDark)))).toList(),
+          items: items.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
           onChanged: onChanged,
           icon: const Icon(Icons.keyboard_arrow_down_rounded, color: _textGrey),
           decoration: InputDecoration(
             filled: true,
             fillColor: _inputFill,
-            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cardNavy, width: 1.5)),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildAssociationSection(String title, List items, VoidCallback onAdd, Function(dynamic) onDelete) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w600, color: _textDark)),
+            TextButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add_circle_outline, size: 16),
+              label: const Text("Add"),
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+            )
+          ],
+        ),
+        if (items.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8.0),
+            child: Text("None added", style: TextStyle(color: Colors.grey, fontStyle: FontStyle.italic, fontSize: 13)),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: items.map((item) => Chip(
+              label: Text(item.name, style: const TextStyle(fontSize: 12)),
+              backgroundColor: _inputFill,
+              deleteIcon: const Icon(Icons.close, size: 14),
+              onDeleted: () => onDelete(item),
+            )).toList(),
+          ),
       ],
     );
   }
 }
 
 // ==========================================
-// 🔎 SERVER-SIDE SEARCH DIALOGS (Included here for completeness)
+// 🔎 SEARCH DIALOGS (Polished)
 // ==========================================
 
 class _DealerSearchDialog extends StatefulWidget {
@@ -599,7 +505,7 @@ class _DealerSearchDialogState extends State<_DealerSearchDialog> {
       final results = await widget.api.fetchDealers(search: query, limit: 15);
       if (mounted) setState(() => _results = results);
     } catch (e) {
-      debugPrint("Dealer Search Error: $e");
+      debugPrint("Search Error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -613,8 +519,8 @@ class _DealerSearchDialogState extends State<_DealerSearchDialog> {
       results: _results,
       onSearchChanged: _onSearchChanged,
       itemBuilder: (dealer) => ListTile(
-        title: Text(dealer.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111827))),
-        subtitle: Text("${dealer.area} • ${dealer.phoneNo}", style: const TextStyle(color: Color(0xFF6B7280))),
+        title: Text(dealer.name, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text("${dealer.area} • ${dealer.phoneNo}", maxLines: 1, overflow: TextOverflow.ellipsis),
         onTap: () => Navigator.pop(context, dealer),
       ),
     );
@@ -646,7 +552,7 @@ class _MasonSearchDialogState extends State<_MasonSearchDialog> {
       final results = await widget.api.fetchMasons(search: query, limit: 15);
       if (mounted) setState(() => _results = results);
     } catch (e) {
-      debugPrint("Mason Search Error: $e");
+      debugPrint("Search Error: $e");
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -660,8 +566,8 @@ class _MasonSearchDialogState extends State<_MasonSearchDialog> {
       results: _results,
       onSearchChanged: _onSearchChanged,
       itemBuilder: (mason) => ListTile(
-        title: Text(mason.name, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF111827))),
-        subtitle: Text(mason.phoneNumber, style: const TextStyle(color: Color(0xFF6B7280))),
+        title: Text(mason.name, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(mason.phoneNumber, maxLines: 1, overflow: TextOverflow.ellipsis),
         onTap: () => Navigator.pop(context, mason),
       ),
     );
@@ -685,15 +591,10 @@ class _BaseSearchDialog<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const bgColor = Colors.white;
-    const textColor = Color(0xFF111827);
-    const hintColor = Color(0xFF6B7280);
-    const inputFill = Color(0xFFF9FAFB);
-
     return AlertDialog(
-      backgroundColor: bgColor,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Text(title, style: const TextStyle(color: textColor, fontWeight: FontWeight.bold)),
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      title: Text(title, style: const TextStyle(color: Color(0xFF1E293B), fontWeight: FontWeight.bold)),
       content: SizedBox(
         width: double.maxFinite,
         height: 400,
@@ -701,26 +602,24 @@ class _BaseSearchDialog<T> extends StatelessWidget {
           children: [
             TextField(
               autofocus: true,
-              style: const TextStyle(color: textColor),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: "Type to search...",
-                hintStyle: TextStyle(color: hintColor),
-                prefixIcon: Icon(Icons.search, color: hintColor),
+                prefixIcon: const Icon(Icons.search, color: Colors.grey),
                 filled: true,
-                fillColor: inputFill,
-                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12)), borderSide: BorderSide.none),
+                fillColor: const Color(0xFFF1F5F9),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
               onChanged: onSearchChanged,
             ),
             const SizedBox(height: 12),
             Expanded(
               child: isLoading
-                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF0F172A)))
+                  ? const Center(child: CircularProgressIndicator())
                   : results.isEmpty
-                      ? const Center(child: Text("Start typing to search", style: TextStyle(color: hintColor)))
+                      ? const Center(child: Text("No results found", style: TextStyle(color: Colors.grey)))
                       : ListView.separated(
                           itemCount: results.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                          separatorBuilder: (_, __) => const Divider(),
                           itemBuilder: (ctx, i) => itemBuilder(results[i]),
                         ),
             ),
@@ -730,7 +629,7 @@ class _BaseSearchDialog<T> extends StatelessWidget {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, null),
-          child: const Text("CANCEL", style: TextStyle(color: hintColor)),
+          child: const Text("CANCEL"),
         )
       ],
     );

@@ -17,7 +17,7 @@ class Journeys extends Table {
   RealColumn get totalDistance => real().withDefault(const Constant(0.0))();
   DateTimeColumn get startTime => dateTime()();
   DateTimeColumn get endTime => dateTime().nullable()();
-  
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -26,13 +26,10 @@ class Journeys extends Table {
 class JourneyBreadcrumbs extends Table {
   TextColumn get id => text()();
   TextColumn get journeyId => text().references(Journeys, #id)();
-  
-  // 📍 Physics
   RealColumn get latitude => real()();
   RealColumn get longitude => real()();
   TextColumn get h3Index => text()(); // The Hexagon ID
-  
-  // 🏎️ Telemetry
+  RealColumn get totalDistance => real().withDefault(const Constant(0.0))();
   RealColumn get speed => real().nullable()();
   RealColumn get heading => real().nullable()();
   RealColumn get accuracy => real().nullable()();
@@ -42,7 +39,20 @@ class JourneyBreadcrumbs extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [Journeys, JourneyBreadcrumbs])
+// 3. Define the Outbox Table - to keep sync logic separate
+class JourneyOpsQueue extends Table {
+  TextColumn get opId => text()(); // UUID for Idempotency
+  TextColumn get journeyId => text()();
+  IntColumn get userId => integer()();
+  TextColumn get type => text()(); // 'START', 'MOVE', 'STOP'
+  TextColumn get payload => text()(); // The JSON body for the server
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {opId};
+}
+
+@DriftDatabase(tables: [Journeys, JourneyBreadcrumbs, JourneyOpsQueue])
 class AppDatabase extends _$AppDatabase {
   // Singleton pattern for global access
   static final AppDatabase _instance = AppDatabase();
@@ -50,21 +60,122 @@ class AppDatabase extends _$AppDatabase {
 
   AppDatabase() : super(_openConnection());
 
+  // 🔄 BUMP VERSION HERE
   @override
-  int get schemaVersion => 1;
-  
-  // 🚀 HELPERS
-  Future<String> createJourney(int userId, String? pjpId, String? siteName) async {
-    final id = const Uuid().v4();
-    await into(journeys).insert(JourneysCompanion.insert(
-      id: id,
-      userId: userId,
-      pjpId: Value(pjpId),
-      siteName: Value(siteName),
-      startTime: DateTime.now(),
-      status: const Value('ACTIVE'),
-    ));
-    return id;
+  int get schemaVersion => 3;
+
+  // 🔄 DEFINE MIGRATION STRATEGY
+  @override
+  MigrationStrategy get migration {
+    return MigrationStrategy(
+      onCreate: (Migrator m) async {
+        await m.createAll();
+      },
+      onUpgrade: (Migrator m, int from, int to) async {
+        if (from < 2) {
+          await m.createTable(journeyOpsQueue);
+        }
+        if (from < 3) {
+          await m.addColumn(
+            journeyBreadcrumbs,
+            journeyBreadcrumbs.totalDistance,
+          );
+        }
+      },
+    );
+  }
+
+  // HELPERS
+  // 1. START local db journey
+  Future<String> startLocalJourney({
+    required int userId,
+    required String? pjpId,
+    required String? siteName,
+  }) async {
+    final uuid = const Uuid().v4();
+
+    await into(journeys).insert(
+      JourneysCompanion.insert(
+        id: uuid,
+        userId: userId,
+        pjpId: Value(pjpId),
+        siteName: Value(siteName),
+        startTime: DateTime.now(),
+        status: const Value('ACTIVE'),
+        totalDistance: const Value(0.0),
+      ),
+    );
+
+    return uuid;
+  }
+
+  Future<List<JourneyBreadcrumb>> getBreadcrumbsForJourney(String journeyId) {
+    return (select(journeyBreadcrumbs)
+          ..where((t) => t.journeyId.equals(journeyId))
+          ..orderBy([
+            (t) =>
+                OrderingTerm(expression: t.recordedAt, mode: OrderingMode.asc),
+          ]))
+        .get();
+  }
+
+  // 2. MOVE (Insert Breadcrumb)
+  Future<void> insertBreadcrumb(JourneyBreadcrumbsCompanion crumb) async {
+    await into(journeyBreadcrumbs).insert(crumb);
+  }
+
+  // 3. STOP (Finalize Journey)
+  Future<void> stopLocalJourney(String journeyId, double distance) async {
+    await (update(journeys)..where((tbl) => tbl.id.equals(journeyId))).write(
+      JourneysCompanion(
+        endTime: Value(DateTime.now()),
+        totalDistance: Value(distance),
+        status: const Value('COMPLETED_UNSYNCED'), // Mark for Sync Worker
+      ),
+    );
+  }
+
+  Future<JourneyBreadcrumb?> getLatestBreadcrumb(String journeyId) {
+    return (select(journeyBreadcrumbs)
+          ..where((t) => t.journeyId.equals(journeyId))
+          ..orderBy([
+            (t) =>
+                OrderingTerm(expression: t.recordedAt, mode: OrderingMode.desc),
+          ])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  Future<Journey?> getActiveJourney() {
+    return (select(journeys)
+          ..where((t) => t.status.equals('ACTIVE'))
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  // 4. SYNC HELPER (For the worker later)
+  Future<List<Journey>> getUnsyncedJourneys() {
+    return (select(
+      journeys,
+    )..where((tbl) => tbl.status.equals('COMPLETED_UNSYNCED'))).get();
+  }
+
+  // sync section
+  // Insert into Outbox
+  Future<void> enqueueOp(JourneyOpsQueueCompanion op) async {
+    await into(journeyOpsQueue).insert(op);
+  }
+
+  // Get Pending Ops
+  Future<List<JourneyOpsQueueData>> getPendingOps() {
+    return (select(
+      journeyOpsQueue,
+    )..orderBy([(t) => OrderingTerm(expression: t.createdAt)])).get();
+  }
+
+  // Delete Acked Ops
+  Future<void> deleteOps(List<String> opIds) async {
+    await (delete(journeyOpsQueue)..where((tbl) => tbl.opId.isIn(opIds))).go();
   }
 }
 

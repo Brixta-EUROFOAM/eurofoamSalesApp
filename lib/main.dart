@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
 import 'package:provider/provider.dart';
-// import 'package:shared_preferences/shared_preferences.dart';
+//import 'package:shared_preferences/shared_preferences.dart';
+//import 'package:salesmanapp/services/websocket/session_manager.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
@@ -34,6 +35,7 @@ import 'package:salesmanapp/features/JourneyModeController/journey_mode_capabili
 import 'package:salesmanapp/features/journey_bootstrap/journey_bootstrap_controller.dart';
 import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_capabilities.dart';
 import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_controller.dart';
+import 'package:salesmanapp/services/journeyFgTaskHandler/journey_foreground_service.dart';
 
 // --- WIDGETS & THEMES ---
 import 'package:salesmanapp/widgets/app_theme.dart';
@@ -43,7 +45,7 @@ import 'package:salesmanapp/widgets/theme_provider.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/services/notification_service.dart';
 import 'package:salesmanapp/api/auth_service.dart';
-import 'package:salesmanapp/services/update_service.dart'; // <--- IMPORT YOUR UpdateService
+import 'package:salesmanapp/services/update_service.dart';
 
 // --- SCREENS ---
 import 'package:salesmanapp/screens/auth/login_screen.dart';
@@ -163,6 +165,7 @@ Future<void> main() async {
   //......
 
   await NotificationService().init();
+  await JourneyForegroundService.init();
   debugPrint("NOTIFICATIONS INITIALIZED.");
 
   await dotenv.load(fileName: ".env");
@@ -175,13 +178,14 @@ Future<void> main() async {
     debugPrint("ERROR: RADAR_PUBLISHABLE_KEY not found in .env file.");
   }
 
+
   runApp(
     MultiProvider(
       providers: [
-        // 🔥 FEATURE FLAGS (control plane)
+        // FEATURE FLAGS (control plane)
         Provider<TechnicalFlags>.value(value: TechnicalFlags.dev),
 
-        // 🎨 THEME PROVIDER (already used by MyApp)
+        // THEME PROVIDER (already used by MyApp)
         ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),
       ],
       child: const MyApp(),

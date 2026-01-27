@@ -45,7 +45,13 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   final _formKey = GlobalKey<FormState>();
   final _apiService = ApiService();
 
-  // ⚡ RAM OPTIMIZATION: Map-based state and controller management
+  // --- 🎨 PREMIUM THEME PALETTE ---
+  final Color _bgLight = const Color(0xFFF8FAFC); // Slate 50
+  final Color _cardNavy = const Color(0xFF0F172A); // Deep Navy
+  //final Color _textDark = const Color(0xFF1E293B); // Slate 800
+  final Color _surfaceWhite = Colors.white;
+  final Color _accentGreen = const Color(0xFF10B981); // Emerald
+
   late final Map<String, TextEditingController> _controllers;
   final Map<String, dynamic> _values = {
     'selectedCustomerType': null,
@@ -66,7 +72,6 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     super.initState();
     _initControllers();
 
-    // Autofill Logic
     if (widget.site != null) _onSiteSelected(widget.site!);
     if (widget.initialCheckInTime != null) {
       _values['checkInTime'] = widget.initialCheckInTime;
@@ -85,12 +90,11 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
 
   void _showError(String message) {
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: Colors.red,
-        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -100,10 +104,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError
-            ? const Color.fromARGB(255, 238, 176, 42)
-            : TvrConstants.accentGreen,
-        duration: const Duration(seconds: 3),
+        backgroundColor: isError ? Colors.orangeAccent : _accentGreen,
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -139,12 +141,11 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
 
   @override
   void dispose() {
-    _controllers.forEach((_, c) => c.dispose()); // ⚡ Cleanup RAM
+    _controllers.forEach((_, c) => c.dispose());
     super.dispose();
   }
 
   // --- 💾 RECOVERY SYSTEM ---
-
   void _onUpdate(String key, dynamic value) {
     setState(() => _values[key] = value);
     _saveDrafts();
@@ -152,143 +153,64 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
 
   Future<void> _saveDrafts() async {
     final prefs = await SharedPreferences.getInstance();
-    
-    // 1. Text Controllers
     _controllers.forEach((key, c) => prefs.setString('tvr_ctrl_$key', c.text));
-
-    // 2. Booleans
+    prefs.setString('tvr_val_cust_type', _values['selectedCustomerType']);
     prefs.setBool('tvr_val_is_converted', _values['isConverted'] ?? false);
     prefs.setBool('tvr_val_is_bag_picked', _values['isBagPicked'] ?? false);
-    prefs.setBool('tvr_val_is_tech', _values['isTechService'] ?? false);
-    prefs.setBool('tvr_val_is_scheme', _values['isSchemeEnrolled'] ?? false);
-
-    // 3. Dropdowns (Crucial - prevents "N/A" on upload)
-    final dropdowns = [
-      'selectedCustomerType', 'selectedVisitType', 'selectedVisitCategory',
-      'selectedRegion', 'selectedUnit', 'selectedStage', 'selectedSiteVisitType',
-      'conversionType', 'conversionFromBrand', 'selectedServiceType', 
-      'selectedInfluencerType'
-    ];
-    for (var k in dropdowns) {
-      if (_values[k] != null) prefs.setString('tvr_val_$k', _values[k]);
-    }
-
-    // 4. Arrays (Brands/InfluencerTypes)
     if (_values['brandsInUse'] != null) {
-      prefs.setStringList('tvr_val_brands', (_values['brandsInUse'] as List).cast<String>());
-    }
-
-    // 5. Check-In Data (To survive process death)
-    if (_values['checkInTime'] != null) {
-      prefs.setString('tvr_val_checkin', (_values['checkInTime'] as DateTime).toIso8601String());
-    }
-    if (_values['inTimeImageUrl'] != null) {
-      prefs.setString('tvr_val_in_img_url', _values['inTimeImageUrl']);
-    }
-    if (_values['sitePhotoUrl'] != null) {
-      prefs.setString('tvr_val_site_img_url', _values['sitePhotoUrl']);
+      prefs.setStringList('tvr_val_brands', _values['brandsInUse']);
     }
   }
 
   Future<void> _loadDrafts() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    // Restore objects if passed via navigation
-    if (_values['selectedSite'] != null) _onSiteSelected(_values['selectedSite']);
-    if (_values['selectedDealer'] != null) _onDealerSelected(_values['selectedDealer']);
-    if (_values['selectedMason'] != null) _onMasonSelected(_values['selectedMason']);
+    if (_values['selectedSite'] != null)
+      _onSiteSelected(_values['selectedSite']);
+    if (_values['selectedDealer'] != null)
+      _onDealerSelected(_values['selectedDealer']);
+    if (_values['selectedMason'] != null)
+      _onMasonSelected(_values['selectedMason']);
 
-    // Check if draft exists
+    final prefs = await SharedPreferences.getInstance();
     if (!prefs.containsKey('tvr_ctrl_remarks')) return;
 
     setState(() {
-      // 1. Controllers
-      _controllers.forEach((key, c) => c.text = prefs.getString('tvr_ctrl_$key') ?? "");
-
-      // 2. Booleans
+      _controllers.forEach(
+        (key, c) => c.text = prefs.getString('tvr_ctrl_$key') ?? "",
+      );
+      _values['selectedCustomerType'] = prefs.getString('tvr_val_cust_type');
       _values['isConverted'] = prefs.getBool('tvr_val_is_converted') ?? false;
-      _values['isBagPicked'] = prefs.getBool('tvr_val_is_bag_picked') ?? false;
-      _values['isTechService'] = prefs.getBool('tvr_val_is_tech') ?? false;
-      _values['isSchemeEnrolled'] = prefs.getBool('tvr_val_is_scheme') ?? false;
-
-      // 3. Dropdowns
-      final dropdowns = [
-        'selectedCustomerType', 'selectedVisitType', 'selectedVisitCategory',
-        'selectedRegion', 'selectedUnit', 'selectedStage', 'selectedSiteVisitType',
-        'conversionType', 'conversionFromBrand', 'selectedServiceType', 
-        'selectedInfluencerType'
-      ];
-      for (var k in dropdowns) {
-        if (prefs.containsKey('tvr_val_$k')) {
-          _values[k] = prefs.getString('tvr_val_$k');
-        }
-      }
-
-      // 4. Arrays
-      if (prefs.containsKey('tvr_val_brands')) {
-        _values['brandsInUse'] = prefs.getStringList('tvr_val_brands');
-      }
-
-      // 5. Check-In & Images
-      if (_values['checkInTime'] == null && prefs.containsKey('tvr_val_checkin')) {
-        _values['checkInTime'] = DateTime.parse(prefs.getString('tvr_val_checkin')!);
-      }
-      if (prefs.containsKey('tvr_val_in_img_url')) {
-        _values['inTimeImageUrl'] = prefs.getString('tvr_val_in_img_url');
-      }
-      if (prefs.containsKey('tvr_val_site_img_url')) {
-        _values['sitePhotoUrl'] = prefs.getString('tvr_val_site_img_url');
-      }
     });
   }
 
-  // Future<void> _clearDrafts() async {
-  //   final prefs = await SharedPreferences.getInstance();
-  //   final allKeys = prefs.getKeys();
-  //   for (String key in allKeys) {
-  //     if (key.startsWith('tvr_')) await prefs.remove(key);
-  //   }
-  // }
-
   // --- 🛑 LOCATION & CAMERA ---
-
   Future<void> _fetchLocationAndAddress() async {
     _onUpdate('isFetchingLocation', true);
-
     try {
       final Position? position = await _ensureLocationPermission();
       if (position == null) {
         _onUpdate('isFetchingLocation', false);
         return;
       }
-      // ⚡ STEP 1: Update Lat/Long immediately so the user sees something happened
       setState(() {
         _values['capturedLocation'] = position;
         _controllers['latitude']!.text = position.latitude.toStringAsFixed(6);
         _controllers['longitude']!.text = position.longitude.toStringAsFixed(6);
       });
 
-      // ⚡ STEP 2: Fetch Address
       final addressDetails = await _apiService.reverseGeocodeWithRadar(
         latitude: position.latitude,
         longitude: position.longitude,
       );
 
       setState(() {
-        // ⚡ Robust mapping: Try different common keys from geocoding services
         final String? foundAddress =
             addressDetails['address'] ??
             addressDetails['formattedAddress'] ??
             addressDetails['addressLabel'];
-
-        if (foundAddress != null && foundAddress.isNotEmpty) {
+        if (foundAddress != null && foundAddress.isNotEmpty)
           _controllers['siteAddress']!.text = foundAddress;
-        }
-
-        if (addressDetails['area'] != null) {
+        if (addressDetails['area'] != null)
           _controllers['area']!.text = addressDetails['area']!;
-        }
-
         if (addressDetails['region'] != null &&
             TvrConstants.regionOptions.contains(addressDetails['region'])) {
           _values['selectedRegion'] = addressDetails['region'];
@@ -296,10 +218,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       });
 
       _saveDrafts();
-      _showSnack(
-        "Location & Address Updated",
-        isError: false,
-      ); // Green snackbar
+      _showSnack("Location Updated", isError: false);
     } catch (e) {
       debugPrint("Geocoding Error: $e");
       _showSnack("Location detected, but address fetch failed.");
@@ -312,69 +231,54 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     return await showDialog<bool>(
           context: context,
           barrierDismissible: false,
-          builder: (context) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: Row(
-                children: const [
-                  Icon(Icons.location_on, color: Colors.black87),
-                  SizedBox(width: 8),
-                  Text(
-                    "Location Access Required",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-              content: const Text(
-                "To verify this visit, the app needs your location.\n\n",
-                style: TextStyle(height: 1.4),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text(
-                    "DENY",
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text("ALLOW"),
-                ),
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Row(
+              children: [
+                Icon(Icons.location_on),
+                SizedBox(width: 8),
+                Text("Location Access"),
               ],
-            );
-          },
+            ),
+            content: const Text(
+              "To verify this visit, the app needs your location.\n\n",
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("DENY"),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _cardNavy,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text("ALLOW"),
+              ),
+            ],
+          ),
         ) ??
         false;
   }
 
   Future<Position?> _ensureLocationPermission() async {
-    // 1. Check if GPS is ON
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
       _showError("Please enable GPS to continue.");
       return null;
     }
 
-    // 2. Check permission state
     LocationPermission permission = await Geolocator.checkPermission();
-
     if (permission == LocationPermission.denied) {
-      // 🔔 SHOW DISCLOSURE FIRST (CRITICAL)
       final bool userAccepted = await _showLocationDisclosureDialog();
       if (!userAccepted) {
-        _showError("Location permission is required to verify visit.");
+        _showError("Location permission is required.");
         return null;
       }
-
       permission = await Geolocator.requestPermission();
-
       if (permission == LocationPermission.denied) {
         _showError("Location permission denied.");
         return null;
@@ -386,17 +290,12 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       return null;
     }
 
-    // 3. Fetch location
     try {
-      // ⚡ ADDED: timeLimit prevents indefinite hanging
-      // On Emulators, make sure to "push" a location from Extended Controls
       return await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10), // Stop waiting after 10s
+        timeLimit: const Duration(seconds: 10),
       );
     } catch (e) {
-      // If it times out or fails, try to get the last known position as a fallback
-      debugPrint("GPS Error");
       return await Geolocator.getLastKnownPosition();
     }
   }
@@ -407,8 +306,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text("Permission Required"),
         content: const Text(
-          "Location permission is permanently denied.\n\n"
-          "Please enable it from App Settings to submit the report.",
+          "Location permission is permanently denied. Enable it in App Settings.",
         ),
         actions: [
           TextButton(
@@ -428,7 +326,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   Future<void> _handleCheckIn() async {
-    // 1. UI: Open Camera (Blocking only for user action)
+    if (_values['selectedCustomerType'] == null) {
+      _showSnack("⚠️ Please select a Customer Type first.");
+      return;
+    }
     final String? imagePath = await Navigator.push(
       context,
       MaterialPageRoute(builder: (c) => const TvrCameraScreen()),
@@ -438,33 +339,22 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     final File imageFile = File(imagePath);
     final DateTime now = DateTime.now();
 
-    // 2. UI: Update State IMMEDIATELY (Optimistic)
-    // The user sees "Check-In Complete" instantly.
     setState(() {
       _values['checkInTime'] = now;
-      _values['inTimeImageFile'] = imageFile; // Show local image
-
-      // Flags for the background worker
+      _values['inTimeImageFile'] = imageFile;
       _values['isCheckInProcessing'] = true;
       _values['checkInFailed'] = false;
     });
 
     _saveDrafts();
-
-    // 3. LOGIC: Fire and Forget (Run in background)
-    // We do NOT use 'await' here. The UI thread is free to move on.
     _processCheckInInBackground(imageFile);
   }
 
   Future<void> _processCheckInInBackground(File imageFile) async {
     try {
-      // A. Fetch Location (Slow)
-      // We use a small timeout so we don't hang forever, but we are in background anyway
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
-
-      // Update location as soon as we have it
       if (mounted) {
         setState(() {
           _values['capturedLocation'] = pos;
@@ -472,11 +362,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
           _controllers['longitude']!.text = pos.longitude.toStringAsFixed(6);
         });
       }
-
-      // B. Upload Image (Slow)
       final url = await _apiService.uploadImageToR2(imageFile);
-
-      // C. Success!
       if (mounted) {
         setState(() {
           _values['inTimeImageUrl'] = url;
@@ -484,13 +370,11 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         });
       }
     } catch (e) {
-      debugPrint("Background Check-in Failed (Will retry at submit): $e");
-      // D. Silent Failure
-      // We don't show an error dialog yet. We just flag it.
+      debugPrint("Background Check-in Failed: $e");
       if (mounted) {
         setState(() {
           _values['isCheckInUploading'] = false;
-          _values['checkInUploadFailed'] = true; // Mark for retry later
+          _values['checkInUploadFailed'] = true;
         });
       }
     }
@@ -504,11 +388,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     if (imagePath == null) return;
 
     final file = File(imagePath);
-
-    // 1. Immediately update UI to show "Selected" status
     _onUpdate('sitePhotoFile', file);
 
-    // 2. Upload in background to avoid long waits during final submission
     try {
       final url = await _apiService.uploadImageToR2(file);
       _values['sitePhotoUrl'] = url;
@@ -519,38 +400,27 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   // --- 🔍 SELECTION HANDLERS ---
-
   void _onSiteSelected(TechnicalSite site) {
     setState(() {
       _values['selectedSite'] = site;
       _values['selectedSiteName'] = site.siteName;
-
       _controllers['concernedPerson']!.text = site.concernedPerson;
       _controllers['whatsapp']!.text = site.phoneNo;
       _controllers['phone']!.text = site.phoneNo;
       _controllers['partyName']!.text = site.concernedPerson;
-
       _controllers['siteAddress']!.text = site.address;
       _controllers['area']!.text = site.area ?? '';
-
-      if (site.latitude != 0.0 && site.latitude != 0.0) {
+      if (site.latitude != 0.0)
         _controllers['latitude']!.text = site.latitude.toStringAsFixed(6);
-      }
-      if (site.longitude != 0.0 && site.longitude != 0.0) {
+      if (site.longitude != 0.0)
         _controllers['longitude']!.text = site.longitude.toStringAsFixed(6);
-      }
-
       if (site.region != null &&
-          TvrConstants.regionOptions.contains(site.region)) {
+          TvrConstants.regionOptions.contains(site.region))
         _values['selectedRegion'] = site.region;
-      }
-
       if (site.stageOfConstruction != null &&
-          TvrConstants.stageOptions.contains(site.stageOfConstruction)) {
+          TvrConstants.stageOptions.contains(site.stageOfConstruction))
         _values['selectedStage'] = site.stageOfConstruction;
-      }
     });
-
     _saveDrafts();
   }
 
@@ -562,13 +432,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       _controllers['phone']!.text = dealer.phoneNo;
       _controllers['siteAddress']!.text = dealer.address;
       _controllers['area']!.text = dealer.area;
-
-      if (dealer.latitude != null && dealer.latitude != 0.0) {
+      if (dealer.latitude != null)
         _controllers['latitude']!.text = dealer.latitude!.toStringAsFixed(6);
-      }
-      if (dealer.longitude != null && dealer.longitude != 0.0) {
+      if (dealer.longitude != null)
         _controllers['longitude']!.text = dealer.longitude!.toStringAsFixed(6);
-      }
       _values['selectedInfluencerType'] = 'Dealer';
     });
     _saveDrafts();
@@ -586,15 +453,9 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   // --- 🚀 SUBMIT ---
-
-  // <--- Import this!
-
   Future<void> _submitTvr() async {
-    // ---------------------------------------------------------
-    // 1. VALIDATION LOGIC (Your strict logic preserved)
-    // ---------------------------------------------------------
     if (!_formKey.currentState!.validate()) {
-      _showSnack("Please fill in the required fields marked in red.");
+      _showSnack("Please fill in required fields.");
       return;
     }
     if (_values['checkInTime'] == null) {
@@ -603,443 +464,381 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     }
     if (!_passesTimeLock()) return;
 
-    // MANUAL ENFORCEMENT LOGIC (IHB/Site Checks)
+    // --- MANUAL VALIDATIONS ---
     final String type = _values['selectedCustomerType'] ?? '';
+    if (type.isEmpty) {
+      _showSnack("Select Customer Type.");
+      return;
+    }
+
     if (type == 'IHB/Site') {
       if (_values['selectedVisitType'] == null) {
-        _showSnack("⚠️ Please select a Visit Type.");
+        _showSnack("Select Visit Type.");
         return;
       }
       if (_values['selectedSiteVisitType'] == null) {
-        _showSnack("⚠️ Please select Site Visit Type.");
+        _showSnack("Select Site Visit Type.");
         return;
       }
       if (_values['selectedVisitCategory'] == null) {
-        _showSnack("⚠️ Please select a Visit Category.");
+        _showSnack("Select Visit Category.");
         return;
       }
-      if (_controllers['partyName']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Site Owner Name is required.");
+      if (_controllers['partyName']!.text.isEmpty) {
+        _showSnack("Site Owner Name required.");
         return;
       }
-      if (_controllers['whatsapp']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Phone / WhatsApp No. is required.");
+      if (_controllers['whatsapp']!.text.isEmpty) {
+        _showSnack("Phone/WhatsApp required.");
         return;
       }
       if (_values['selectedRegion'] == null) {
-        _showSnack("⚠️ Region is required.");
+        _showSnack("Region required.");
         return;
       }
-      if (_controllers['area']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Area is required.");
+      if (_controllers['area']!.text.isEmpty) {
+        _showSnack("Area required.");
         return;
       }
-      if (_controllers['siteAddress']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Site Address is required.");
+      if (_controllers['siteAddress']!.text.isEmpty) {
+        _showSnack("Address required.");
         return;
       }
-      if (_controllers['marketName']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Market Name is required.");
+      if (_controllers['marketName']!.text.isEmpty) {
+        _showSnack("Market Name required.");
         return;
       }
-      if (_controllers['constArea']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Construction Area (SqFt) is required.");
+      if (_controllers['constArea']!.text.isEmpty) {
+        _showSnack("Construction Area required.");
         return;
       }
       if (_values['selectedStage'] == null) {
-        _showSnack("⚠️ Construction Stage is required.");
+        _showSnack("Stage required.");
         return;
       }
-
-      final List brands = _values['brandsInUse'] ?? [];
-      if (brands.isEmpty) {
-        _showSnack("⚠️ Please select at least one Brand in Use.");
+      if ((_values['brandsInUse'] ?? []).isEmpty) {
+        _showSnack("Select Brand in Use.");
         return;
       }
-
-      if (_controllers['siteStock']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Site Stock is required.");
+      if (_controllers['siteStock']!.text.isEmpty) {
+        _showSnack("Site Stock required.");
         return;
       }
-      if (_controllers['estRequirement']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Estimated Requirement is required.");
+      if (_controllers['estRequirement']!.text.isEmpty) {
+        _showSnack("Estimated Requirement required.");
         return;
       }
 
       if (_values['isConverted'] == true) {
         if (_values['conversionType'] == null) {
-          _showSnack("⚠️ Please select Conversion Type.");
+          _showSnack("Select Conversion Type.");
           return;
         }
         if (_values['conversionFromBrand'] == null) {
-          _showSnack("⚠️ Please select 'From Brand'.");
+          _showSnack("Select From Brand.");
           return;
         }
-        if (_controllers['qty']!.text.trim().isEmpty) {
-          _showSnack("⚠️ Please enter Conversion Quantity.");
+        if (_controllers['qty']!.text.isEmpty) {
+          _showSnack("Enter Conversion Qty.");
           return;
         }
         if (_values['selectedUnit'] == null) {
-          _showSnack("⚠️ Please select a Unit.");
+          _showSnack("Select Unit.");
           return;
         }
-        if (_controllers['nearbyDealer']!.text.trim().isEmpty) {
-          _showSnack("⚠️ Converted Brand Dealer(Best) is required.");
+        if (_controllers['nearbyDealer']!.text.isEmpty) {
+          _showSnack("Converted Brand Dealer required.");
           return;
         }
       }
-
       if (_values['isTechService'] == true &&
           _values['selectedServiceType'] == null) {
-        _showSnack("⚠️ Please select Service Type.");
+        _showSnack("Select Service Type.");
         return;
       }
-
       if (_values['selectedInfluencerType'] == null) {
-        _showSnack("⚠️ Influencer Type is required.");
+        _showSnack("Influencer Type required.");
         return;
       }
-      if (_controllers['influencerName']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Influencer Name is required.");
+      if (_controllers['influencerName']!.text.isEmpty) {
+        _showSnack("Influencer Name required.");
         return;
       }
-      if (_controllers['influencerPhone']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Influencer Phone is required.");
+      if (_controllers['influencerPhone']!.text.isEmpty) {
+        _showSnack("Influencer Phone required.");
         return;
       }
     }
 
-    if (_controllers['remarks']!.text.trim().isEmpty) {
-      _showSnack("⚠️ Remarks are required.");
+    if (_controllers['remarks']!.text.isEmpty) {
+      _showSnack("Remarks required.");
       return;
     }
+
     if (type.contains("Dealer")) {
-      // Basic dealer info
-      if (_controllers['partyName']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Dealer / Sub-Dealer Name is required.");
+      if (_controllers['partyName']!.text.isEmpty) {
+        _showSnack("Dealer Name required.");
         return;
       }
-
-      if (_controllers['phone']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Phone / WhatsApp No. is required.");
+      if (_controllers['phone']!.text.isEmpty) {
+        _showSnack("Phone required.");
         return;
       }
-
-      // Visit meta
       if (_values['selectedVisitCategory'] == null) {
-        _showSnack("⚠️ Visit Category is required.");
+        _showSnack("Visit Category required.");
         return;
       }
-
       if (_values['selectedInfluencerType'] == null) {
-        _showSnack("⚠️ Influencer Type is required.");
+        _showSnack("Influencer Type required.");
         return;
       }
-
-      // Location & region
       if (_values['selectedRegion'] == null) {
-        _showSnack("⚠️ Region is required.");
+        _showSnack("Region required.");
         return;
       }
-
-      if (_controllers['area']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Area is required.");
+      if (_controllers['area']!.text.isEmpty) {
+        _showSnack("Area required.");
         return;
       }
-
-      if (_controllers['siteAddress']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Address is required.");
+      if (_controllers['siteAddress']!.text.isEmpty) {
+        _showSnack("Address required.");
         return;
       }
-
-      // Brands
-      final List brands = _values['brandsInUse'] ?? [];
-      if (brands.isEmpty) {
-        _showSnack("⚠️ Please select at least one Brand in Use / Selling.");
+      if ((_values['brandsInUse'] ?? []).isEmpty) {
+        _showSnack("Select Brand.");
         return;
       }
-
-      // Conversion / Bag picked flow
       if (_values['isBagPicked'] == true) {
-        if (_controllers['qty']!.text.trim().isEmpty) {
-          _showSnack("⚠️ Quantity is required.");
+        if (_controllers['qty']!.text.isEmpty) {
+          _showSnack("Qty required.");
           return;
         }
-
-        if (_controllers['rate']!.text.trim().isEmpty) {
-          _showSnack("⚠️ Rate per Bag is required.");
+        if (_controllers['rate']!.text.isEmpty) {
+          _showSnack("Rate required.");
           return;
         }
-
         if (_values['supplyDate'] == null) {
-          _showSnack("⚠️ Supply Date is mandatory when bags are picked.");
+          _showSnack("Supply Date required.");
           return;
         }
       }
     }
 
-    if (type.contains("Contractor/Head Mason ") ||
-        type.contains("Engineer/Architect")) {
+    if (type.contains("Contractor") || type.contains("Engineer")) {
       if (_values['selectedInfluencerType'] == null) {
-        _showSnack("⚠️ Influencer Type is required.");
+        _showSnack("Influencer Type required.");
         return;
       }
-
-      if (_controllers['influencerName']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Influencer Name is required.");
+      if (_controllers['influencerName']!.text.isEmpty) {
+        _showSnack("Name required.");
         return;
       }
-
-      if (_controllers['influencerPhone']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Influencer Phone is required.");
+      if (_controllers['influencerPhone']!.text.isEmpty) {
+        _showSnack("Phone required.");
         return;
       }
-
       if (_values['selectedRegion'] == null) {
-        _showSnack("⚠️ Region is required.");
+        _showSnack("Region required.");
         return;
       }
-
-      if (_controllers['area']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Area is required.");
+      if (_controllers['area']!.text.isEmpty) {
+        _showSnack("Area required.");
         return;
       }
-
-      if (_controllers['siteAddress']!.text.trim().isEmpty) {
-        _showSnack("⚠️ Address is required.");
+      if (_controllers['siteAddress']!.text.isEmpty) {
+        _showSnack("Address required.");
         return;
       }
-
       if (_values['selectedVisitCategory'] == null) {
-        _showSnack("⚠️ Visit Category is required.");
+        _showSnack("Visit Category required.");
         return;
       }
-
-      final List brands = _values['brandsInUse'] ?? [];
-      if (brands.isEmpty) {
-        _showSnack("⚠️ Please select at least one Preferred Brand.");
+      if ((_values['brandsInUse'] ?? []).isEmpty) {
+        _showSnack("Select Brand.");
         return;
       }
     }
 
-    // ---------------------------------------------------------
-    // 2. CHECKOUT CAMERA (Blocking - User must do this)
-    // ---------------------------------------------------------
-    // We do NOT start any loaders here. Just open camera.
+    // --- CHECKOUT CAMERA ---
     final String? outPath = await Navigator.push(
       context,
       MaterialPageRoute(builder: (c) => const TvrCameraScreen()),
     );
-    if (outPath == null) return; // User cancelled
+    if (outPath == null) {
+      _showSnack("Checkout photo mandatory.");
+      return;
+    }
 
-    // ---------------------------------------------------------
-    // 3. PREPARE DATA (Instant)
-    // ---------------------------------------------------------
-    final now = DateTime.now();
-    final checkIn = _values['checkInTime'] as DateTime;
-    final diff = now.difference(checkIn);
-
-    // ⚠️ CRITICAL: We pass whatever we have.
-    // If 'inTimeImageUrl' is null because background was slow, WE PASS NULL.
-    // The worker will see it's null and upload the file instead.
-
-    final payload = TechnicalVisitReport(
-      userId: int.parse(widget.employee.id),
-      reportDate: now,
-      visitType: _values['selectedVisitType'] ?? 'Site Visit',
-      visitCategory: _values['selectedVisitCategory'],
-      customerType: _values['selectedCustomerType'],
-      purposeOfVisit: _controllers['purposeOfVisit']?.text,
-      siteNameConcernedPerson: _controllers['concernedPerson']?.text ?? '',
-      phoneNo: _controllers['phone']?.text ?? '',
-      whatsappNo: _controllers['whatsapp']?.text,
-      siteAddress: _controllers['siteAddress']?.text,
-      marketName: _controllers['marketName']?.text,
-      region: _values['selectedRegion'],
-      area: _controllers['area']?.text,
-      latitude: _values['capturedLocation']?.latitude,
-      longitude: _values['capturedLocation']?.longitude,
-      siteVisitStage: _values['selectedStage'],
-      constAreaSqFt: int.tryParse(_controllers['constArea']?.text ?? ''),
-      siteVisitBrandInUse: _values['brandsInUse'] ?? [],
-      currentBrandPrice: double.tryParse(_controllers['rate']?.text ?? ''),
-      siteStock: double.tryParse(_controllers['siteStock']?.text ?? ''),
-      estRequirement: double.tryParse(
-        _controllers['estRequirement']?.text ?? '',
-      ),
-      supplyingDealerName: _controllers['supplyingDealer']?.text,
-      nearbyDealerName: _controllers['nearbyDealer']?.text,
-      associatedPartyName: _controllers['partyName']?.text,
-      isConverted: _values['isConverted'],
-      conversionType: _values['conversionType'],
-      conversionFromBrand: _values['conversionFromBrand'],
-      conversionQuantityValue: double.tryParse(_controllers['qty']?.text ?? ''),
-      conversionQuantityUnit: _values['selectedUnit'],
-      isTechService: _values['isTechService'],
-      serviceType: _values['selectedServiceType'],
-      serviceDesc: _controllers['serviceDesc']?.text,
-      influencerName: _controllers['influencerName']?.text,
-      influencerPhone: _controllers['influencerPhone']?.text,
-      influencerProductivity: _controllers['productivity']?.text,
-      isSchemeEnrolled: _values['isSchemeEnrolled'],
-      influencerType: _values['selectedInfluencerType'] != null
-          ? [_values['selectedInfluencerType']]
-          : [],
-      clientsRemarks: _controllers['remarks']?.text ?? '',
-      salespersonRemarks: _controllers['remarks']?.text ?? '',
-      checkInTime: checkIn,
-      checkOutTime: now,
-      timeSpentinLoc: '${diff.inHours}h ${diff.inMinutes.remainder(60)}m',
-
-      // PASS DATA FOR WORKER TO RESOLVE
-      inTimeImageUrl: _values['inTimeImageUrl'],
-      outTimeImageUrl: null, // Worker will upload this
-      sitePhotoUrl: _values['sitePhotoUrl'], // Worker will fix if null
-
-      pjpId: widget.pjp?.id,
-      masonId: _values['selectedMason']?.id,
-      siteId: _values['selectedSite']?.id,
-      siteVisitType: _values['selectedSiteVisitType'],
-    );
-
-    // Capture Files for the Worker
-    final File? inTimeFile = _values['inTimeImageFile'];
-    final File outTimeFile = File(outPath);
-    final File? sitePhotoFile = _values['sitePhotoFile'];
-
-    // ---------------------------------------------------------
-    // 4. HANDOFF & EXIT (Optimistic)
-    // ---------------------------------------------------------
-
-    // Fire the independent worker
-    TvrBackgroundWorker.processAndSubmit(
-      apiService: _apiService,
-      tvrPayload: payload,
-      inTimeFile: inTimeFile,
-      outTimeFile: outTimeFile,
-      sitePhotoFile: sitePhotoFile,
-      clearDrafts: true,
-    );
-
-    // Notify & Close Screen
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: const [
-              Icon(Icons.cloud_upload, color: Colors.white),
-              SizedBox(width: 10),
-              Text("Report Saved! Uploading in background..."),
-            ],
-          ),
-          backgroundColor: TvrConstants.accentGreen,
-          duration: const Duration(seconds: 2),
-        ),
+    try {
+      setState(() => _values['isSubmitting'] = true);
+      final now = DateTime.now();
+      final checkIn = _values['checkInTime'] as DateTime;
+      final diff = now.difference(checkIn);
+      final int uId = int.tryParse(widget.employee.id.toString()) ?? 0;
+      final List<String> safeBrands = List<String>.from(
+        _values['brandsInUse'] ?? [],
       );
-      Navigator.pop(context);
+      final List<String> safeInfluencerType =
+          _values['selectedInfluencerType'] != null
+          ? [_values['selectedInfluencerType'].toString()]
+          : <String>[];
+
+      final payload = TechnicalVisitReport(
+        userId: uId,
+        reportDate: now,
+        visitType: _values['selectedVisitType'] ?? 'Non-Site Visit',
+        visitCategory: _values['selectedVisitCategory'],
+        customerType: _values['selectedCustomerType'],
+        purposeOfVisit: _controllers['purposeOfVisit']?.text,
+        siteNameConcernedPerson: _controllers['concernedPerson']?.text ?? '',
+        phoneNo: _controllers['phone']?.text ?? '',
+        whatsappNo: _controllers['whatsapp']?.text,
+        siteAddress: _controllers['siteAddress']?.text,
+        marketName: _controllers['marketName']?.text,
+        region: _values['selectedRegion'],
+        area: _controllers['area']?.text,
+        latitude: _values['capturedLocation']?.latitude,
+        longitude: _values['capturedLocation']?.longitude,
+        siteVisitStage: _values['selectedStage'],
+        constAreaSqFt: int.tryParse(_controllers['constArea']?.text ?? ''),
+        siteVisitBrandInUse: safeBrands,
+        currentBrandPrice: double.tryParse(_controllers['rate']?.text ?? ''),
+        siteStock: double.tryParse(_controllers['siteStock']?.text ?? ''),
+        estRequirement: double.tryParse(
+          _controllers['estRequirement']?.text ?? '',
+        ),
+        supplyingDealerName: _controllers['supplyingDealer']?.text,
+        nearbyDealerName: _controllers['nearbyDealer']?.text,
+        associatedPartyName: _controllers['partyName']?.text,
+        isConverted: _values['isConverted'],
+        conversionType: _values['conversionType'],
+        conversionFromBrand: _values['conversionFromBrand'],
+        conversionQuantityValue: double.tryParse(
+          _controllers['qty']?.text ?? '',
+        ),
+        conversionQuantityUnit: _values['selectedUnit'],
+        isTechService: _values['isTechService'],
+        serviceDesc: _controllers['serviceDesc']?.text,
+        influencerName: _controllers['influencerName']?.text,
+        influencerPhone: _controllers['influencerPhone']?.text,
+        influencerProductivity: _controllers['productivity']?.text,
+        isSchemeEnrolled: _values['isSchemeEnrolled'],
+        influencerType: safeInfluencerType,
+        clientsRemarks: _controllers['remarks']?.text ?? '',
+        salespersonRemarks: _controllers['remarks']?.text ?? '',
+        checkInTime: checkIn,
+        checkOutTime: now,
+        timeSpentinLoc: '${diff.inHours}h ${diff.inMinutes.remainder(60)}m',
+        inTimeImageUrl: _values['inTimeImageUrl'],
+        outTimeImageUrl: null,
+        sitePhotoUrl: _values['sitePhotoUrl'],
+        pjpId: widget.pjp?.id,
+        masonId: _values['selectedMason']?.id,
+        siteId: _values['selectedSite']?.id,
+        siteVisitType: _values['selectedSiteVisitType'],
+      );
+
+      final File? inTimeFile = _values['inTimeImageFile'];
+      final File outTimeFile = File(outPath);
+      final File? sitePhotoFile = _values['sitePhotoFile'];
+
+      await TvrBackgroundWorker.processAndSubmit(
+        apiService: _apiService,
+        tvrPayload: payload,
+        inTimeFile: inTimeFile,
+        outTimeFile: outTimeFile,
+        sitePhotoFile: sitePhotoFile,
+        clearDrafts: true,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: const [
+                Icon(Icons.cloud_upload, color: Colors.white),
+                SizedBox(width: 10),
+                Text("Report Saved! Uploading..."),
+              ],
+            ),
+            backgroundColor: _accentGreen,
+          ),
+        );
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _values['isSubmitting'] = false);
+        _showError("Failed: $e");
+      }
     }
   }
 
   bool _passesTimeLock() {
     final DateTime checkIn = _values['checkInTime'];
     final Duration diff = DateTime.now().difference(checkIn);
-
     const int minMinutes = 0;
-
     if (diff.inMinutes < minMinutes) {
-      final remaining = minMinutes - diff.inMinutes;
       _showError(
-        "Minimum $minMinutes minutes required. Wait $remaining minute(s).",
+        "Minimum $minMinutes minutes required. Wait ${minMinutes - diff.inMinutes} minute(s).",
       );
       return false;
     }
     return true;
   }
 
-  // bool _passesGeofence() {
-  //   final Position pos = _values['capturedLocation'];
-  //   final String type = _values['selectedCustomerType'];
-
-  //   const double allowedMeters = 50;
-
-  //   if (type == 'IHB/Site') {
-  //     final site = _values['selectedSite'];
-  //     if (site?.latitude == null || site?.longitude == null) return true;
-
-  //     final meters = Geolocator.distanceBetween(
-  //       pos.latitude,
-  //       pos.longitude,
-  //       site.latitude,
-  //       site.longitude,
-  //     );
-
-  //     if (meters > allowedMeters) {
-  //       _showError(
-  //         "Geofence error: you are ${(meters / 1000).toStringAsFixed(2)} km away from site",
-  //       );
-  //       return false;
-  //     }
-  //   }
-
-  //   if (type != null && type.contains("Dealer")) {
-  //     final dealer = _values['selectedDealer'];
-  //     if (dealer?.latitude == null || dealer?.longitude == null) return true;
-
-  //     final meters = Geolocator.distanceBetween(
-  //       pos.latitude,
-  //       pos.longitude,
-  //       dealer.latitude,
-  //       dealer.longitude,
-  //     );
-
-  //     if (meters > allowedMeters) {
-  //       _showError(
-  //         "Geofence error: you are ${(meters / 1000).toStringAsFixed(2)} km away from dealer",
-  //       );
-  //       return false;
-  //     }
-  //   }
-
-  //   return true;
-  // }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: TvrConstants.surfaceWhite,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  _buildHeader(),
-                  const Divider(height: 30),
-                  if (_values['checkInTime'] == null) ...[
-                    TvrDropdownField(
-                      label: 'Type of Customer',
-                      value: _values['selectedCustomerType'],
-                      items: TvrConstants.customerTypeOptions,
-                      onChanged: (v) => _onUpdate('selectedCustomerType', v),
-                    ),
-                    const SizedBox(height: 24),
-                    _buildCheckInButton(),
-                  ] else ...[
-                    _buildVisitSummary(),
-                    const SizedBox(height: 24),
-                    _buildFormSwitcher(), // ⚡ Delegated to child widgets
-                    const SizedBox(height: 32),
-                    _buildSubmitButton(),
-                  ],
-                ],
+      backgroundColor: _bgLight,
+      appBar: AppBar(
+        backgroundColor: _bgLight,
+        elevation: 0,
+        title: const Text(
+          'New TVR Report',
+          style: TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black87),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: _surfaceWhite,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
               ),
+            ],
+          ),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                if (_values['checkInTime'] == null) ...[
+                  TvrDropdownField(
+                    label: 'Type of Customer',
+                    value: _values['selectedCustomerType'],
+                    items: TvrConstants.customerTypeOptions,
+                    onChanged: (v) => _onUpdate('selectedCustomerType', v),
+                  ),
+                  const SizedBox(height: 24),
+                  _buildCheckInButton(),
+                ] else ...[
+                  _buildVisitSummary(),
+                  const SizedBox(height: 24),
+                  _buildFormSwitcher(),
+                  const SizedBox(height: 32),
+                  _buildSubmitButton(),
+                ],
+              ],
             ),
           ),
         ),
@@ -1047,42 +846,55 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     );
   }
 
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text(
-          'TVR Report',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-        IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ],
-    );
-  }
-
   Widget _buildCheckInButton() {
     return ElevatedButton.icon(
       onPressed: _values['isUploadingImage'] ? null : _handleCheckIn,
-      icon: const Icon(Icons.camera_alt),
-      label: const Text('CHECK-IN'),
+      icon: const Icon(Icons.camera_alt_outlined),
+      label: const Text('Start Visit & Check-In'),
       style: ElevatedButton.styleFrom(
-        backgroundColor: TvrConstants.accentOrange,
-        padding: const EdgeInsets.all(16),
+        backgroundColor: _cardNavy,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
   Widget _buildVisitSummary() {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF0FDF4),
-        borderRadius: BorderRadius.circular(12),
+        color: _accentGreen.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _accentGreen.withOpacity(0.3)),
       ),
-      child: Text("${_values['selectedCustomerType']} Check-in complete."),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle_rounded, color: _accentGreen),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Checked In",
+                  style: TextStyle(
+                    color: _cardNavy,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  "${_values['selectedCustomerType']} Visit Active",
+                  style: TextStyle(
+                    color: _cardNavy.withOpacity(0.6),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1093,16 +905,12 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime(2099),
     );
-
-    if (picked != null) {
-      _onUpdate('supplyDate', picked);
-    }
+    if (picked != null) _onUpdate('supplyDate', picked);
   }
 
   Widget _buildFormSwitcher() {
     final type = _values['selectedCustomerType'];
-
-    if (type == 'IHB/Site') {
+    if (type == 'IHB/Site'){
       return TvrIhbSection(
         controllers: _controllers,
         values: _values,
@@ -1111,10 +919,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         onMasonSearch: _openMasonSearch,
         onLocationFetch: _fetchLocationAndAddress,
         onPickPhoto: _pickSitePhoto,
-      );
-    }
-
-    if (type != null && type.contains("Dealer")) {
+      );}
+    if (type != null && type.contains("Dealer")){
       return TvrDealerSection(
         controllers: _controllers,
         values: _values,
@@ -1123,10 +929,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         onLocationFetch: _fetchLocationAndAddress,
         onPickPhoto: _pickSitePhoto,
         onSelectSupplyDate: _selectSupplyDate,
-      );
-    }
-
-    // Influencer
+      );}
     return TvrInfluencerSection(
       controllers: _controllers,
       values: _values,
@@ -1141,27 +944,27 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // --- NEW TEXT LABEL ---
         const Padding(
           padding: EdgeInsets.only(bottom: 8.0),
           child: Center(
             child: Text(
-              "Submit progress/update photo and Check Out",
+              "Take Checkout Photo to Submit",
               style: TextStyle(
-                color: Color(0xFF111827), // Dark text color
-                fontSize: 14,
+                color: Colors.grey,
+                fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
         ),
-
-        // --- BUTTON ---
         ElevatedButton(
           onPressed: _values['isSubmitting'] ? null : _submitTvr,
           style: ElevatedButton.styleFrom(
-            backgroundColor: TvrConstants.accentGreen,
-            padding: const EdgeInsets.all(16),
+            backgroundColor: _accentGreen,
+            padding: const EdgeInsets.all(18),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
           ),
           child: _values['isSubmitting']
               ? const SizedBox(
@@ -1173,15 +976,14 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
                   ),
                 )
               : const Text(
-                  'SUBMIT & CHECK-OUT',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  'SUBMIT REPORT',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
         ),
       ],
     );
   }
 
-  // --- SEARCH DIALOGS (Keep at bottom) ---
   void _openSiteSearch() async {
     final site = await showDialog<TechnicalSite>(
       context: context,
@@ -1210,7 +1012,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 }
 
-// --- SEARCH DIALOGS ---
+// --- SEARCH DIALOGS (Polished) ---
 class _ServerSiteSearchDialog extends StatefulWidget {
   final ApiService api;
   final int userId;
@@ -1224,9 +1026,6 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
   List<TechnicalSite> _sites = [];
   bool _isLoading = false;
   Timer? _debounce;
-  static const Color _textDark = Color(0xFF111827);
-  static const Color _textGrey = Color(0xFF6B7280);
-  static const Color _inputFill = Color(0xFFF9FAFB);
   void _search(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 500), () async {
@@ -1253,10 +1052,10 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Container(
         padding: const EdgeInsets.all(24),
-        height: 400,
+        height: 500,
         width: double.maxFinite,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1264,22 +1063,20 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
             const Text(
               "Select Site",
               style: TextStyle(
-                color: _textDark,
+                color: Color(0xFF1E293B),
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
               ),
             ),
             const SizedBox(height: 16),
             TextField(
-              style: const TextStyle(color: _textDark),
-              decoration: const InputDecoration(
-                hintText: "Search site...",
-                hintStyle: TextStyle(color: _textGrey),
-                prefixIcon: Icon(Icons.search, color: _textGrey),
+              decoration: InputDecoration(
+                hintText: "Search...",
+                prefixIcon: const Icon(Icons.search),
                 filled: true,
-                fillColor: _inputFill,
+                fillColor: const Color(0xFFF1F5F9),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
               ),
@@ -1293,38 +1090,27 @@ class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
                   ? const Center(
                       child: Text(
                         "No sites found",
-                        style: TextStyle(color: _textGrey),
+                        style: TextStyle(color: Colors.grey),
                       ),
                     )
                   : ListView.separated(
                       itemCount: _sites.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      separatorBuilder: (_, __) => const Divider(),
                       itemBuilder: (ctx, i) => ListTile(
                         title: Text(
                           _sites[i].siteName,
-                          style: const TextStyle(
-                            color: _textDark,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        subtitle: Text(
-                          "${_sites[i].address} • ${_sites[i].concernedPerson}",
-                          style: const TextStyle(
-                            color: _textGrey,
-                            fontSize: 12,
-                          ),
-                        ),
+                        subtitle: Text("${_sites[i].address}"),
                         onTap: () => Navigator.pop(context, _sites[i]),
                       ),
                     ),
             ),
-            const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
                 onPressed: () => Navigator.pop(context, null),
-                child: const Text("CANCEL", style: TextStyle(color: _textGrey)),
+                child: const Text("CLOSE"),
               ),
             ),
           ],
@@ -1346,9 +1132,6 @@ class _ServerMasonSearchDialogState extends State<_ServerMasonSearchDialog> {
   List<Mason> _masons = [];
   bool _isLoading = false;
   Timer? _debounce;
-  static const Color _textDark = Color(0xFF111827);
-  static const Color _textGrey = Color(0xFF6B7280);
-  static const Color _inputFill = Color(0xFFF9FAFB);
   void _search(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 500), () async {
@@ -1372,10 +1155,10 @@ class _ServerMasonSearchDialogState extends State<_ServerMasonSearchDialog> {
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Container(
         padding: const EdgeInsets.all(24),
-        height: 400,
+        height: 500,
         width: double.maxFinite,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1383,22 +1166,20 @@ class _ServerMasonSearchDialogState extends State<_ServerMasonSearchDialog> {
             const Text(
               "Select Mason",
               style: TextStyle(
-                color: _textDark,
+                color: Color(0xFF1E293B),
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
               ),
             ),
             const SizedBox(height: 16),
             TextField(
-              style: const TextStyle(color: _textDark),
-              decoration: const InputDecoration(
-                hintText: "Search mason...",
-                hintStyle: TextStyle(color: _textGrey),
-                prefixIcon: Icon(Icons.search, color: _textGrey),
+              decoration: InputDecoration(
+                hintText: "Search...",
+                prefixIcon: const Icon(Icons.search),
                 filled: true,
-                fillColor: _inputFill,
+                fillColor: const Color(0xFFF1F5F9),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
               ),
@@ -1412,38 +1193,27 @@ class _ServerMasonSearchDialogState extends State<_ServerMasonSearchDialog> {
                   ? const Center(
                       child: Text(
                         "No masons found",
-                        style: TextStyle(color: _textGrey),
+                        style: TextStyle(color: Colors.grey),
                       ),
                     )
                   : ListView.separated(
                       itemCount: _masons.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      separatorBuilder: (_, __) => const Divider(),
                       itemBuilder: (ctx, i) => ListTile(
                         title: Text(
                           _masons[i].name,
-                          style: const TextStyle(
-                            color: _textDark,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        subtitle: Text(
-                          _masons[i].phoneNumber,
-                          style: const TextStyle(
-                            color: _textGrey,
-                            fontSize: 12,
-                          ),
-                        ),
+                        subtitle: Text(_masons[i].phoneNumber),
                         onTap: () => Navigator.pop(context, _masons[i]),
                       ),
                     ),
             ),
-            const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
                 onPressed: () => Navigator.pop(context, null),
-                child: const Text("CANCEL", style: TextStyle(color: _textGrey)),
+                child: const Text("CLOSE"),
               ),
             ),
           ],
@@ -1465,16 +1235,6 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   List<Dealer> _dealers = [];
   bool _isLoading = false;
   Timer? _debounce;
-  static const Color _textDark = Color(0xFF111827);
-  static const Color _textGrey = Color(0xFF6B7280);
-  static const Color _inputFill = Color(0xFFF9FAFB);
-
-  @override
-  void initState() {
-    super.initState();
-    _search("");
-  }
-
   void _search(String query) {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
     _debounce = Timer(const Duration(milliseconds: 500), () async {
@@ -1489,13 +1249,19 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _search("");
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: Container(
         padding: const EdgeInsets.all(24),
-        height: 400,
+        height: 500,
         width: double.maxFinite,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1503,22 +1269,20 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
             const Text(
               "Select Dealer",
               style: TextStyle(
-                color: _textDark,
+                color: Color(0xFF1E293B),
                 fontWeight: FontWeight.bold,
                 fontSize: 18,
               ),
             ),
             const SizedBox(height: 16),
             TextField(
-              style: const TextStyle(color: _textDark),
-              decoration: const InputDecoration(
-                hintText: "Search dealer...",
-                hintStyle: TextStyle(color: _textGrey),
-                prefixIcon: Icon(Icons.search, color: _textGrey),
+              decoration: InputDecoration(
+                hintText: "Search...",
+                prefixIcon: const Icon(Icons.search),
                 filled: true,
-                fillColor: _inputFill,
+                fillColor: const Color(0xFFF1F5F9),
                 border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
                 ),
               ),
@@ -1532,38 +1296,27 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
                   ? const Center(
                       child: Text(
                         "No dealers found",
-                        style: TextStyle(color: _textGrey),
+                        style: TextStyle(color: Colors.grey),
                       ),
                     )
                   : ListView.separated(
                       itemCount: _dealers.length,
-                      separatorBuilder: (_, __) =>
-                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      separatorBuilder: (_, __) => const Divider(),
                       itemBuilder: (ctx, i) => ListTile(
                         title: Text(
                           _dealers[i].name,
-                          style: const TextStyle(
-                            color: _textDark,
-                            fontWeight: FontWeight.w600,
-                          ),
+                          style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        subtitle: Text(
-                          "${_dealers[i].area} • ${_dealers[i].phoneNo}",
-                          style: const TextStyle(
-                            color: _textGrey,
-                            fontSize: 12,
-                          ),
-                        ),
+                        subtitle: Text("${_dealers[i].area}"),
                         onTap: () => Navigator.pop(context, _dealers[i]),
                       ),
                     ),
             ),
-            const SizedBox(height: 10),
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
                 onPressed: () => Navigator.pop(context, null),
-                child: const Text("CANCEL", style: TextStyle(color: _textGrey)),
+                child: const Text("CLOSE"),
               ),
             ),
           ],
