@@ -159,7 +159,7 @@ class JourneyTrackingController {
     _isActive = true;
     _currentLocalJourneyId = journeyId;
     // _currentPjpId = pjpId;
-    _totalDistance = initialDistance; // RESTORE STATE
+    _totalDistance = await _db.getLastDistanceForJourney(journeyId); // RESTORE STATE
 
     // 🔥 FIX: Reconstruct the last Position object.
     // This ensures the NEXT GPS point calculates distance from HERE,
@@ -199,7 +199,9 @@ class JourneyTrackingController {
     );
 
     _positionSubscription =
-        Geolocator.getPositionStream(locationSettings: settings).listen((pos) async {
+        Geolocator.getPositionStream(locationSettings: settings).listen((
+          pos,
+        ) async {
           if (_lastPosition != null) {
             final gap = Geolocator.distanceBetween(
               _lastPosition!.latitude,
@@ -238,7 +240,7 @@ class JourneyTrackingController {
                 journeyId: _currentLocalJourneyId ?? '',
                 latitude: pos.latitude,
                 longitude: pos.longitude,
-                h3Index: "0", 
+                h3Index: "0",
                 totalDistance: Value(_totalDistance),
                 speed: Value(pos.speed),
                 heading: Value(pos.heading),

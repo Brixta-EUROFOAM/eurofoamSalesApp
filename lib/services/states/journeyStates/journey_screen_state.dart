@@ -117,7 +117,7 @@ class MapStyleLoadedIntent {
 class RestoreJourneyIntent {
   // The only decision the UI makes (Ask the user)
   final Future<bool> Function(JourneyRestoreSnapshot) askUser;
-  
+
   // Dependencies needed for the Logic (Injected from UI)
   final JourneyTrackingController trackingController;
   final AppDatabase db;
@@ -258,9 +258,9 @@ class RestoreJourneyStateMachine extends ValueNotifier<RestoreJourneyState> {
         await JourneyForegroundNotification.start(
           title: "Journey Resumed",
           subtitle: snapshot.displayName ?? "Tracking...",
-          initialDistance: snapshot.distance, 
+          initialDistance: snapshot.distance,
         );
-        
+
         // Notify UI to rebuild
         value = RestoreResumed(snapshot);
       } catch (e) {
@@ -832,7 +832,7 @@ class JourneyStartStateMachine extends ValueNotifier<JourneyStartState> {
 
       // 4. Initialize Controller (Pass the Local ID now)
       value = JourneyStartProcessing("Initializing GPS...");
-      
+
       // 🔥 STEP B: Hand that ID to the Controller so it knows where to write breadcrumbs
       await intent.trackingController.startJourney(
         userId: int.parse(intent.employee.id),
@@ -990,11 +990,8 @@ class JourneyLocalLogic {
     required LatLng? destLoc,
   }) async {
     final int uId = int.parse(employee.id);
-    final uuid = const Uuid().v4(); // Generate Journey ID here
-    final opId = const Uuid().v4(); // Unique ID for this specific Operation
+    final opId = const Uuid().v4();
 
-    // Ensure Session is started BEFORE we do anything else
-    // If it's already running, this method just returns immediately.
     await SessionManager.instance.startSession(uId);
 
     final String? pjpId = pjp?.id;
@@ -1006,67 +1003,68 @@ class JourneyLocalLogic {
       siteName = pjp.areaToBeVisited;
     }
 
-    await db.startLocalJourney(userId: uId, pjpId: pjpId, siteName: siteName);
-    // 2. 🚀 Save to Outbox (For Sync)
-    final startPayload = {
-      'siteName': pjp?.areaToBeVisited ?? "Unplanned",
-      'destLat': destLoc?.latitude,
-      'destLng': destLoc?.longitude,
-      'pjpId': pjp?.id,
-      'siteId': isSiteVisit ? pjp?.siteId : null,
-      'dealerId': !isSiteVisit ? pjp?.dealerId : null,
-    };
-
-    // Note: Notification start moved to StateMachine to handle order correctly
-    // But we still queue the OP here.
+    final journeyId = await db.startLocalJourney(
+      userId: uId,
+      pjpId: pjpId,
+      siteName: siteName,
+    );
 
     await db.enqueueOp(
       JourneyOpsQueueCompanion.insert(
         opId: opId,
-        journeyId: uuid,
+        journeyId: journeyId,
         userId: uId,
         type: 'START',
-        payload: jsonEncode(startPayload),
+        payload: jsonEncode({
+          'siteName': pjp?.areaToBeVisited ?? "Unplanned",
+          'destLat': destLoc?.latitude,
+          'destLng': destLoc?.longitude,
+          'pjpId': pjp?.id,
+          'siteId': isSiteVisit ? pjp?.siteId : null,
+          'dealerId': !isSiteVisit ? pjp?.dealerId : null,
+        }),
         createdAt: DateTime.now(),
       ),
     );
 
-    // trigger sync on START
     SessionManager.instance.triggerSync();
-
-    return uuid;
+    return journeyId;
   }
 
   // REPLACES: notifyServerStop (LOCAL FIRST)
   static Future<void> stopJourneyLocal({
     required AppDatabase db,
     required String journeyId,
-    required double totalDistance,
+    required double totalDistance, // meters from controller
     required int userId,
   }) async {
-    // Ensure Session is started here too.
-    // critical if the user closed the app mid-journey and just reopened it to stop.
     await SessionManager.instance.startSession(userId);
 
     final double distanceInKm = totalDistance / 1000.0;
 
-    // 1. Save KM to Local DB
+    // PATCH local DB (single source of truth)
     await db.stopLocalJourney(journeyId, distanceInKm);
 
-    // 2. 🚀 Save to Outbox
+    // PATCH payload for server (idempotent)
     await db.enqueueOp(
       JourneyOpsQueueCompanion.insert(
         opId: const Uuid().v4(),
         journeyId: journeyId,
         userId: userId,
-        type: 'STOP',
-        payload: jsonEncode({'totalDistance': totalDistance}),
+        type: 'STOP', // treated as PATCH on server
+        payload: jsonEncode({
+          'status': 'COMPLETED',
+          'totalDistance': distanceInKm,
+          'endedAt': DateTime.now().toIso8601String(),
+        }),
         createdAt: DateTime.now(),
       ),
     );
 
-    // 3. Trigger Sync
+    // Trigger Sync
     SessionManager.instance.triggerSync();
+
+    // Stop foreground safely
     await JourneyForegroundNotification.stop();
   }
 }

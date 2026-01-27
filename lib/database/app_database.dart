@@ -173,6 +173,22 @@ class AppDatabase extends _$AppDatabase {
     )..orderBy([(t) => OrderingTerm(expression: t.createdAt)])).get();
   }
 
+  Future<double> getLastDistanceForJourney(String journeyId) async {
+    final crumb =
+        await (select(journeyBreadcrumbs)
+              ..where((t) => t.journeyId.equals(journeyId))
+              ..orderBy([
+                (t) => OrderingTerm(
+                  expression: t.recordedAt,
+                  mode: OrderingMode.desc,
+                ),
+              ])
+              ..limit(1))
+            .getSingleOrNull();
+
+    return crumb?.totalDistance ?? 0.0;
+  }
+
   // Delete Acked Ops
   Future<void> deleteOps(List<String> opIds) async {
     await (delete(journeyOpsQueue)..where((tbl) => tbl.opId.isIn(opIds))).go();
