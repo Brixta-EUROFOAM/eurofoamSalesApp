@@ -718,6 +718,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         ),
         conversionQuantityUnit: _values['selectedUnit'],
         isTechService: _values['isTechService'],
+        serviceType: _values['selectedServiceType'],
         serviceDesc: _controllers['serviceDesc']?.text,
         influencerName: _controllers['influencerName']?.text,
         influencerPhone: _controllers['influencerPhone']?.text,

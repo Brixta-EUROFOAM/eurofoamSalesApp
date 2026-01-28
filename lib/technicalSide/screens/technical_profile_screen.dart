@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/widgets/theme_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:salesmanapp/technicalSide/tvrwidgets/all_tvr_list_screen.dart';
 
 // local drift db
 import 'package:drift_db_viewer/drift_db_viewer.dart';
@@ -80,11 +81,20 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
       final List<dynamic> results = await Future.wait([
         Future.value([]),
         // 1 TVRs THIS MONTH
-        _apiService.fetchTvrsForUser(uid, startDate: startMonthStr, endDate: endMonthStr),
+        _apiService.fetchTvrsForUser(
+          uid,
+          startDate: startMonthStr,
+          endDate: endMonthStr,
+        ),
         // 2 TVRs ALL TIME
         _apiService.fetchTvrsForUser(uid, limit: 10000),
         // 3 PJPs
-        _apiService.fetchPjpsForUser(uid, status: 'APPROVED', startDate: todayString, endDate: todayString),
+        _apiService.fetchPjpsForUser(
+          uid,
+          status: 'APPROVED',
+          startDate: todayString,
+          endDate: todayString,
+        ),
         // 4 Tasks
         _apiService.fetchDailyTasksForUser(uid, status: 'Completed'),
       ]);
@@ -112,8 +122,12 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
   }
 
   String getInitials() {
-    String firstNameInitial = widget.employee.firstName?.isNotEmpty == true ? widget.employee.firstName![0] : '';
-    String lastNameInitial = widget.employee.lastName?.isNotEmpty == true ? widget.employee.lastName![0] : '';
+    String firstNameInitial = widget.employee.firstName?.isNotEmpty == true
+        ? widget.employee.firstName![0]
+        : '';
+    String lastNameInitial = widget.employee.lastName?.isNotEmpty == true
+        ? widget.employee.lastName![0]
+        : '';
     return (firstNameInitial + lastNameInitial).toUpperCase();
   }
 
@@ -127,7 +141,11 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open the form. Please contact support.')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open the form. Please contact support.'),
+          ),
+        );
       }
     }
   }
@@ -146,17 +164,30 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
         automaticallyImplyLeading: false,
         title: Text(
           'PROFILE',
-          style: TextStyle(color: _textDark, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 1.5),
+          style: TextStyle(
+            color: _textDark,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.5,
+          ),
         ),
       ),
       body: FutureBuilder<TechnicalProfileStats>(
         future: _statsFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting && snapshot.data == null) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              snapshot.data == null) {
             return Center(child: CircularProgressIndicator(color: _cardNavy));
           }
 
-          final stats = snapshot.data ?? TechnicalProfileStats(tvrsThisMonth: 0, tvrsTotal: 0, upcomingVisits: 0, completedTasks: 0);
+          final stats =
+              snapshot.data ??
+              TechnicalProfileStats(
+                tvrsThisMonth: 0,
+                tvrsTotal: 0,
+                upcomingVisits: 0,
+                completedTasks: 0,
+              );
 
           return RefreshIndicator(
             onRefresh: _refreshStats,
@@ -176,7 +207,14 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                 const SizedBox(height: 32),
 
                 // --- 2. OVERVIEW STATS ---
-                Text("Overview", style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)),
+                Text(
+                  "Overview",
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 16),
 
                 Row(
@@ -189,23 +227,38 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                       icon: Icons.assignment_turned_in_rounded,
                       iconColor: Colors.purple,
                       iconBg: const Color(0xFFFAF5FF),
+                      // --- ✅ ADDED NAVIGATION HERE ---
+                      onTap: () {
+                        // Parse ID safely
+                        final userId = int.tryParse(widget.employee.id);
+                        if (userId != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  UserTvrListScreen(userId: userId),
+                            ),
+                          );
+                        }
+                      },
                     ),
                     const SizedBox(width: 16),
-                    // _buildStatCard(
-                    //   title: "Visits",
-                    //   value: stats.upcomingVisits.toString(),
-                    //   subtitle: "Scheduled Today",
-                    //   icon: Icons.calendar_today_rounded,
-                    //   iconColor: Colors.blue,
-                    //   iconBg: const Color(0xFFEFF6FF),
-                    // ),
+                    // Placeholder for future stats
+                    const Spacer(),
                   ],
                 ),
 
                 const SizedBox(height: 32),
 
                 // --- 3. SETTINGS ---
-                Text("Preferences", style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)),
+                Text(
+                  "Preferences",
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 16),
 
                 Container(
@@ -214,34 +267,74 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                     color: _surfaceWhite,
                     borderRadius: BorderRadius.circular(24),
                     boxShadow: [
-                      BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8)),
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.06),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
                     ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('App Theme', style: TextStyle(color: _textGrey, fontWeight: FontWeight.w600, fontSize: 13)),
+                      Text(
+                        'App Theme',
+                        style: TextStyle(
+                          color: _textGrey,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
                       const SizedBox(height: 16),
                       SizedBox(
                         width: double.infinity,
                         child: SegmentedButton<ThemeMode>(
                           style: ButtonStyle(
-                            backgroundColor: MaterialStateProperty.resolveWith<Color>((states) {
-                              if (states.contains(MaterialState.selected)) return _cardNavy;
-                              return _bgLight;
-                            }),
-                            foregroundColor: MaterialStateProperty.resolveWith<Color>((states) {
-                              if (states.contains(MaterialState.selected)) return Colors.white;
-                              return _textGrey;
-                            }),
+                            backgroundColor:
+                                MaterialStateProperty.resolveWith<Color>((
+                                  states,
+                                ) {
+                                  if (states.contains(MaterialState.selected))
+                                    return _cardNavy;
+                                  return _bgLight;
+                                }),
+                            foregroundColor:
+                                MaterialStateProperty.resolveWith<Color>((
+                                  states,
+                                ) {
+                                  if (states.contains(MaterialState.selected))
+                                    return Colors.white;
+                                  return _textGrey;
+                                }),
                             side: MaterialStateProperty.all(BorderSide.none),
-                            shape: MaterialStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                            padding: MaterialStateProperty.all(const EdgeInsets.symmetric(vertical: 12)),
+                            shape: MaterialStateProperty.all(
+                              RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            padding: MaterialStateProperty.all(
+                              const EdgeInsets.symmetric(vertical: 12),
+                            ),
                           ),
                           segments: const [
-                            ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined, size: 18)),
-                            ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined, size: 18)),
-                            ButtonSegment(value: ThemeMode.system, label: Text('Auto'), icon: Icon(Icons.phone_android_outlined, size: 18)),
+                            ButtonSegment(
+                              value: ThemeMode.light,
+                              label: Text('Light'),
+                              icon: Icon(Icons.light_mode_outlined, size: 18),
+                            ),
+                            ButtonSegment(
+                              value: ThemeMode.dark,
+                              label: Text('Dark'),
+                              icon: Icon(Icons.dark_mode_outlined, size: 18),
+                            ),
+                            ButtonSegment(
+                              value: ThemeMode.system,
+                              label: Text('Auto'),
+                              icon: Icon(
+                                Icons.phone_android_outlined,
+                                size: 18,
+                              ),
+                            ),
                           ],
                           selected: {themeProvider.themeMode},
                           onSelectionChanged: (Set<ThemeMode> newSelection) {
@@ -263,13 +356,30 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                       border: Border.all(color: Colors.purple.withOpacity(0.2)),
                     ),
                     child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 8,
+                      ),
                       leading: const Icon(Icons.storage, color: Colors.purple),
-                      title: const Text("Local Database", style: TextStyle(color: Colors.purple, fontWeight: FontWeight.w600)),
-                      trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.purple),
+                      title: const Text(
+                        "Local Database",
+                        style: TextStyle(
+                          color: Colors.purple,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      trailing: const Icon(
+                        Icons.arrow_forward_ios,
+                        size: 14,
+                        color: Colors.purple,
+                      ),
                       onTap: () {
                         final db = AppDatabase.instance;
-                        Navigator.of(context).push(MaterialPageRoute(builder: (context) => DriftDbViewer(db)));
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (context) => DriftDbViewer(db),
+                          ),
+                        );
                       },
                     ),
                   ),
@@ -277,31 +387,76 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
 
                 // --- 4. ACCOUNT ACTIONS ---
                 const SizedBox(height: 32),
-                Text("Account", style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold)),
+                Text(
+                  "Account",
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 16),
 
                 Container(
                   decoration: BoxDecoration(
                     color: _surfaceWhite,
                     borderRadius: BorderRadius.circular(24),
-                    boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8))],
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.06),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
                   child: Theme(
-                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                    data: Theme.of(
+                      context,
+                    ).copyWith(dividerColor: Colors.transparent),
                     child: ExpansionTile(
                       leading: Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: _cardNavy.withOpacity(0.05), borderRadius: BorderRadius.circular(10)),
-                        child: Icon(Icons.shield_outlined, color: _cardNavy, size: 20),
+                        decoration: BoxDecoration(
+                          color: _cardNavy.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.shield_outlined,
+                          color: _cardNavy,
+                          size: 20,
+                        ),
                       ),
-                      title: Text('Privacy & Security', style: TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 15)),
+                      title: Text(
+                        'Privacy & Security',
+                        style: TextStyle(
+                          color: _textDark,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
                       childrenPadding: const EdgeInsets.only(bottom: 12),
                       children: [
                         ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-                          leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                          title: const Text("Request Account Deletion", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600, fontSize: 14)),
-                          trailing: const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                          ),
+                          leading: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.redAccent,
+                          ),
+                          title: const Text(
+                            "Request Account Deletion",
+                            style: TextStyle(
+                              color: Colors.redAccent,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                          trailing: const Icon(
+                            Icons.open_in_new,
+                            size: 16,
+                            color: Colors.grey,
+                          ),
                           onTap: _launchDeleteAccountUrl,
                         ),
                       ],
@@ -334,21 +489,47 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 4),
-            boxShadow: [BoxShadow(color: _cardNavy.withOpacity(0.15), blurRadius: 20, offset: const Offset(0, 10))],
+            boxShadow: [
+              BoxShadow(
+                color: _cardNavy.withOpacity(0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
           child: CircleAvatar(
             radius: 50,
             backgroundColor: _cardNavy,
             child: Text(
               initials,
-              style: const TextStyle(fontSize: 32, color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1),
+              style: const TextStyle(
+                fontSize: 32,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
             ),
           ),
         ),
         const SizedBox(height: 20),
-        Text(displayName, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: _textDark, letterSpacing: -0.5)),
+        Text(
+          displayName,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w900,
+            color: _textDark,
+            letterSpacing: -0.5,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(email, style: TextStyle(color: _textGrey, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          email,
+          style: TextStyle(
+            color: _textGrey,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -358,7 +539,12 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
           ),
           child: Text(
             role.toUpperCase(),
-            style: TextStyle(color: _cardNavy, fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1),
+            style: TextStyle(
+              color: _cardNavy,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+              letterSpacing: 1,
+            ),
           ),
         ),
       ],
@@ -373,32 +559,79 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
     required IconData icon,
     required Color iconColor,
     required Color iconBg,
+    VoidCallback? onTap,
   }) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: _surfaceWhite,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 15, offset: const Offset(0, 8))],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(14)),
-              child: Icon(icon, color: iconColor, size: 24),
-            ),
-            const SizedBox(height: 20),
-            Text(value, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: _textDark, letterSpacing: -1)),
-            const SizedBox(height: 4),
-            Text(subtitle != null ? "$title\n$subtitle" : title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _textGrey, height: 1.2)),
-            if (footer != null) ...[
-              const SizedBox(height: 8),
-              Text(footer, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _textGrey.withOpacity(0.7))),
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: _surfaceWhite,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.06),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              ),
             ],
-          ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                        color: iconBg, borderRadius: BorderRadius.circular(14)),
+                    child: Icon(icon, color: iconColor, size: 24),
+                  ),
+                  // Only show arrow if it's clickable
+                  if (onTap != null)
+                    Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 16,
+                      color: _textGrey.withOpacity(0.4),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  color: _textDark,
+                  letterSpacing: -1,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle != null ? "$title\n$subtitle" : title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _textGrey,
+                  height: 1.2,
+                ),
+              ),
+              if (footer != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  footer,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: _textGrey.withOpacity(0.7),
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -413,18 +646,26 @@ class _LogoutButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return ElevatedButton.icon(
       icon: const Icon(Icons.logout_rounded, size: 20),
-      label: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+      label: const Text(
+        'Log Out',
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+      ),
       onPressed: () async {
         await AuthService().logout();
         if (context.mounted) {
-          Navigator.of(context).pushNamedAndRemoveUntil('/selector', (route) => false);
+          Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/selector', (route) => false);
         }
       },
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
         foregroundColor: color,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: color.withOpacity(0.2))),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: color.withOpacity(0.2)),
+        ),
         padding: const EdgeInsets.symmetric(vertical: 18),
       ),
     );
