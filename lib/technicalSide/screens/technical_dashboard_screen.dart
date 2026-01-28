@@ -251,10 +251,10 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   }
 
   void refreshData() {
-    if (mounted) {
-      setState(() {
-        _setGreeting();
-      });
+    if (!mounted) return;
+    _setGreeting();
+    // If day is already completed, do NOT touch attendance state
+    if (!_isDayComplete){
       _checkAttendanceStatus();
     }
   }
@@ -284,30 +284,42 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         role: 'TECHNICAL',
       );
 
-      if (mounted) {
-        setState(() {
-          // If checkOutTime is NOT null, the user has already finished their shift.
-          if (att.checkOutTime != null) {
-            _isCheckedIn =
-                false; // This switches the UI from "Checked In" to "Ready to Start"
-            _isDayComplete = true; // This prevents them from checking in again
-          } else {
-            // User is currently in the middle of a shift
-            _isCheckedIn = true;
-            _isDayComplete = false;
-          }
+      final today = DateTime.now();
+      final attDate = att.attendanceDate;
+
+      final isSameDay =
+          attDate.year == today.year &&
+          attDate.month == today.month &&
+          attDate.day == today.day;
+
+      if (!mounted) return;
+
+      setState(() {
+        if (!isSameDay) {
+          // OLD RECORD → treat as fresh day
+          _isCheckedIn = false;
+          _isDayComplete = false;
+          _lastCheckInTime = null;
+        } else if (att.checkOutTime != null) {
+          // Today completed
+          _isCheckedIn = false;
+          _isDayComplete = true;
+          _lastCheckInTime = null;
+        } else {
+          // Today active
+          _isCheckedIn = true;
+          _isDayComplete = false;
           _lastCheckInTime = att.createdAt;
-        });
-      }
-    } catch (e) {
-      if (e.toString().contains("404")) {
-        if (mounted) {
-          setState(() {
-            _isCheckedIn = false;
-            _isDayComplete = false;
-          });
         }
-      }
+      });
+    } catch (e) {
+      // No attendance today (404)
+      if (!mounted) return;
+      setState(() {
+        _isCheckedIn = false;
+        _isDayComplete = false;
+        _lastCheckInTime = null;
+      });
     }
   }
 
@@ -446,19 +458,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       return;
     }
 
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-    setState(() => _isCheckingIn = true);
-    await _checkAttendanceStatus();
-    setState(() => _isCheckingIn = false);
-
-    if (_isDayComplete) {
-      _toast(
-        "Syncing: You have already completed your attendance for today.",
-        isError: true,
-      );
-      return;
-    }
-
     final String? imagePath = await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
@@ -539,9 +538,9 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     // Guard against checking out too early
     if (_lastCheckInTime != null) {
       final difference = DateTime.now().difference(_lastCheckInTime!);
-      if (difference.inMinutes < 60) {
+      if (difference.inMinutes < 0) {
         _toast(
-          "Wait ${60 - difference.inMinutes} more minute(s)",
+          "Wait ${0 - difference.inMinutes} more minute(s)",
           isError: true,
         );
         return;
