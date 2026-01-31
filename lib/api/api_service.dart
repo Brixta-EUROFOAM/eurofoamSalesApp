@@ -45,6 +45,7 @@ class ApiService {
   static const String _baseUrl = 'http://13.234.76.191'; //aws
   //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
   //static const String _baseUrl = 'https://mycocoserver2.onrender.com'; // mycocoserver2.onrender
+  //static const String _baseUrl = 'https://myserver2-5ame.onrender.com';
 
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
@@ -637,8 +638,21 @@ class ApiService {
     int userId, {
     String? startDate,
     String? endDate,
+    int limit = 100, // Default limit
   }) async {
-    throw Exception('Failed to fetch attendance.');
+    final queryParams = <String, String>{
+      if (startDate != null) 'startDate': startDate,
+      if (endDate != null) 'endDate': endDate,
+      'limit': limit.toString(),
+    };
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get(
+      'attendance/user/$userId?$queryString',
+      (json) =>
+          (json as List).map((item) => Attendance.fromJson(item)).toList(),
+    );
   }
 
   Future<Attendance> fetchTodaysAttendance(
@@ -650,6 +664,83 @@ class ApiService {
       'attendance/user/$userId/today?role=$role',
       (json) => Attendance.fromJson(json),
     );
+  }
+
+  Future<List<Mason>> fetchNewRegistrations(int userId) async {
+    return fetchMasons(
+      userId: userId,
+      status: 'pending_tso', // Matches backend logic
+      limit: 100,
+    );
+  }
+
+  // ✅ CORRECTED: Manually handle POST to keep 'credentials'
+  // ✅ FIX: Manually handle the POST request to keep 'credentials'
+  Future<Map<String, dynamic>> submitMasonKyc(
+    Map<String, dynamic> kycData,
+  ) async {
+    final url = Uri.parse('$_baseUrl/api/kyc-submissions');
+    dev.log('POST (Direct): $url', name: 'ApiService');
+
+    try {
+      // 1. Use _client.post directly (Bypassing the _post helper that strips data)
+      final response = await _client.post(
+        url,
+        headers: _authHeaders,
+        body: jsonEncode(kycData),
+      );
+
+      final jsonData = jsonDecode(response.body);
+
+      // 2. Return the WHOLE JSON (so the UI can find 'credentials')
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return jsonData;
+      } else {
+        throw Exception(jsonData['error'] ?? 'Failed to submit KYC');
+      }
+    } catch (e) {
+      dev.log('API Error on submitMasonKyc', error: e, name: 'ApiService');
+      rethrow;
+    }
+  }
+
+  // 🟢 Create a Placeholder Mason (Calls /register-interest)
+  // 🟢 UPDATED: Added 'tsoId' as a required parameter
+  Future<String?> createMasonPlaceholder({
+    required String name,
+    required String phone,
+    required String tsoId, // 👈 ADD THIS
+  }) async {
+    try {
+      // ❌ DELETE ALL THIS SHARED PREFERENCES STUFF
+      // final prefs = await SharedPreferences.getInstance();
+      // final String? employeeJson = prefs.getString('user_data');
+      // if (employeeJson == null) ...
+
+      // ✅ JUST CALL THE API DIRECTLY USING THE PASSED ID
+      final response = await _client.post(
+        // Use _client if available, or http.post
+        Uri.parse('$_baseUrl/api/auth/register-interest'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          "phoneNumber": phone,
+          "tsoId": tsoId, // 👈 Use the parameter directly
+          "deviceId": null,
+        }),
+      );
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data['masonId'];
+      } else {
+        debugPrint("Create Mason Failed: ${data['error']}");
+        return null;
+      }
+    } catch (e) {
+      debugPrint("Create Mason Error: $e");
+      return null;
+    }
   }
 
   Future<Attendance> checkIn(Map<String, dynamic> checkInData) async {
@@ -682,8 +773,9 @@ class ApiService {
     };
 
     final queryString = Uri(queryParameters: queryParams).query;
-  
-    final endpoint = 'daily-tasks/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
+
+    final endpoint =
+        'daily-tasks/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
     return _get(
       endpoint,
       (json) => (json as List).map((item) => DailyTask.fromJson(item)).toList(),
@@ -699,14 +791,33 @@ class ApiService {
   }
 
   Future<void> deleteDailyTask(String taskId) => _delete('daily-tasks/$taskId');
-  
+
   Future<List<LeaveApplication>> fetchLeaveApplicationsForUser(
     int userId, {
     String? startDate,
     String? endDate,
     String? status,
+    String? leaveType,
+    int limit = 50,
   }) async {
-    throw Exception('Failed to fetch leave applications.');
+    final queryParams = <String, String>{
+      if (startDate != null) 'startDate': startDate,
+      if (endDate != null) 'endDate': endDate,
+      if (status != null) 'status': status,
+      if (leaveType != null) 'leaveType': leaveType,
+      'limit': limit.toString(),
+    };
+
+    final queryString = Uri(queryParameters: queryParams).query;
+    final endpoint =
+        'leave-applications/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
+
+    return _get(
+      endpoint,
+      (json) => (json as List)
+          .map((item) => LeaveApplication.fromJson(item))
+          .toList(),
+    );
   }
 
   Future<LeaveApplication> createLeaveApplication(
@@ -740,7 +851,7 @@ class ApiService {
   }
 
   Future<void> deleteDvr(String dvrId) => _delete('daily-visit-reports/$dvrId');
-  
+
   Future<List<TechnicalVisitReport>> fetchTvrsForUser(
     int userId, {
     String? startDate,
@@ -756,11 +867,14 @@ class ApiService {
     };
 
     final queryString = Uri(queryParameters: queryParams).query;
-    final endpoint = 'technical-visit-reports/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
+    final endpoint =
+        'technical-visit-reports/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
 
     return _get(
       endpoint,
-      (json) => (json as List).map((item) => TechnicalVisitReport.fromJson(item)).toList(),
+      (json) => (json as List)
+          .map((item) => TechnicalVisitReport.fromJson(item))
+          .toList(),
     );
   }
 
@@ -1001,6 +1115,7 @@ class ApiService {
     String? region,
     String? area,
     int? userId,
+    String? status, // ✅ ADDED STATUS PARAMETER
     int limit = 50,
   }) async {
     final queryParams = <String, String>{'limit': limit.toString()};
@@ -1009,6 +1124,7 @@ class ApiService {
     if (region != null) queryParams['region'] = region;
     if (area != null) queryParams['area'] = area;
     if (userId != null) queryParams['userId'] = userId.toString();
+    if (status != null) queryParams['kycStatus'] = status; // ✅ Pass to backend
 
     final queryString = Uri(queryParameters: queryParams).query;
 

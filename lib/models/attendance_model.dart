@@ -7,9 +7,16 @@ class Attendance {
   final String id;
   final int userId;
   final DateTime attendanceDate;
-  final String? checkInTime; // Example: "09:05:32"
-  final String? checkOutTime; // Example: "18:02:11"
-  final String? status; // e.g., "Present", "On Leave"
+
+  // schema names
+  final DateTime? inTimeTimestamp;
+  final DateTime? outTimeTimestamp;
+
+  // UI based names (only used for POST/PATCH in dashboard - checkin & out)
+  final String? checkInTime; 
+  final String? checkOutTime; 
+
+  final String? status; 
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -17,6 +24,8 @@ class Attendance {
     required this.id,
     required this.userId,
     required this.attendanceDate,
+    this.inTimeTimestamp,
+    this.outTimeTimestamp,
     this.checkInTime,
     this.checkOutTime,
     this.status,
@@ -25,10 +34,19 @@ class Attendance {
   });
 
   factory Attendance.fromJson(Map<String, dynamic> json) {
+    final inTs = json['inTimeTimestamp'] != null
+        ? DateTime.parse(json['inTimeTimestamp'])
+        : null;
+
+    final outTs = json['outTimeTimestamp'] != null
+        ? DateTime.parse(json['outTimeTimestamp'])
+        : null;
     return Attendance(
-      id: json['id'],
+      id: json['id'].toString(),
       userId: json['userId'],
       attendanceDate: DateTime.parse(json['attendanceDate']),
+      inTimeTimestamp: inTs,
+      outTimeTimestamp: outTs,
       checkInTime: json['checkInTime'],
       checkOutTime: json['checkOutTime'],
       status: json['status'],

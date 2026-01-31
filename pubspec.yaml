@@ -1,7 +1,7 @@
 name: salesmanapp
 description: "Salesman & Technical Salesman App for Best Cement"
 publish_to: 'none'
-version: 1.2.1+36
+version: 1.2.1+38
 
 environment:
   sdk: ^3.9.2
@@ -54,6 +54,7 @@ dependencies:
   flutter_background_service: ^5.1.0
   uuid: ^4.5.2
   flutter_foreground_task: ^9.2.0
+  qr_flutter: ^4.1.0
   
 dependency_overrides:
   js: ^0.7.1

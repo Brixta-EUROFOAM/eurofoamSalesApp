@@ -18,7 +18,7 @@ class SessionManager {
 
     _userId = userId;
     //const serverUrl = 'ws://10.0.2.2:8000'; 
-    const serverUrl = 'wss://mycocoserver2.onrender.com';
+    const serverUrl = 'wss://myserver2-5ame.onrender.com';
 
     _syncWorker = SyncWorker(
       db: AppDatabase.instance,

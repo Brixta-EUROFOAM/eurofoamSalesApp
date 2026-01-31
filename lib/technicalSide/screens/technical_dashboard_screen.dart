@@ -1,3 +1,5 @@
+// lib/technicalSide/screens/technical_dashboard_screen.dart
+
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -9,8 +11,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:camera/camera.dart'; // CAMERA BY NATIVE DART
-import 'package:geocoding/geocoding.dart'; //  Geocoding location name in checkIn
+import 'package:camera/camera.dart';
+import 'package:geocoding/geocoding.dart';
 
 // --- FORMS IMPORTS ---
 import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
@@ -20,6 +22,9 @@ import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_kyc.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_rewards.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/add_site_form.dart';
 import 'package:salesmanapp/technicalSide/screens/all_masons_screen.dart';
+
+// 🟢 NEW IMPORT FOR PENDING REGISTRATIONS
+import 'package:salesmanapp/technicalSide/screens/pending_masons_screen.dart';
 
 // ---------------------------------------------------------------------------
 // 🟢 INTERNAL CAMERA SCREEN
@@ -218,7 +223,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   final Color _textDark = const Color(0xFF1E293B); // Slate 800
   final Color _textGrey = const Color(0xFF64748B); // Slate 500
   final Color _surfaceWhite = Colors.white;
-  //final Color _accentGreen = const Color(0xFF10B981); // Emerald
 
   @override
   void initState() {
@@ -630,88 +634,122 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     Navigator.push(context, MaterialPageRoute(builder: (context) => page));
   }
 
+  // 🟢 UPDATED MASON ACTION SHEET
   void _showMasonActions(BuildContext context) {
     final flags = context.read<TechnicalFlags>();
     if (!flags.masonManagement) return;
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true, // ✅ IMPORTANT
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Mason Management",
-              style: TextStyle(
-                color: _textDark,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.55,
+          maxChildSize: 0.9,
+          minChildSize: 0.35,
+          builder: (context, scrollController) {
+            return SingleChildScrollView(
+              controller: scrollController,
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Mason Management",
+                    style: TextStyle(
+                      color: _textDark,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  _buildActionSheetItem(
+                    icon: Icons.person_add_alt_1_rounded,
+                    title: "Pending Registrations",
+                    subtitle: "Verify new masons & generate IDs",
+                    iconBg: const Color(0xFFE0F2FE),
+                    iconColor: const Color(0xFF0284C7),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _openFullScreen(
+                        PendingMasonsScreen(employee: widget.employee),
+                      );
+                    },
+                  ),
+
+                  if (flags.approveBagLift)
+                    _buildActionSheetItem(
+                      icon: Icons.shopping_bag_outlined,
+                      title: "Approve Bag Lift",
+                      subtitle: "Verify pending cement bag lifts",
+                      iconBg: const Color(0xFFFFF7ED),
+                      iconColor: Colors.orange,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _openFullScreen(
+                          ApproveMasonBagLift(employee: widget.employee),
+                        );
+                      },
+                    ),
+
+                  if (flags.approveKyc)
+                    _buildActionSheetItem(
+                      icon: Icons.verified_user_outlined,
+                      title: "Approve KYC",
+                      subtitle: "Review pending Mason identities",
+                      iconBg: const Color(0xFFEFF6FF),
+                      iconColor: Colors.blue,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _openFullScreen(
+                          ApproveMasonKycScreen(employee: widget.employee),
+                        );
+                      },
+                    ),
+
+                  if (flags.approveRewards)
+                    _buildActionSheetItem(
+                      icon: Icons.card_giftcard,
+                      title: "Approve Rewards",
+                      subtitle: "Process gift redemption requests",
+                      iconBg: const Color(0xFFFAF5FF),
+                      iconColor: Colors.purple,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _openFullScreen(
+                          ApproveMasonRewardsScreen(employee: widget.employee),
+                        );
+                      },
+                    ),
+
+                  if (flags.myMasons)
+                    _buildActionSheetItem(
+                      icon: Icons.groups_rounded,
+                      title: "My Masons List",
+                      subtitle: "View all linked masons & history",
+                      iconBg: const Color(0xFFF0FDF4),
+                      iconColor: Colors.teal,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _openFullScreen(
+                          AllMasonsScreen(employee: widget.employee),
+                        );
+                      },
+                    ),
+
+                  const SizedBox(height: 16),
+                ],
               ),
-            ),
-            const SizedBox(height: 16),
-            if (flags.approveBagLift)
-              _buildActionSheetItem(
-                icon: Icons.shopping_bag_outlined,
-                title: "Approve Bag Lift",
-                subtitle: "Verify pending cement bag lifts",
-                iconBg: const Color(0xFFFFF7ED),
-                iconColor: Colors.orange,
-                onTap: () {
-                  Navigator.pop(context);
-                  _openFullScreen(
-                    ApproveMasonBagLift(employee: widget.employee),
-                  );
-                },
-              ),
-            if (flags.approveKyc)
-              _buildActionSheetItem(
-                icon: Icons.verified_user_outlined,
-                title: "Approve KYC",
-                subtitle: "Review pending Mason identities",
-                iconBg: const Color(0xFFEFF6FF),
-                iconColor: Colors.blue,
-                onTap: () {
-                  Navigator.pop(context);
-                  _openFullScreen(
-                    ApproveMasonKycScreen(employee: widget.employee),
-                  );
-                },
-              ),
-            if (flags.approveRewards)
-              _buildActionSheetItem(
-                icon: Icons.card_giftcard,
-                title: "Approve Rewards",
-                subtitle: "Process gift redemption requests",
-                iconBg: const Color(0xFFFAF5FF),
-                iconColor: Colors.purple,
-                onTap: () {
-                  Navigator.pop(context);
-                  _openFullScreen(
-                    ApproveMasonRewardsScreen(employee: widget.employee),
-                  );
-                },
-              ),
-            if (flags.myMasons)
-              _buildActionSheetItem(
-                icon: Icons.groups_rounded,
-                title: "My Masons List",
-                subtitle: "View all linked masons & history",
-                iconBg: const Color(0xFFF0FDF4),
-                iconColor: Colors.teal,
-                onTap: () {
-                  Navigator.pop(context);
-                  _openFullScreen(AllMasonsScreen(employee: widget.employee));
-                },
-              ),
-          ],
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -869,158 +907,158 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         onRefresh: _handleRefresh,
         child: ListView(
           padding: const EdgeInsets.all(20.0),
-          children: [
-            // 1. HERO ATTENDANCE CARD
-            if (_attendanceEnabled(context))
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(28),
-                decoration: BoxDecoration(
-                  color: _cardNavy,
-                  borderRadius: BorderRadius.circular(32),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _cardNavy.withOpacity(0.4),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        // Text("Today's Status", style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 14, fontWeight: FontWeight.w600)),
-                        // Container(
-                        //   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        //   decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
-                        //   child: Text(_isCheckedIn ? "ONLINE" : "OFFLINE", style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                        // )
-                      ],
-                    ),
-                    const SizedBox(height: 20),
+          children:
+              [
+                    // 1. HERO ATTENDANCE CARD
+                    if (_attendanceEnabled(context))
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(28),
+                        decoration: BoxDecoration(
+                          color: _cardNavy,
+                          borderRadius: BorderRadius.circular(32),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _cardNavy.withOpacity(0.4),
+                              blurRadius: 20,
+                              offset: const Offset(0, 10),
+                            ),
+                          ],
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [],
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              _isCheckedIn
+                                  ? "You are Checked In"
+                                  : "Ready to Start?",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 26,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on_rounded,
+                                  color: Colors.white.withOpacity(0.7),
+                                  size: 16,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Area: $userArea',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.7),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 32),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildGlassButton(
+                                    label: "CHECK IN",
+                                    icon: Icons.login_rounded,
+                                    isLoading: _isCheckingIn,
+                                    isActive: !_isCheckedIn,
+                                    onTap: () {
+                                      if (_isCheckingIn || _isCheckingOut)
+                                        return;
+                                      if (_isCheckedIn) {
+                                        _toast(
+                                          "You are already checked in.",
+                                          isError: true,
+                                        );
+                                      } else if (_isDayComplete) {
+                                        _toast(
+                                          "You have already completed your attendance for today.",
+                                          isError: true,
+                                        );
+                                      } else {
+                                        _handleCheckIn();
+                                      }
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _buildGlassButton(
+                                    label: "CHECK OUT",
+                                    icon: Icons.logout_rounded,
+                                    isLoading: _isCheckingOut,
+                                    isActive: _isCheckedIn && !_isDayComplete,
+                                    onTap:
+                                        (!_isCheckedIn ||
+                                            _isDayComplete ||
+                                            _isCheckingIn ||
+                                            _isCheckingOut)
+                                        ? null
+                                        : _handleCheckOut,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    const SizedBox(height: 32),
+
+                    // 2. OPERATIONS HEADER
                     Text(
-                      _isCheckedIn ? "You are Checked In" : "Ready to Start?",
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
+                      "Operations",
+                      style: TextStyle(
+                        color: _textDark,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.location_on_rounded,
-                          color: Colors.white.withOpacity(0.7),
-                          size: 16,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Area: $userArea',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.7),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 32),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildGlassButton(
-                            label: "CHECK IN",
-                            icon: Icons.login_rounded,
-                            isLoading: _isCheckingIn,
-                            isActive: !_isCheckedIn,
-                            onTap: () {
-                              if (_isCheckingIn || _isCheckingOut) return;
-                              if (_isCheckedIn) {
-                                _toast(
-                                  "You are already checked in.",
-                                  isError: true,
-                                );
-                              } else if (_isDayComplete) {
-                                _toast(
-                                  "You have already completed your attendance for today.",
-                                  isError: true,
-                                );
-                              } else {
-                                _handleCheckIn();
-                              }
-                            },
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildGlassButton(
-                            label: "CHECK OUT",
-                            icon: Icons.logout_rounded,
-                            isLoading: _isCheckingOut,
-                            isActive: _isCheckedIn && !_isDayComplete,
-                            onTap:
-                                (!_isCheckedIn ||
-                                    _isDayComplete ||
-                                    _isCheckingIn ||
-                                    _isCheckingOut)
-                                ? null
-                                : _handleCheckOut,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+                    const SizedBox(height: 16),
 
-            const SizedBox(height: 32),
+                    // 3. MASON MANAGEMENT
+                    if (flags.masonManagement)
+                      _buildFintechCard(
+                        title: "Mason Management",
+                        subtitle: "Masons, KYC, Bag Lifts",
+                        icon: Icons.handyman_rounded,
+                        iconColor: Colors.orange,
+                        iconBg: const Color(0xFFFFF7ED),
+                        actionText: "Manage",
+                        onTap: () => _showMasonActions(context),
+                      ),
 
-            // 2. OPERATIONS HEADER
-            Text(
-              "Operations",
-              style: TextStyle(
-                color: _textDark,
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-            // 3. MASON MANAGEMENT
-            if (flags.masonManagement)
-              _buildFintechCard(
-                title: "Mason Management",
-                subtitle: "Masons, KYC, Bag Lifts",
-                icon: Icons.handyman_rounded,
-                iconColor: Colors.orange,
-                iconBg: const Color(0xFFFFF7ED),
-                actionText: "Manage",
-                onTap: () => _showMasonActions(context),
-              ),
-
-            const SizedBox(height: 16),
-
-            // 4. TECHNICAL OPS
-            if (flags.technicalOps)
-              _buildFintechCard(
-                title: "Technical Ops",
-                subtitle: "TVR, Site Registration, Add Dealer",
-                icon: Icons.architecture_rounded,
-                iconColor: const Color(0xFF0F766E),
-                iconBg: const Color(0xFFECFEFF),
-                actionText: "Open",
-                onTap: () => _showTechnicalActions(context),
-              ),
-          ].animate(interval: 50.ms).fadeIn(duration: 400.ms).slideY(begin: 0.1, end: 0, curve: Curves.easeOut),
+                    // 4. TECHNICAL OPS
+                    if (flags.technicalOps)
+                      _buildFintechCard(
+                        title: "Technical Ops",
+                        subtitle: "TVR, Site Registration, Add Dealer",
+                        icon: Icons.architecture_rounded,
+                        iconColor: const Color(0xFF0F766E),
+                        iconBg: const Color(0xFFECFEFF),
+                        actionText: "Open",
+                        onTap: () => _showTechnicalActions(context),
+                      ),
+                  ]
+                  .animate(interval: 50.ms)
+                  .fadeIn(duration: 400.ms)
+                  .slideY(begin: 0.1, end: 0, curve: Curves.easeOut),
         ),
       ),
     );

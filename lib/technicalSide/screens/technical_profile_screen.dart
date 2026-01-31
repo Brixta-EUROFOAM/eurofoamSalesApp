@@ -22,11 +22,23 @@ class TechnicalProfileStats {
   final int upcomingVisits;
   final int completedTasks;
 
+  final int totalPjps;
+  final int completedPjps;
+  final int totalCheckIns;
+  final int totalCheckOuts;
+
+  final LeaveApplication? latestLeave;
+
   TechnicalProfileStats({
     required this.tvrsThisMonth,
     required this.tvrsTotal,
     required this.upcomingVisits,
     required this.completedTasks,
+    required this.totalPjps,
+    required this.completedPjps,
+    required this.totalCheckIns,
+    required this.totalCheckOuts,
+    this.latestLeave,
   });
 }
 
@@ -70,12 +82,34 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
     if (uid == null) throw Exception('Invalid Employee ID');
 
     final today = DateTime.now();
-    final todayString = DateFormat('yyyy-MM-dd').format(today);
-
     final startOfMonth = DateTime(today.year, today.month, 1);
     final endOfMonth = DateTime(today.year, today.month + 1, 0);
     final startMonthStr = DateFormat('yyyy-MM-dd').format(startOfMonth);
     final endMonthStr = DateFormat('yyyy-MM-dd').format(endOfMonth);
+
+    // 1. Define separate futures to handle errors individually
+    // This ensures if Attendance fails, TVRs still show up.
+
+    var tvrsMonthFuture = _apiService.fetchTvrsForUser(
+      uid,
+      startDate: startMonthStr,
+      endDate: endMonthStr,
+    );
+    var tvrsTotalFuture = _apiService.fetchTvrsForUser(
+      uid,
+      limit: 10000,
+    ); // Only fetches IDs usually, or small objects
+
+    // Increase limit to ensure we count ALL PJPs correctly
+    var pjpFuture = _apiService.fetchPjpsForUser(uid);
+
+    var tasksFuture = _apiService.fetchDailyTasksForUser(
+      uid,
+      status: 'Completed',
+    );
+    var attendanceFuture = _apiService.fetchAttendanceForUser(uid, limit: 1000);
+
+    var leaveFuture = _apiService.fetchLeaveApplicationsForUser(uid, limit: 1);
 
     try {
       final List<dynamic> results = await Future.wait([
@@ -99,24 +133,47 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
         _apiService.fetchDailyTasksForUser(uid, status: 'Completed'),
       ]);
 
-      final tvrsThisMonth = results[1] as List;
-      final tvrsTotal = results[2] as List;
-      final pjpList = (results[3] is List) ? results[3] as List : [];
-      final tasksList = (results[4] is List) ? results[4] as List : [];
+      final tvrsThisMonth = results[1] as List<TechnicalVisitReport>;
+      final tvrsTotal = results[2] as List<TechnicalVisitReport>;
+      final pjps = results[3] as List<Pjp>;
+      final tasksList = results[4] as List<DailyTask>;
+      final attendance = results[5] as List<Attendance>;
+      final leaves = results[6] as List<LeaveApplication>;
+
+      final totalIns = attendance.length;
+      final totalOuts = attendance
+          .where((a) => a.outTimeTimestamp != null)
+          .length;
+
+      // Calculate PJP stats
+      final completedPjps = pjps
+          .where((p) => p.status.toLowerCase() == 'completed')
+          .length;
 
       return TechnicalProfileStats(
         tvrsThisMonth: tvrsThisMonth.length,
         tvrsTotal: tvrsTotal.length,
-        upcomingVisits: pjpList.length,
+        upcomingVisits: pjps.length, // Or filter for future dates if needed
         completedTasks: tasksList.length,
+        totalPjps: pjps.length,
+        completedPjps: completedPjps,
+        totalCheckIns: totalIns,
+        totalCheckOuts: totalOuts,
+        latestLeave: leaves.isNotEmpty ? leaves.first : null,
       );
     } catch (e) {
-      debugPrint("Error fetching stats: $e");
+      debugPrint("Critical Error fetching stats: $e");
+      // Only return 0s if something catastrophic happens
       return TechnicalProfileStats(
         tvrsThisMonth: 0,
         tvrsTotal: 0,
         upcomingVisits: 0,
         completedTasks: 0,
+        totalPjps: 0,
+        completedPjps: 0,
+        totalCheckIns: 0,
+        totalCheckOuts: 0,
+        latestLeave: null,
       );
     }
   }
@@ -217,7 +274,13 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                Row(
+                GridView.count(
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  childAspectRatio: 0.85,
                   children: [
                     _buildStatCard(
                       title: "TVRs",
@@ -247,8 +310,23 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                     const Spacer(),
                   ],
                 ),
-
                 const SizedBox(height: 32),
+
+                // Leave Application Section
+                Text(
+                  "Leave Application",
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                _buildDetailedLeaveCard(
+                  context: context,
+                  latestLeave: stats.latestLeave,
+                ),
 
                 // --- 3. SETTINGS ---
                 Text(
@@ -632,6 +710,94 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailedLeaveCard({
+    required BuildContext context,
+    required LeaveApplication?
+    latestLeave,
+  }) {
+    const Color cardBg = Color(
+      0xFFFEE2E2,
+    ); 
+    const Color iconColor = Colors.redAccent;
+    const IconData iconData =
+        Icons.calendar_month_outlined; 
+
+    return GestureDetector(
+      onTap: () async {
+        final userId = int.parse(widget.employee.id);
+
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AllLeavesListScreen(userId: userId),
+          ),
+        );
+
+        _refreshStats();
+      },
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: _surfaceWhite,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.06),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Icon
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: cardBg,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(iconData, color: iconColor, size: 28),
+            ),
+            const SizedBox(width: 16),
+
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Leaves", 
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: _textDark,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    "Apply & view history", 
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: _textGrey,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Arrow/Action
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 16,
+              color: _textGrey.withOpacity(0.4),
+            ),
+          ],
         ),
       ),
     );

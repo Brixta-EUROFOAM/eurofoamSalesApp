@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart'; 
+import 'package:qr_flutter/qr_flutter.dart'; // ✅ Added for QR
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/technicalSide/models/mason_pc_model.dart';
@@ -37,10 +38,9 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
     _loadMasons();
   }
 
-  // --- 1. SIMPLIFIED FETCH: Just get the Masons ---
+  // --- 1. FETCH MASONS ---
   Future<void> _loadMasons() async {
     final rawId = widget.employee.id;
-    // Extract numeric ID safely (e.g. "TSE77" -> 77)
     final numericId = rawId.replaceAll(RegExp(r'[^0-9]'), '');
 
     if (numericId.isEmpty) {
@@ -77,7 +77,7 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
     });
   }
 
-  // --- 2. HISTORY POPUP: Fetches specific mason's history on tap ---
+  // --- 2. HISTORY POPUP LOGIC ---
   Future<List<MasonBagLift>>? _historyFuture;
 
   void _showHistoryPopup(BuildContext context, Mason mason) {
@@ -113,68 +113,39 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
                           color: _textDark,
                         ),
                       ),
-                      
                       const SizedBox(height: 6), 
-                     // 2. (NEW) Copyable Phone Row
-                      // We use GestureDetector to catch the tap specifically on this row
                       GestureDetector(
                         onTap: () async {
                           if (mason.phoneNumber.isEmpty) return;
-                          
-                          // A. Copy to Clipboard
-                          await Clipboard.setData(
-                            ClipboardData(text: mason.phoneNumber),
-                          );
-                          
-                          // B. Show Feedback
+                          await Clipboard.setData(ClipboardData(text: mason.phoneNumber));
                           if (mounted) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
                                 content: Text("Copied: ${mason.phoneNumber}"),
                                 backgroundColor: _cardNavy,
                                 duration: const Duration(seconds: 1),
-                                behavior: SnackBarBehavior.floating,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
                               ),
                             );
                           }
                         },
-                        // HitTestBehavior.opaque ensures even the empty space between text and icon is clickable
                         behavior: HitTestBehavior.opaque,
                         child: Row(
-                          mainAxisSize: MainAxisSize.min, // Wrap content only
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             const Icon(Icons.phone, size: 12, color: _textGrey),
                             const SizedBox(width: 4),
                             Text(
-                              mason.phoneNumber.isNotEmpty
-                                  ? mason.phoneNumber
-                                  : "No Phone",
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: _textGrey,
-                                fontWeight: FontWeight.w500,
-                              ),
+                              mason.phoneNumber.isNotEmpty ? mason.phoneNumber : "No Phone",
+                              style: const TextStyle(fontSize: 13, color: _textGrey, fontWeight: FontWeight.w500),
                             ),
                             const SizedBox(width: 8),
-                            // Visual Cue for Copy
                             if (mason.phoneNumber.isNotEmpty)
-                              const Icon(
-                                Icons.copy_rounded,
-                                size: 16,
-                                color: Colors.blueAccent, // Highlight color
-                              ),
+                              const Icon(Icons.copy_rounded, size: 16, color: Colors.blueAccent),
                           ],
                         ),
                       ),
-
                       const SizedBox(height: 12),
-                      const Text(
-                        "Bag Lift History",
-                        style: TextStyle(fontSize: 12, color: _textGrey),
-                      ),
+                      const Text("Bag Lift History", style: TextStyle(fontSize: 12, color: _textGrey)),
                     ],
                   ),
                   InkWell(
@@ -182,15 +153,8 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
                     borderRadius: BorderRadius.circular(20),
                     child: Container(
                       padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: _bgLight,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close,
-                        size: 18,
-                        color: _textGrey,
-                      ),
+                      decoration: const BoxDecoration(color: _bgLight, shape: BoxShape.circle),
+                      child: const Icon(Icons.close, size: 18, color: _textGrey),
                     ),
                   ),
                 ],
@@ -202,26 +166,16 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
               height: 450,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: FutureBuilder<List<MasonBagLift>>(
-                // FETCHES ONLY THIS MASON'S HISTORY
                 future: _historyFuture,
                 builder: (context, snapshot) {
-                  debugPrint(
-                    'History snapshot: state=${snapshot.connectionState}, '
-                    'hasData=${snapshot.hasData}, '
-                    'len=${snapshot.data?.length}',
-                  );
                   if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(
-                      child: CircularProgressIndicator(color: _cardNavy),
-                    );
+                    return const Center(child: CircularProgressIndicator(color: _cardNavy));
                   }
-                  if (snapshot.hasError ||
-                      (snapshot.data == null || snapshot.data!.isEmpty)) {
+                  if (snapshot.hasError || (snapshot.data == null || snapshot.data!.isEmpty)) {
                     return _buildEmptyHistoryState();
                   }
 
                   final history = snapshot.data!;
-                  // Sort Latest First
                   history.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
                   return ListView.separated(
@@ -294,11 +248,7 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
               children: [
                 Text(
                   "${lift.bagCount} Bags",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: _textDark,
-                    fontSize: 14,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: _textDark, fontSize: 14),
                 ),
                 Text(
                   DateFormat('dd MMM yyyy, hh:mm a').format(lift.createdAt),
@@ -310,23 +260,14 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // Show points if available
               if (lift.pointsCredited != null && lift.pointsCredited! > 0)
                 Text(
                   "+${lift.pointsCredited}",
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: _accentOrange,
-                    fontSize: 14,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.bold, color: _accentOrange, fontSize: 14),
                 ),
               Text(
                 statusText,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: statusColor,
-                ),
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: statusColor),
               ),
             ],
           ),
@@ -344,25 +285,13 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: _textGrey,
-            size: 20,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          "Linked Masons",
-          style: TextStyle(
-            color: _textDark,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
+        title: const Text("Linked Masons", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16)),
       ),
       body: Column(
         children: [
-          // Search
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
             child: TextField(
@@ -374,40 +303,17 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
                 prefixIcon: const Icon(Icons.search, color: _textGrey),
                 filled: true,
                 fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide(color: Colors.black.withOpacity(0.05)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: const BorderSide(color: _cardNavy, width: 1.5),
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               ),
               onChanged: _filterMasons,
             ),
           ),
-
-          // List
           Expanded(
             child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: _cardNavy),
-                  )
+                ? const Center(child: CircularProgressIndicator(color: _cardNavy))
                 : _filteredMasons.isEmpty
-                ? Center(
-                    child: Text(
-                      "No masons found",
-                      style: TextStyle(color: _textGrey.withOpacity(0.7)),
-                    ),
-                  )
+                ? Center(child: Text("No masons found", style: TextStyle(color: _textGrey.withOpacity(0.7))))
                 : ListView.separated(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     itemCount: _filteredMasons.length,
@@ -423,6 +329,10 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
   }
 
   Widget _buildMasonCard(Mason mason) {
+    // ✅ Check Credentials
+    final creds = mason.credentials;
+    final hasCredentials = creds != null;
+
     return Container(
       decoration: BoxDecoration(
         color: _surfaceWhite,
@@ -435,68 +345,87 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _showHistoryPopup(context, mason),
-          borderRadius: BorderRadius.circular(24),
-          enableFeedback: false, // 🔇 No sound
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: const Color(0xFFEFF6FF),
-                  child: Text(
-                    mason.name.isNotEmpty ? mason.name[0].toUpperCase() : "M",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: _cardNavy,
-                      fontSize: 18,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        mason.name,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: _textDark,
-                        ),
+      child: Column(
+        children: [
+          // 1. TAPPABLE AREA (Shows History)
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _showHistoryPopup(context, mason),
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(24),
+                bottom: hasCredentials ? Radius.zero : const Radius.circular(24),
+              ),
+              enableFeedback: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: const Color(0xFFEFF6FF),
+                      child: Text(
+                        mason.name.isNotEmpty ? mason.name[0].toUpperCase() : "M",
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: _cardNavy, fontSize: 18),
                       ),
-                      const SizedBox(height: 8),
-                      Row(
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Using data directly from the Mason object
-                          _buildStatText(
-                            "Bags Lifted",
-                            (mason.bagsLifted ?? 0).toString(),
-                          ),
-                          const SizedBox(width: 24),
-                          _buildStatText(
-                            "Points",
-                            mason.pointsBalance.toString(),
+                          Text(mason.name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textDark)),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              _buildStatText("Bags Lifted", (mason.bagsLifted ?? 0).toString()),
+                              const SizedBox(width: 24),
+                              _buildStatText("Points", mason.pointsBalance.toString()),
+                            ],
                           ),
                         ],
                       ),
+                    ),
+                    const Icon(Icons.arrow_forward_ios_rounded, color: _textDark, size: 16),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // 2. ✅ ACTION BAR (View QR) - Only shows if credentials exist
+          if (hasCredentials)
+            Container(
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: Colors.grey.shade100)),
+              ),
+              child: InkWell(
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (context) => _MasonQrDialog(
+                      masonName: mason.name,
+                      userId: creds['userId']!,
+                      password: creds['password']!,
+                      qrData: creds['qrData']!,
+                    ),
+                  );
+                },
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(24)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: const [
+                      Icon(Icons.qr_code, size: 18, color: _cardNavy),
+                      SizedBox(width: 8),
+                      Text("VIEW LOGIN QR", style: TextStyle(color: _cardNavy, fontWeight: FontWeight.bold, fontSize: 13)),
                     ],
                   ),
                 ),
-                const Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  color: _textDark,
-                  size: 16,
-                ),
-              ],
+              ),
             ),
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -505,24 +434,88 @@ class _AllMasonsScreenState extends State<AllMasonsScreen> {
     return RichText(
       text: TextSpan(
         children: [
-          TextSpan(
-            text: "$label: ",
-            style: const TextStyle(
-              color: _textGrey,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          TextSpan(
-            text: value,
-            style: const TextStyle(
-              color: _textDark,
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          TextSpan(text: "$label: ", style: const TextStyle(color: _textGrey, fontSize: 12, fontWeight: FontWeight.w600)),
+          TextSpan(text: value, style: const TextStyle(color: _textDark, fontSize: 13, fontWeight: FontWeight.bold)),
         ],
       ),
+    );
+  }
+}
+
+// -----------------------------------------------------------------------------
+// 🟢 INTERNAL DIALOG CLASS (Fixed Layout)
+// -----------------------------------------------------------------------------
+class _MasonQrDialog extends StatelessWidget {
+  final String masonName;
+  final String userId;
+  final String password;
+  final String qrData;
+
+  const _MasonQrDialog({
+    required this.masonName,
+    required this.userId,
+    required this.password,
+    required this.qrData,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      // ✅ FIX: Constrain width to avoid "intrinsic dimensions" error
+      content: SizedBox(
+        width: double.maxFinite, 
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 16),
+              const Text("Mason Login Details", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(masonName, textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[700], fontSize: 16)),
+              const SizedBox(height: 24),
+              
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade300), borderRadius: BorderRadius.circular(12)),
+                child: QrImageView(data: qrData, version: QrVersions.auto, size: 200.0),
+              ),
+              
+              const SizedBox(height: 24),
+              
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(color: const Color(0xFFF1F5F9), borderRadius: BorderRadius.circular(12)),
+                child: Column(
+                  children: [
+                    _row("User ID", userId),
+                    const Divider(),
+                    _row("Password", password),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text("Scan this to login", style: TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("CLOSE", style: TextStyle(fontWeight: FontWeight.bold)),
+        )
+      ],
+    );
+  }
+
+  Widget _row(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.grey)),
+        SelectableText(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, letterSpacing: 1, color: Colors.black87)),
+      ],
     );
   }
 }
