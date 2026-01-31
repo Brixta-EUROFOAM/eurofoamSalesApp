@@ -8,7 +8,14 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/widgets/theme_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:salesmanapp/models/attendance_model.dart';
 import 'package:salesmanapp/technicalSide/tvrwidgets/all_tvr_list_screen.dart';
+import 'package:salesmanapp/technicalSide/screens/all_pjp_list_screen.dart';
+import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
+import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/models/daily_task_model.dart';
+import 'package:salesmanapp/models/leave_application_model.dart';
+import 'package:salesmanapp/technicalSide/screens/all_leaves_list_screen.dart';
 
 // local drift db
 import 'package:drift_db_viewer/drift_db_viewer.dart';
@@ -112,25 +119,15 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
     var leaveFuture = _apiService.fetchLeaveApplicationsForUser(uid, limit: 1);
 
     try {
-      final List<dynamic> results = await Future.wait([
-        Future.value([]),
-        // 1 TVRs THIS MONTH
-        _apiService.fetchTvrsForUser(
-          uid,
-          startDate: startMonthStr,
-          endDate: endMonthStr,
-        ),
-        // 2 TVRs ALL TIME
-        _apiService.fetchTvrsForUser(uid, limit: 10000),
-        // 3 PJPs
-        _apiService.fetchPjpsForUser(
-          uid,
-          status: 'APPROVED',
-          startDate: todayString,
-          endDate: todayString,
-        ),
-        // 4 Tasks
-        _apiService.fetchDailyTasksForUser(uid, status: 'Completed'),
+      // We use a helper to catch errors per request
+      final results = await Future.wait([
+        Future.value([]), // Index 0 placeholder
+        tvrsMonthFuture.catchError((_) => <TechnicalVisitReport>[]),
+        tvrsTotalFuture.catchError((_) => <TechnicalVisitReport>[]),
+        pjpFuture.catchError((_) => <Pjp>[]),
+        tasksFuture.catchError((_) => <DailyTask>[]),
+        attendanceFuture.catchError((_) => <Attendance>[]),
+        leaveFuture.catchError((_) => <LeaveApplication>[]),
       ]);
 
       final tvrsThisMonth = results[1] as List<TechnicalVisitReport>;
@@ -244,6 +241,10 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                 tvrsTotal: 0,
                 upcomingVisits: 0,
                 completedTasks: 0,
+                totalPjps: 0,
+                completedPjps: 0,
+                totalCheckIns: 0,
+                totalCheckOuts: 0,
               );
 
           return RefreshIndicator(
@@ -290,24 +291,49 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                       icon: Icons.assignment_turned_in_rounded,
                       iconColor: Colors.purple,
                       iconBg: const Color(0xFFFAF5FF),
-                      // --- ✅ ADDED NAVIGATION HERE ---
                       onTap: () {
-                        // Parse ID safely
                         final userId = int.tryParse(widget.employee.id);
                         if (userId != null) {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) =>
-                                  UserTvrListScreen(userId: userId),
+                              builder: (_) => UserTvrListScreen(userId: userId),
                             ),
                           );
                         }
                       },
                     ),
-                    const SizedBox(width: 16),
-                    // Placeholder for future stats
-                    const Spacer(),
+
+                    _buildStatCard(
+                      title: "PJP",
+                      value: stats.totalPjps.toString(),
+                      subtitle: "Total plans",
+                      footer: "Completed: ${stats.completedPjps}",
+                      icon: Icons.route,
+                      iconColor: Colors.indigo,
+                      iconBg: const Color(0xFFE0E7FF),
+                      onTap: () {
+                        final userId = int.tryParse(widget.employee.id);
+                        if (userId != null) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => UserPjpListScreen(userId: userId),
+                            ),
+                          );
+                        }
+                      },
+                    ),
+
+                    _buildStatCard(
+                      title: "Attendance",
+                      value: stats.totalCheckIns.toString(),
+                      subtitle: "Total Ins",
+                      footer: "Total In + Out: ${stats.totalCheckOuts}",
+                      icon: Icons.access_time_filled,
+                      iconColor: Colors.green,
+                      iconBg: const Color(0xFFECFDF5),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 32),
@@ -639,77 +665,78 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
     required Color iconBg,
     VoidCallback? onTap,
   }) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: _surfaceWhite,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.06),
-                blurRadius: 15,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                        color: iconBg, borderRadius: BorderRadius.circular(14)),
-                    child: Icon(icon, color: iconColor, size: 24),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: _surfaceWhite,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.06),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                  // Only show arrow if it's clickable
-                  if (onTap != null)
-                    Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      size: 16,
-                      color: _textGrey.withOpacity(0.4),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w900,
-                  color: _textDark,
-                  letterSpacing: -1,
+                  child: Icon(icon, color: iconColor, size: 24),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle != null ? "$title\n$subtitle" : title,
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: _textGrey,
-                  height: 1.2,
-                ),
-              ),
-              if (footer != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  footer,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: _textGrey.withOpacity(0.7),
+                // Only show arrow if it's clickable
+                if (onTap != null)
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 16,
+                    color: _textGrey.withOpacity(0.4),
                   ),
-                ),
               ],
+            ),
+            const SizedBox(height: 20),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                color: _textDark,
+                letterSpacing: -1,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle != null ? "$title\n$subtitle" : title,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _textGrey,
+                height: 1.2,
+              ),
+            ),
+            if (footer != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                footer,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: _textGrey.withOpacity(0.7),
+                ),
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
