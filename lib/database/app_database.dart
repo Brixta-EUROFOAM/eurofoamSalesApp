@@ -12,6 +12,10 @@ class Journeys extends Table {
   TextColumn get id => text()(); // UUID
   IntColumn get userId => integer()();
   TextColumn get pjpId => text().nullable()();
+  TextColumn get taskId => text().nullable()(); 
+  TextColumn get dealerId => text().nullable()(); 
+  IntColumn get verifiedDealerId => integer().nullable()();
+
   TextColumn get status => text().withDefault(const Constant('ACTIVE'))();
   TextColumn get siteName => text().nullable()();
   RealColumn get totalDistance => real().withDefault(const Constant(0.0))();
@@ -62,7 +66,7 @@ class AppDatabase extends _$AppDatabase {
 
   // 🔄 BUMP VERSION HERE
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   // 🔄 DEFINE MIGRATION STRATEGY
   @override
@@ -81,6 +85,11 @@ class AppDatabase extends _$AppDatabase {
             journeyBreadcrumbs.totalDistance,
           );
         }
+        if (from < 4) {
+          await m.addColumn(journeys, journeys.taskId);
+          await m.addColumn(journeys, journeys.dealerId);
+          await m.addColumn(journeys, journeys.verifiedDealerId);
+        }
       },
     );
   }
@@ -91,6 +100,9 @@ class AppDatabase extends _$AppDatabase {
     required int userId,
     required String? pjpId,
     required String? siteName,
+    String? taskId,
+    String? dealerId,
+    int? verifiedDealerId,
   }) async {
     final uuid = const Uuid().v4();
 
@@ -99,6 +111,9 @@ class AppDatabase extends _$AppDatabase {
         id: uuid,
         userId: userId,
         pjpId: Value(pjpId),
+        taskId: Value(taskId),
+        dealerId: Value(dealerId),
+        verifiedDealerId: Value(verifiedDealerId),
         siteName: Value(siteName),
         startTime: DateTime.now(),
         status: const Value('ACTIVE'),

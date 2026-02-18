@@ -35,6 +35,37 @@ class $JourneysTable extends Journeys with TableInfo<$JourneysTable, Journey> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
+  @override
+  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
+    'task_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dealerIdMeta = const VerificationMeta(
+    'dealerId',
+  );
+  @override
+  late final GeneratedColumn<String> dealerId = GeneratedColumn<String>(
+    'dealer_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _verifiedDealerIdMeta = const VerificationMeta(
+    'verifiedDealerId',
+  );
+  @override
+  late final GeneratedColumn<int> verifiedDealerId = GeneratedColumn<int>(
+    'verified_dealer_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _statusMeta = const VerificationMeta('status');
   @override
   late final GeneratedColumn<String> status = GeneratedColumn<String>(
@@ -95,6 +126,9 @@ class $JourneysTable extends Journeys with TableInfo<$JourneysTable, Journey> {
     id,
     userId,
     pjpId,
+    taskId,
+    dealerId,
+    verifiedDealerId,
     status,
     siteName,
     totalDistance,
@@ -130,6 +164,27 @@ class $JourneysTable extends Journeys with TableInfo<$JourneysTable, Journey> {
       context.handle(
         _pjpIdMeta,
         pjpId.isAcceptableOrUnknown(data['pjp_id']!, _pjpIdMeta),
+      );
+    }
+    if (data.containsKey('task_id')) {
+      context.handle(
+        _taskIdMeta,
+        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
+      );
+    }
+    if (data.containsKey('dealer_id')) {
+      context.handle(
+        _dealerIdMeta,
+        dealerId.isAcceptableOrUnknown(data['dealer_id']!, _dealerIdMeta),
+      );
+    }
+    if (data.containsKey('verified_dealer_id')) {
+      context.handle(
+        _verifiedDealerIdMeta,
+        verifiedDealerId.isAcceptableOrUnknown(
+          data['verified_dealer_id']!,
+          _verifiedDealerIdMeta,
+        ),
       );
     }
     if (data.containsKey('status')) {
@@ -188,6 +243,18 @@ class $JourneysTable extends Journeys with TableInfo<$JourneysTable, Journey> {
         DriftSqlType.string,
         data['${effectivePrefix}pjp_id'],
       ),
+      taskId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_id'],
+      ),
+      dealerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}dealer_id'],
+      ),
+      verifiedDealerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}verified_dealer_id'],
+      ),
       status: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}status'],
@@ -221,6 +288,9 @@ class Journey extends DataClass implements Insertable<Journey> {
   final String id;
   final int userId;
   final String? pjpId;
+  final String? taskId;
+  final String? dealerId;
+  final int? verifiedDealerId;
   final String status;
   final String? siteName;
   final double totalDistance;
@@ -230,6 +300,9 @@ class Journey extends DataClass implements Insertable<Journey> {
     required this.id,
     required this.userId,
     this.pjpId,
+    this.taskId,
+    this.dealerId,
+    this.verifiedDealerId,
     required this.status,
     this.siteName,
     required this.totalDistance,
@@ -243,6 +316,15 @@ class Journey extends DataClass implements Insertable<Journey> {
     map['user_id'] = Variable<int>(userId);
     if (!nullToAbsent || pjpId != null) {
       map['pjp_id'] = Variable<String>(pjpId);
+    }
+    if (!nullToAbsent || taskId != null) {
+      map['task_id'] = Variable<String>(taskId);
+    }
+    if (!nullToAbsent || dealerId != null) {
+      map['dealer_id'] = Variable<String>(dealerId);
+    }
+    if (!nullToAbsent || verifiedDealerId != null) {
+      map['verified_dealer_id'] = Variable<int>(verifiedDealerId);
     }
     map['status'] = Variable<String>(status);
     if (!nullToAbsent || siteName != null) {
@@ -263,6 +345,15 @@ class Journey extends DataClass implements Insertable<Journey> {
       pjpId: pjpId == null && nullToAbsent
           ? const Value.absent()
           : Value(pjpId),
+      taskId: taskId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(taskId),
+      dealerId: dealerId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(dealerId),
+      verifiedDealerId: verifiedDealerId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(verifiedDealerId),
       status: Value(status),
       siteName: siteName == null && nullToAbsent
           ? const Value.absent()
@@ -284,6 +375,9 @@ class Journey extends DataClass implements Insertable<Journey> {
       id: serializer.fromJson<String>(json['id']),
       userId: serializer.fromJson<int>(json['userId']),
       pjpId: serializer.fromJson<String?>(json['pjpId']),
+      taskId: serializer.fromJson<String?>(json['taskId']),
+      dealerId: serializer.fromJson<String?>(json['dealerId']),
+      verifiedDealerId: serializer.fromJson<int?>(json['verifiedDealerId']),
       status: serializer.fromJson<String>(json['status']),
       siteName: serializer.fromJson<String?>(json['siteName']),
       totalDistance: serializer.fromJson<double>(json['totalDistance']),
@@ -298,6 +392,9 @@ class Journey extends DataClass implements Insertable<Journey> {
       'id': serializer.toJson<String>(id),
       'userId': serializer.toJson<int>(userId),
       'pjpId': serializer.toJson<String?>(pjpId),
+      'taskId': serializer.toJson<String?>(taskId),
+      'dealerId': serializer.toJson<String?>(dealerId),
+      'verifiedDealerId': serializer.toJson<int?>(verifiedDealerId),
       'status': serializer.toJson<String>(status),
       'siteName': serializer.toJson<String?>(siteName),
       'totalDistance': serializer.toJson<double>(totalDistance),
@@ -310,6 +407,9 @@ class Journey extends DataClass implements Insertable<Journey> {
     String? id,
     int? userId,
     Value<String?> pjpId = const Value.absent(),
+    Value<String?> taskId = const Value.absent(),
+    Value<String?> dealerId = const Value.absent(),
+    Value<int?> verifiedDealerId = const Value.absent(),
     String? status,
     Value<String?> siteName = const Value.absent(),
     double? totalDistance,
@@ -319,6 +419,11 @@ class Journey extends DataClass implements Insertable<Journey> {
     id: id ?? this.id,
     userId: userId ?? this.userId,
     pjpId: pjpId.present ? pjpId.value : this.pjpId,
+    taskId: taskId.present ? taskId.value : this.taskId,
+    dealerId: dealerId.present ? dealerId.value : this.dealerId,
+    verifiedDealerId: verifiedDealerId.present
+        ? verifiedDealerId.value
+        : this.verifiedDealerId,
     status: status ?? this.status,
     siteName: siteName.present ? siteName.value : this.siteName,
     totalDistance: totalDistance ?? this.totalDistance,
@@ -330,6 +435,11 @@ class Journey extends DataClass implements Insertable<Journey> {
       id: data.id.present ? data.id.value : this.id,
       userId: data.userId.present ? data.userId.value : this.userId,
       pjpId: data.pjpId.present ? data.pjpId.value : this.pjpId,
+      taskId: data.taskId.present ? data.taskId.value : this.taskId,
+      dealerId: data.dealerId.present ? data.dealerId.value : this.dealerId,
+      verifiedDealerId: data.verifiedDealerId.present
+          ? data.verifiedDealerId.value
+          : this.verifiedDealerId,
       status: data.status.present ? data.status.value : this.status,
       siteName: data.siteName.present ? data.siteName.value : this.siteName,
       totalDistance: data.totalDistance.present
@@ -346,6 +456,9 @@ class Journey extends DataClass implements Insertable<Journey> {
           ..write('id: $id, ')
           ..write('userId: $userId, ')
           ..write('pjpId: $pjpId, ')
+          ..write('taskId: $taskId, ')
+          ..write('dealerId: $dealerId, ')
+          ..write('verifiedDealerId: $verifiedDealerId, ')
           ..write('status: $status, ')
           ..write('siteName: $siteName, ')
           ..write('totalDistance: $totalDistance, ')
@@ -360,6 +473,9 @@ class Journey extends DataClass implements Insertable<Journey> {
     id,
     userId,
     pjpId,
+    taskId,
+    dealerId,
+    verifiedDealerId,
     status,
     siteName,
     totalDistance,
@@ -373,6 +489,9 @@ class Journey extends DataClass implements Insertable<Journey> {
           other.id == this.id &&
           other.userId == this.userId &&
           other.pjpId == this.pjpId &&
+          other.taskId == this.taskId &&
+          other.dealerId == this.dealerId &&
+          other.verifiedDealerId == this.verifiedDealerId &&
           other.status == this.status &&
           other.siteName == this.siteName &&
           other.totalDistance == this.totalDistance &&
@@ -384,6 +503,9 @@ class JourneysCompanion extends UpdateCompanion<Journey> {
   final Value<String> id;
   final Value<int> userId;
   final Value<String?> pjpId;
+  final Value<String?> taskId;
+  final Value<String?> dealerId;
+  final Value<int?> verifiedDealerId;
   final Value<String> status;
   final Value<String?> siteName;
   final Value<double> totalDistance;
@@ -394,6 +516,9 @@ class JourneysCompanion extends UpdateCompanion<Journey> {
     this.id = const Value.absent(),
     this.userId = const Value.absent(),
     this.pjpId = const Value.absent(),
+    this.taskId = const Value.absent(),
+    this.dealerId = const Value.absent(),
+    this.verifiedDealerId = const Value.absent(),
     this.status = const Value.absent(),
     this.siteName = const Value.absent(),
     this.totalDistance = const Value.absent(),
@@ -405,6 +530,9 @@ class JourneysCompanion extends UpdateCompanion<Journey> {
     required String id,
     required int userId,
     this.pjpId = const Value.absent(),
+    this.taskId = const Value.absent(),
+    this.dealerId = const Value.absent(),
+    this.verifiedDealerId = const Value.absent(),
     this.status = const Value.absent(),
     this.siteName = const Value.absent(),
     this.totalDistance = const Value.absent(),
@@ -418,6 +546,9 @@ class JourneysCompanion extends UpdateCompanion<Journey> {
     Expression<String>? id,
     Expression<int>? userId,
     Expression<String>? pjpId,
+    Expression<String>? taskId,
+    Expression<String>? dealerId,
+    Expression<int>? verifiedDealerId,
     Expression<String>? status,
     Expression<String>? siteName,
     Expression<double>? totalDistance,
@@ -429,6 +560,9 @@ class JourneysCompanion extends UpdateCompanion<Journey> {
       if (id != null) 'id': id,
       if (userId != null) 'user_id': userId,
       if (pjpId != null) 'pjp_id': pjpId,
+      if (taskId != null) 'task_id': taskId,
+      if (dealerId != null) 'dealer_id': dealerId,
+      if (verifiedDealerId != null) 'verified_dealer_id': verifiedDealerId,
       if (status != null) 'status': status,
       if (siteName != null) 'site_name': siteName,
       if (totalDistance != null) 'total_distance': totalDistance,
@@ -442,6 +576,9 @@ class JourneysCompanion extends UpdateCompanion<Journey> {
     Value<String>? id,
     Value<int>? userId,
     Value<String?>? pjpId,
+    Value<String?>? taskId,
+    Value<String?>? dealerId,
+    Value<int?>? verifiedDealerId,
     Value<String>? status,
     Value<String?>? siteName,
     Value<double>? totalDistance,
@@ -453,6 +590,9 @@ class JourneysCompanion extends UpdateCompanion<Journey> {
       id: id ?? this.id,
       userId: userId ?? this.userId,
       pjpId: pjpId ?? this.pjpId,
+      taskId: taskId ?? this.taskId,
+      dealerId: dealerId ?? this.dealerId,
+      verifiedDealerId: verifiedDealerId ?? this.verifiedDealerId,
       status: status ?? this.status,
       siteName: siteName ?? this.siteName,
       totalDistance: totalDistance ?? this.totalDistance,
@@ -473,6 +613,15 @@ class JourneysCompanion extends UpdateCompanion<Journey> {
     }
     if (pjpId.present) {
       map['pjp_id'] = Variable<String>(pjpId.value);
+    }
+    if (taskId.present) {
+      map['task_id'] = Variable<String>(taskId.value);
+    }
+    if (dealerId.present) {
+      map['dealer_id'] = Variable<String>(dealerId.value);
+    }
+    if (verifiedDealerId.present) {
+      map['verified_dealer_id'] = Variable<int>(verifiedDealerId.value);
     }
     if (status.present) {
       map['status'] = Variable<String>(status.value);
@@ -501,6 +650,9 @@ class JourneysCompanion extends UpdateCompanion<Journey> {
           ..write('id: $id, ')
           ..write('userId: $userId, ')
           ..write('pjpId: $pjpId, ')
+          ..write('taskId: $taskId, ')
+          ..write('dealerId: $dealerId, ')
+          ..write('verifiedDealerId: $verifiedDealerId, ')
           ..write('status: $status, ')
           ..write('siteName: $siteName, ')
           ..write('totalDistance: $totalDistance, ')
@@ -1565,6 +1717,9 @@ typedef $$JourneysTableCreateCompanionBuilder =
       required String id,
       required int userId,
       Value<String?> pjpId,
+      Value<String?> taskId,
+      Value<String?> dealerId,
+      Value<int?> verifiedDealerId,
       Value<String> status,
       Value<String?> siteName,
       Value<double> totalDistance,
@@ -1577,6 +1732,9 @@ typedef $$JourneysTableUpdateCompanionBuilder =
       Value<String> id,
       Value<int> userId,
       Value<String?> pjpId,
+      Value<String?> taskId,
+      Value<String?> dealerId,
+      Value<int?> verifiedDealerId,
       Value<String> status,
       Value<String?> siteName,
       Value<double> totalDistance,
@@ -1635,6 +1793,21 @@ class $$JourneysTableFilterComposer
 
   ColumnFilters<String> get pjpId => $composableBuilder(
     column: $table.pjpId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get dealerId => $composableBuilder(
+    column: $table.dealerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get verifiedDealerId => $composableBuilder(
+    column: $table.verifiedDealerId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1713,6 +1886,21 @@ class $$JourneysTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get dealerId => $composableBuilder(
+    column: $table.dealerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get verifiedDealerId => $composableBuilder(
+    column: $table.verifiedDealerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get status => $composableBuilder(
     column: $table.status,
     builder: (column) => ColumnOrderings(column),
@@ -1756,6 +1944,17 @@ class $$JourneysTableAnnotationComposer
 
   GeneratedColumn<String> get pjpId =>
       $composableBuilder(column: $table.pjpId, builder: (column) => column);
+
+  GeneratedColumn<String> get taskId =>
+      $composableBuilder(column: $table.taskId, builder: (column) => column);
+
+  GeneratedColumn<String> get dealerId =>
+      $composableBuilder(column: $table.dealerId, builder: (column) => column);
+
+  GeneratedColumn<int> get verifiedDealerId => $composableBuilder(
+    column: $table.verifiedDealerId,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
@@ -1832,6 +2031,9 @@ class $$JourneysTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<int> userId = const Value.absent(),
                 Value<String?> pjpId = const Value.absent(),
+                Value<String?> taskId = const Value.absent(),
+                Value<String?> dealerId = const Value.absent(),
+                Value<int?> verifiedDealerId = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 Value<String?> siteName = const Value.absent(),
                 Value<double> totalDistance = const Value.absent(),
@@ -1842,6 +2044,9 @@ class $$JourneysTableTableManager
                 id: id,
                 userId: userId,
                 pjpId: pjpId,
+                taskId: taskId,
+                dealerId: dealerId,
+                verifiedDealerId: verifiedDealerId,
                 status: status,
                 siteName: siteName,
                 totalDistance: totalDistance,
@@ -1854,6 +2059,9 @@ class $$JourneysTableTableManager
                 required String id,
                 required int userId,
                 Value<String?> pjpId = const Value.absent(),
+                Value<String?> taskId = const Value.absent(),
+                Value<String?> dealerId = const Value.absent(),
+                Value<int?> verifiedDealerId = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 Value<String?> siteName = const Value.absent(),
                 Value<double> totalDistance = const Value.absent(),
@@ -1864,6 +2072,9 @@ class $$JourneysTableTableManager
                 id: id,
                 userId: userId,
                 pjpId: pjpId,
+                taskId: taskId,
+                dealerId: dealerId,
+                verifiedDealerId: verifiedDealerId,
                 status: status,
                 siteName: siteName,
                 totalDistance: totalDistance,

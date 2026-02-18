@@ -13,7 +13,6 @@ import 'package:salesmanapp/screens/employee_management/employee_dashboard_scree
 import 'package:salesmanapp/screens/employee_management/employee_profile_screen.dart';
 import 'package:salesmanapp/screens/employee_management/employee_pjp_screen.dart';
 import 'package:salesmanapp/screens/employee_management/employee_journey_screen.dart';
-import 'package:salesmanapp/screens/employee_management/employee_salesorder_screen.dart';
 import 'package:salesmanapp/screens/forms/create_dvr.dart';
 
 // --- NavProvider ---
@@ -29,10 +28,10 @@ class NavProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // ✅ Saves the entire journey map and navigates to Journey tab
+  // ✅ Saves the entire journey map and navigates to Journey tab (now Index 2)
   void startJourney(Map<String, dynamic> data) {
     _journeyData = data; 
-    _selectedIndex = 3;
+    _selectedIndex = 2; // Updated index for Journey
     notifyListeners();
   }
 
@@ -128,7 +127,6 @@ class _NavScreenState extends State<NavScreen> {
                 provider.refreshDashboard();
               },
             ),
-            SalesOrderScreen(employee: widget.employee),
             EmployeeJourneyScreen(
               initialJourneyData: provider.journeyData,
               employee: widget.employee,
@@ -148,8 +146,6 @@ class _NavScreenState extends State<NavScreen> {
 
           return Scaffold(
             backgroundColor: _bgLight,
-            // No AppBar here - Individual screens handle their own headers
-            // No Drawer here - Replaced by Dashboard "Sales Operations" sheet
             body: Stack(
               children: [
                 IndexedStack(index: provider.selectedIndex, children: pages),
@@ -196,7 +192,6 @@ class _NavScreenState extends State<NavScreen> {
           items: const <BottomNavigationBarItem>[
             BottomNavigationBarItem(icon: Icon(Icons.grid_view_rounded), label: 'Home'),
             BottomNavigationBarItem(icon: Icon(Icons.calendar_today_rounded), label: 'Visits'),
-            BottomNavigationBarItem(icon: Icon(Icons.shopping_bag_outlined), label: 'Orders'),
             BottomNavigationBarItem(icon: Icon(Icons.near_me_rounded), label: 'Journey'),
             BottomNavigationBarItem(icon: Icon(Icons.person_rounded), label: 'Profile'),
           ],

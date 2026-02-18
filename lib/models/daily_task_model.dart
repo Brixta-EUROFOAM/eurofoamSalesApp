@@ -10,11 +10,24 @@ class DailyTask {
     final int assignedByUserId;
     final DateTime taskDate;
     final String visitType;
-    final String? relatedDealerId;
+    
+    // Dealer references
+    final String? relatedDealerId; // For "dealers" table (string ID)
+    final int? relatedVerifiedDealerId; // For "verifiedDealers" table (int ID)
+    
     final String? siteName;
     final String? description;
     final String status;
+    
+    // Additional info from schema
+    final String? dealerName;
+    final String? dealerCategory;
+    final String? pjpCycle;
+    
+    // PJP & Site links
     final String? pjpId;
+    final String? siteId; // UUID from technicalSites
+
     final DateTime? createdAt;
     final DateTime? updatedAt;
 
@@ -25,25 +38,40 @@ class DailyTask {
         required this.taskDate,
         required this.visitType,
         this.relatedDealerId,
+        this.relatedVerifiedDealerId,
         this.siteName,
         this.description,
         required this.status,
+        this.dealerName,
+        this.dealerCategory,
+        this.pjpCycle,
         this.pjpId,
+        this.siteId,
         this.createdAt,
         this.updatedAt,
     });
 
     factory DailyTask.fromJson(Map<String, dynamic> json) => DailyTask(
-        id: json["id"],
-        userId: json["userId"],
-        assignedByUserId: json["assignedByUserId"],
+        id: json["id"]?.toString(),
+        userId: json["userId"] is int ? json["userId"] : int.tryParse(json["userId"].toString()) ?? 0,
+        assignedByUserId: json["assignedByUserId"] is int ? json["assignedByUserId"] : int.tryParse(json["assignedByUserId"].toString()) ?? 0,
         taskDate: DateTime.parse(json["taskDate"]),
-        visitType: json["visitType"],
-        relatedDealerId: json["relatedDealerId"],
+        visitType: json["visitType"] ?? '',
+        
+        relatedDealerId: json["relatedDealerId"]?.toString(),
+        relatedVerifiedDealerId: json["relatedVerifiedDealerId"] is int ? json["relatedVerifiedDealerId"] : int.tryParse(json["relatedVerifiedDealerId"]?.toString() ?? ''),
+
         siteName: json["siteName"],
         description: json["description"],
-        status: json["status"],
-        pjpId: json["pjpId"],
+        status: json["status"] ?? 'Assigned',
+        
+        dealerName: json["dealerName"],
+        dealerCategory: json["dealerCategory"],
+        pjpCycle: json["pjpCycle"],
+        
+        pjpId: json["pjpId"]?.toString(),
+        siteId: json["siteId"]?.toString(),
+
         createdAt: json["createdAt"] == null ? null : DateTime.parse(json["createdAt"]),
         updatedAt: json["updatedAt"] == null ? null : DateTime.parse(json["updatedAt"]),
     );
@@ -55,9 +83,14 @@ class DailyTask {
         "taskDate": taskDate.toIso8601String(),
         "visitType": visitType,
         "relatedDealerId": relatedDealerId,
+        "relatedVerifiedDealerId": relatedVerifiedDealerId,
         "siteName": siteName,
         "description": description,
         "status": status,
+        "dealerName": dealerName,
+        "dealerCategory": dealerCategory,
+        "pjpCycle": pjpCycle,
         "pjpId": pjpId,
+        "siteId": siteId,
     };
 }

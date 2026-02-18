@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 //import 'package:shared_preferences/shared_preferences.dart';
 //import 'package:salesmanapp/services/websocket/session_manager.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+import 'package:salesmanapp/core/feature_flags/sales_flags.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 //kernel
@@ -36,6 +37,8 @@ import 'package:salesmanapp/features/journey_bootstrap/journey_bootstrap_control
 import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_capabilities.dart';
 import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_controller.dart';
 import 'package:salesmanapp/services/journeyFgTaskHandler/journey_foreground_service.dart';
+import 'package:salesmanapp/features/salesJourney/sales_journey_controller.dart';
+import 'package:salesmanapp/features/salesJourney/sales_journey_capabilities.dart';
 
 // --- WIDGETS & THEMES ---
 import 'package:salesmanapp/widgets/app_theme.dart';
@@ -159,6 +162,14 @@ Future<void> main() async {
     ),
   );
 
+  kernel.registerIf<SalesJourneyController>(
+    flags.journey, 
+    () => SalesJourneyController(
+      caps: SalesJourneyCapabilities.fromFlags(flags),
+      api: ApiService(),
+    ),
+  );
+
   //KENEL REGISTRATION
   //
   //NIGGA
@@ -184,6 +195,7 @@ Future<void> main() async {
       providers: [
         // FEATURE FLAGS (control plane)
         Provider<TechnicalFlags>.value(value: TechnicalFlags.dev),
+        Provider<SalesFlags>.value(value: SalesFlags.dev),
 
         // THEME PROVIDER (already used by MyApp)
         ChangeNotifierProvider<ThemeProvider>(create: (_) => ThemeProvider()),

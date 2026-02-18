@@ -42,8 +42,8 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  static const String _baseUrl = 'http://65.0.208.126'; //aws
-  //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  //static const String _baseUrl = 'http://65.0.208.126'; //aws
+  static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
   //static const String _baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
 
   // --- ✅ FIX: Initialize http.Client ---
@@ -787,6 +787,11 @@ class ApiService {
       task.toJson(),
       (json) => DailyTask.fromJson(json),
     );
+  }
+
+  Future<void> updateDailyTaskStatus(String taskId, String status) async {
+    await _patch('daily-tasks/$taskId', 
+    {'status': status}, (json) => json);
   }
 
   Future<void> deleteDailyTask(String taskId) => _delete('daily-tasks/$taskId');
