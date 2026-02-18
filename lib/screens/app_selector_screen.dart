@@ -181,16 +181,16 @@ Future<void> _checkAutoLogin() async {
                 const SizedBox(height: 60),
 
                 //Sales Portal
-                // _buildPortalCard(
-                //   context,
-                //   title: 'SALES FORCE',
-                //   subtitle: '(EMP)',
-                //   icon: Icons.business_center,
-                //   color: Colors.blueAccent,
-                //   isTechnical: false,
-                // ).animate().slideX(begin: -1, duration: 600.ms, curve: Curves.easeOut),
+                _buildPortalCard(
+                  context,
+                  title: 'SALES FORCE',
+                  subtitle: '(EMP)',
+                  icon: Icons.business_center,
+                  color: Colors.blueAccent,
+                  isTechnical: false,
+                ).animate().slideX(begin: -1, duration: 600.ms, curve: Curves.easeOut),
 
-                // const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
                 //Technical Portal
                 _buildPortalCard(
