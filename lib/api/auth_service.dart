@@ -9,9 +9,9 @@ import '../models/employee_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
-  static const String _baseUrl = 'http://13.234.76.191'; //aws
-  //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
-  //static const String _baseUrl = 'https://myserver2-5ame.onrender.com'; // mycocoserver2.onrender
+  //static const String _baseUrl = 'http://65.0.208.126'; //aws
+  static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  //static const String _baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
 
   final _storage = const FlutterSecureStorage();
   static const String _kCachedProfileKey = 'offline_user_profile_cache';
