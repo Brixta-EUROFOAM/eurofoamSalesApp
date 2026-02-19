@@ -166,7 +166,6 @@ Future<void> main() async {
     flags.journey, 
     () => SalesJourneyController(
       caps: SalesJourneyCapabilities.fromFlags(flags),
-      api: ApiService(),
     ),
   );
 

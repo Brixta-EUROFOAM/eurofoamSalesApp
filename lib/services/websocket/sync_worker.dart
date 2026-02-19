@@ -54,7 +54,7 @@ class SyncWorker {
   // 📤 FLUSH: Send pending items to server
   Future<void> flushQueue() async {
     if (_isSyncing) return;
-    if (!_socket.isConnected) return; 
+    if (!_socket.isConnected) return;
 
     final pendingOps = await db.getPendingOps();
     if (pendingOps.isEmpty) return;
@@ -74,7 +74,20 @@ class SyncWorker {
       };
     }).toList();
 
-    _socket.send({'type': 'SYNC_OPS', 'payload': payload});
+    try {
+      _socket.send({'type': 'SYNC_OPS', 'payload': payload});
+
+      // 🚀 FIX: Failsafe timer! If we don't get an ACK in 10 seconds, unlock so we can retry.
+      Timer(const Duration(seconds: 10), () {
+        if (_isSyncing) {
+          debugPrint("⚠️ [SyncWorker] ACK Timeout! Unlocking queue for retry.");
+          _isSyncing = false;
+        }
+      });
+    } catch (e) {
+      debugPrint("🚨 [SyncWorker] Failed to send: $e");
+      _isSyncing = false; // Unlock if sending crashes
+    }
   }
 
   // 📥 ACK: Server confirmed receipt

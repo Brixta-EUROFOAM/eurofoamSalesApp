@@ -58,6 +58,16 @@ class JourneyTaskHandler extends TaskHandler {
     );
   }
 
+  // Listen for the manual kill signal from the Main UI
+  @override
+  void onReceiveData(Object data) {
+    if (data == 'STOP_GPS') {
+      _posSub?.cancel();
+      _posSub = null;
+      print("🛑 Background GPS stream cancelled explicitly via signal.");
+    }
+  }
+
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
     await _posSub?.cancel();

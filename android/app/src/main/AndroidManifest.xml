@@ -15,7 +15,8 @@
     <application
         android:label="Best Work Force"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon">
+        android:icon="@mipmap/launcher_icon"
+        android:usesCleartextTraffic="true">
 
     <service
         android:name="com.pravera.flutter_foreground_task.service.ForegroundService"

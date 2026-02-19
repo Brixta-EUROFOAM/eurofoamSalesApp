@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:salesmanapp/database/app_database.dart';
 import 'package:salesmanapp/services/websocket/sync_worker.dart';
 
@@ -17,8 +18,8 @@ class SessionManager {
     if (_syncWorker != null) return; // already running
 
     _userId = userId;
-    //const serverUrl = 'ws://10.0.2.2:8000'; 
-    const serverUrl = 'wss://myserver2-5ame.onrender.com';
+    const serverUrl = 'ws://10.0.2.2:8000'; 
+    //final String serverUrl = kReleaseMode ? 'wss://myserver2-5ame.onrender.com' : 'ws://65.0.208.126';
 
     _syncWorker = SyncWorker(
       db: AppDatabase.instance,

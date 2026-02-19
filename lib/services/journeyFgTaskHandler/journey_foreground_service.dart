@@ -61,6 +61,8 @@ class JourneyForegroundService {
 
   static Future<void> stop() async {
     if (await FlutterForegroundTask.isRunningService) {
+      FlutterForegroundTask.sendDataToTask('STOP_GPS');
+      await Future.delayed(const Duration(milliseconds: 100));
       await FlutterForegroundTask.stopService();
     }
   }
