@@ -18,8 +18,8 @@ class SessionManager {
     if (_syncWorker != null) return; // already running
 
     _userId = userId;
-    const serverUrl = 'ws://10.0.2.2:8000'; 
-    //final String serverUrl = kReleaseMode ? 'wss://myserver2-5ame.onrender.com' : 'ws://65.0.208.126';
+    //const serverUrl = 'ws://10.0.2.2:8000'; 
+    final String serverUrl = kReleaseMode ? 'ws://65.0.208.126' : 'wss://myserver2-5ame.onrender.com';
 
     _syncWorker = SyncWorker(
       db: AppDatabase.instance,

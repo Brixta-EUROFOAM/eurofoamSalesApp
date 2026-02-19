@@ -18,6 +18,7 @@ import 'package:salesmanapp/models/dealer_model.dart';
 import 'package:salesmanapp/features/salesJourney/sales_journey_controller.dart';
 import 'package:salesmanapp/features/salesJourney/sales_journey_capabilities.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+import 'package:salesmanapp/screens/forms/create_dvr.dart';
 
 // --- Technical Map Style & Tools ---
 import 'package:salesmanapp/core/app_kernel.dart';
@@ -35,7 +36,8 @@ class EmployeeJourneyScreen extends StatefulWidget {
   final Employee employee;
   final Map<String, dynamic>? initialJourneyData;
   final VoidCallback? onDestinationConsumed;
-  final Function(Pjp pjp, Dealer dealer, DateTime checkInTime)? onJourneyCompleted;
+  final Function(Pjp pjp, Dealer dealer, DateTime checkInTime)?
+  onJourneyCompleted;
 
   const EmployeeJourneyScreen({
     super.key,
@@ -60,11 +62,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   // ---------- MAP & TRACKING STATE ----------
   late Future<String> _styleFuture;
   final String? _radarApiKey = dotenv.env['RADAR_API_KEY'];
-  
+
   StreamSubscription? _distanceSub;
   StreamSubscription? _posSub;
   StreamSubscription? _eventSub;
-  
+
   bool _restoreChecked = false;
   LatLng? _currentUserLocation;
   LatLng? _destinationLocation;
@@ -108,7 +110,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _journeyStartMachine.addListener(() {
       final state = _journeyStartMachine.value;
       if (!mounted) return;
-      
+
       if (state is SalesJourneyStartProcessing) {
         setState(() => _distanceDisplay = state.message);
       } else if (state is SalesJourneyStartFailure) {
@@ -136,7 +138,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   @override
   void didUpdateWidget(covariant EmployeeJourneyScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.initialJourneyData != null && widget.initialJourneyData != oldWidget.initialJourneyData) {
+    if (widget.initialJourneyData != null &&
+        widget.initialJourneyData != oldWidget.initialJourneyData) {
       _loadTaskData(widget.initialJourneyData!);
     }
   }
@@ -186,7 +189,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           context: context,
           builder: (_) => AlertDialog(
             title: const Text("Resume journey?"),
-            content: Text("You have an active visit to ${snapshot.displayName}. Continue tracking?"),
+            content: Text(
+              "You have an active visit to ${snapshot.displayName}. Continue tracking?",
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -207,7 +212,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       _isJourneyActive = true;
       _taskId = snapshot.taskId;
       _destinationController.text = snapshot.displayName ?? "Resumed Journey";
-      _distanceDisplay = "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
+      _distanceDisplay =
+          "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
 
       _currentUserLocation = snapshot.lastPosition;
       _routeTaken.clear();
@@ -220,10 +226,17 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       await JourneyMapRenderer.updateTravelledPath(controller, snapshot.path);
     }
     if (snapshot.lastPosition != null) {
-      await JourneyMapRenderer.drawUserLocationPointer(controller, snapshot.lastPosition!);
+      await JourneyMapRenderer.drawUserLocationPointer(
+        controller,
+        snapshot.lastPosition!,
+      );
     }
     if (snapshot.path.length >= 2) {
-      await JourneyMapRenderer.fitBounds(controller, snapshot.path.first, snapshot.path.last);
+      await JourneyMapRenderer.fitBounds(
+        controller,
+        snapshot.path.first,
+        snapshot.path.last,
+      );
     }
 
     _attachStreams();
@@ -245,14 +258,16 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
     _distanceSub = _controller.distanceStream.listen((dist) {
       if (mounted) {
-        setState(() => _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km");
+        setState(
+          () => _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km",
+        );
       }
     });
 
     _posSub = _controller.positionStream.listen((latLng) {
       _currentUserLocation = latLng;
       _routeTaken.add(latLng);
-      
+
       _drawUserLocationPointer(latLng);
       _updateTravelledPolyline();
     });
@@ -273,7 +288,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _dealerId = data['dealerId']?.toString();
     _verifiedDealerId = data['verifiedDealerId'];
     _taskId = data['taskId']?.toString();
-    
+
     final String displayName = data['displayName'] ?? "Visit";
 
     setState(() {
@@ -292,11 +307,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     if (_dealerId != null) {
       try {
         final dealer = await ApiService().fetchDealerById(_dealerId!);
-        
+
         if (dealer.latitude != null && dealer.longitude != null) {
           _destinationLocation = LatLng(dealer.latitude!, dealer.longitude!);
           await _addDestinationMarker(_destinationLocation!);
-          
+
           if (_currentUserLocation != null) {
             await _getDirectionsAndDrawRoute();
             await _fitBounds();
@@ -363,7 +378,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
   void _handleJourneyCleanup() async {
     _cancelJourneySubscriptions();
-    
+
     if (mounted) {
       setState(() {
         _isJourneyActive = false;
@@ -389,8 +404,34 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
             ),
             ElevatedButton(
               child: const Text("Open DVR"),
-              onPressed: () {
+              onPressed: () async {
                 Navigator.pop(context);
+                
+                if (_dealerId == null) {
+                  _showError("Dealer not found for DVR.");
+                  return;
+                }
+
+                try {
+                  /// Fetch dealer fresh (same logic you used earlier)
+                  final dealer = await ApiService().fetchDealerById(_dealerId!);
+
+                  if (!mounted) return;
+
+                  /// 🚀 OPEN DVR SCREEN
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CreateDvrScreen(
+                        employee: widget.employee,
+                        dealer: dealer,
+                        initialCheckInTime: DateTime.now(),
+                      ),
+                    ),
+                  );
+                } catch (e) {
+                  _showError("Failed to open DVR: $e");
+                }
               },
             ),
           ],
@@ -401,7 +442,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
   Future<void> _launchNavigation() async {
     if (_destinationLocation != null) {
-      final url = Uri.parse('google.navigation:q=${_destinationLocation!.latitude},${_destinationLocation!.longitude}');
+      final url = Uri.parse(
+        'google.navigation:q=${_destinationLocation!.latitude},${_destinationLocation!.longitude}',
+      );
       if (await canLaunchUrl(url)) await launchUrl(url);
     }
   }
@@ -434,7 +477,10 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     return await JourneyPermissionGuard.ensurePermissions(
       onShowDisclosure: () async {
         if (!mounted) return false;
-        return await JourneyDialogs.showDisclosure(context: context, primaryColor: _cardNavy);
+        return await JourneyDialogs.showDisclosure(
+          context: context,
+          primaryColor: _cardNavy,
+        );
       },
       onShowSettings: () {
         if (mounted) JourneyDialogs.showSettings(context);
@@ -463,15 +509,25 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
         final controller = await _controllerCompleter.future;
         if (_destinationLocation == null) {
-          await controller.animateCamera(CameraUpdate.newCameraPosition(CameraPosition(target: _currentUserLocation!, zoom: 15.0)));
+          await controller.animateCamera(
+            CameraUpdate.newCameraPosition(
+              CameraPosition(target: _currentUserLocation!, zoom: 15.0),
+            ),
+          );
         }
-        await JourneyMapRenderer.drawUserLocationPointer(controller, _currentUserLocation!);
+        await JourneyMapRenderer.drawUserLocationPointer(
+          controller,
+          _currentUserLocation!,
+        );
       }
     } catch (_) {}
   }
 
   Future<void> _getDirectionsAndDrawRoute() async {
-    if (_currentUserLocation == null || _destinationLocation == null || _radarApiKey == null) return;
+    if (_currentUserLocation == null ||
+        _destinationLocation == null ||
+        _radarApiKey == null)
+      return;
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.drawRoute(
       controller: controller,
@@ -500,29 +556,46 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   Future<void> _fitBounds() async {
     if (_currentUserLocation == null || _destinationLocation == null) return;
     final controller = await _controllerCompleter.future;
-    await JourneyMapRenderer.fitBounds(controller, _currentUserLocation!, _destinationLocation!);
+    await JourneyMapRenderer.fitBounds(
+      controller,
+      _currentUserLocation!,
+      _destinationLocation!,
+    );
   }
 
   Future<void> _removeRouteLine() async {
     // 🚀 FIX: Prevent removing layers that haven't been added yet
     if (!_isRouteLineLayerAdded) return;
-    
+
     final controller = await _controllerCompleter.future;
-    try { await controller.removeLayer('route-line'); } catch (_) {}
-    try { await controller.removeSource('route-source'); } catch (_) {}
-    
+    try {
+      await controller.removeLayer('route-line');
+    } catch (_) {}
+    try {
+      await controller.removeSource('route-source');
+    } catch (_) {}
+
     _isRouteLineLayerAdded = false;
   }
 
   Future<void> _removeDestinationMarker() async {
     final controller = await _controllerCompleter.future;
-    try { await controller.removeLayer('dest-layer-inner'); } catch (_) {}
-    try { await controller.removeLayer('dest-layer-outer'); } catch (_) {}
-    try { await controller.removeSource('dest-source'); } catch (_) {}
+    try {
+      await controller.removeLayer('dest-layer-inner');
+    } catch (_) {}
+    try {
+      await controller.removeLayer('dest-layer-outer');
+    } catch (_) {}
+    try {
+      await controller.removeSource('dest-source');
+    } catch (_) {}
   }
 
   void _showError(String message) {
-    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    if (mounted)
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _cancelJourneySubscriptions() {
@@ -548,11 +621,14 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                 styleString: snap.data!,
                 initialCameraPosition: _initialCameraPosition,
                 onMapCreated: (c) {
-                  if (!_controllerCompleter.isCompleted) _controllerCompleter.complete(c);
-                  
+                  if (!_controllerCompleter.isCompleted)
+                    _controllerCompleter.complete(c);
+
                   if (_isJourneyActive) {
-                    if (_currentUserLocation != null) _drawUserLocationPointer(_currentUserLocation!);
-                    if (_destinationLocation != null) _addDestinationMarker(_destinationLocation!);
+                    if (_currentUserLocation != null)
+                      _drawUserLocationPointer(_currentUserLocation!);
+                    if (_destinationLocation != null)
+                      _addDestinationMarker(_destinationLocation!);
                     if (_routeTaken.isNotEmpty) _updateTravelledPolyline();
                   }
                 },
@@ -567,7 +643,10 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           top: 50,
           right: 16,
           child: Container(
-            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
             child: IconButton(
               icon: Icon(Icons.my_location, color: _cardNavy),
               onPressed: _determinePositionAndMoveCamera,
@@ -579,7 +658,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           child: SafeArea(
             bottom: false,
             child: Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom + 72),
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).padding.bottom + 72,
+              ),
               child: JourneyOverlayManager(
                 isJourneyActive: _isJourneyActive,
                 distance: _distanceDisplay,
@@ -588,7 +669,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                 idlePanel: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _IdleJourneyPanel(destinationName: _destinationController.text),
+                    _IdleJourneyPanel(
+                      destinationName: _destinationController.text,
+                    ),
                     const SizedBox(height: 24),
                     _StartJourneySlider(
                       key: ValueKey(_isJourneyActive),
@@ -634,13 +717,23 @@ class _IdleJourneyPanel extends StatelessWidget {
                 color: cardNavy.withOpacity(0.05),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.location_on_rounded, color: cardNavy, size: 20),
+              child: const Icon(
+                Icons.location_on_rounded,
+                color: cardNavy,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                destinationName.isEmpty ? "Waiting for selection..." : destinationName,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: cardNavy),
+                destinationName.isEmpty
+                    ? "Waiting for selection..."
+                    : destinationName,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: cardNavy,
+                ),
               ),
             ),
           ],
@@ -661,7 +754,11 @@ class _IdleJourneyPanel extends StatelessWidget {
               Expanded(
                 child: Text(
                   "Slide below to start tracking.",
-                  style: TextStyle(color: textGrey, fontWeight: FontWeight.w600, fontSize: 13),
+                  style: TextStyle(
+                    color: textGrey,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                  ),
                 ),
               ),
             ],
@@ -717,10 +814,19 @@ class _StartJourneySlider extends StatelessWidget {
             : null,
         innerColor: Colors.white,
         outerColor: isEnabled ? cardNavy : const Color(0xFFF1F5F9),
-        sliderButtonIcon: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0F172A), size: 26),
+        sliderButtonIcon: const Icon(
+          Icons.arrow_forward_rounded,
+          color: Color(0xFF0F172A),
+          size: 26,
+        ),
         text: isEnabled ? 'SLIDE TO START VISIT' : 'SELECT TASK FIRST',
         enabled: isEnabled,
-        textStyle: TextStyle(color: isEnabled ? Colors.white : const Color(0xFF94A3B8), fontSize: 15, fontWeight: FontWeight.w900, letterSpacing: 1.5),
+        textStyle: TextStyle(
+          color: isEnabled ? Colors.white : const Color(0xFF94A3B8),
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1.5,
+        ),
         borderRadius: 24,
         elevation: 0,
         height: 76,
