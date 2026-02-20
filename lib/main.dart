@@ -66,15 +66,15 @@ final GlobalKey<NavigatorState> globalNavigatorKey =
 
 Future<void> main() async {
   final flags = TechnicalFlags.dev;
+  final salesFlags = SalesFlags.dev;
+
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   debugPrint("Firebase Initialized Successfully.");
   final kernel = AppKernel.instance;
   //KERNEL REGISTRATION
-  //
-  //NIGGA
-  //..............
 
+  // ------- TECHNICAL SIDE FLAGS ---------
   kernel.registerIf<PjpJourneyController>(
     flags.pjpjourney,
     () => PjpJourneyController(
@@ -96,7 +96,7 @@ Future<void> main() async {
   );
 
   kernel.registerIf<JourneyBootstrapController>(
-    flags.journeyStartStop, // or a new flag if you want later
+    flags.journeyStartStop,
     () => JourneyBootstrapController(),
   );
   kernel.registerIf<JourneyTrackingController>(
@@ -162,17 +162,15 @@ Future<void> main() async {
     ),
   );
 
+  // ------- SALES SIDE FLAGS ---------
   kernel.registerIf<SalesJourneyController>(
     flags.journey, 
     () => SalesJourneyController(
-      caps: SalesJourneyCapabilities.fromFlags(flags),
+      caps: SalesJourneyCapabilities.fromFlags(salesFlags),
     ),
   );
 
   //KENEL REGISTRATION
-  //
-  //NIGGA
-  //......
 
   await NotificationService().init();
   await JourneyForegroundService.init();

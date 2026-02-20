@@ -1,4 +1,4 @@
-import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+import 'package:salesmanapp/core/feature_flags/sales_flags.dart';
 
 class SalesJourneyCapabilities {
   final bool canStartJourney;
@@ -13,13 +13,13 @@ class SalesJourneyCapabilities {
     required this.backgroundTrackingEnabled,
   });
 
-  factory SalesJourneyCapabilities.fromFlags(TechnicalFlags flags) {
+  factory SalesJourneyCapabilities.fromFlags(SalesFlags flags) {
     return SalesJourneyCapabilities(
       // Reuse existing journey flags or add specific ones if needed
-      canStartJourney: flags.journeyStartStop,
-      canStopJourney: flags.journeyStartStop,
-      canViewMap: flags.journeyMap,
-      backgroundTrackingEnabled: flags.journeyTracking,
+      canStartJourney: flags.journey,
+      canStopJourney: flags.journey,
+      canViewMap: flags.journey,
+      backgroundTrackingEnabled: flags.journey,
     );
   }
 

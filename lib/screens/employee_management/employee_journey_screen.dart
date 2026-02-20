@@ -8,6 +8,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:slide_to_act/slide_to_act.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:provider/provider.dart';
 
 // --- Imports ---
 import 'package:salesmanapp/api/api_service.dart';
@@ -17,7 +18,7 @@ import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
 import 'package:salesmanapp/features/salesJourney/sales_journey_controller.dart';
 import 'package:salesmanapp/features/salesJourney/sales_journey_capabilities.dart';
-import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+import 'package:salesmanapp/core/feature_flags/sales_flags.dart';
 import 'package:salesmanapp/screens/forms/create_dvr.dart';
 
 // --- Technical Map Style & Tools ---
@@ -102,7 +103,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     super.initState();
 
     _controller = SalesJourneyController(
-      caps: SalesJourneyCapabilities.fromFlags(TechnicalFlags.dev),
+      caps: SalesJourneyCapabilities.fromFlags(SalesFlags.dev),
     );
 
     _styleFuture = _readStyle();
@@ -526,8 +527,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   Future<void> _getDirectionsAndDrawRoute() async {
     if (_currentUserLocation == null ||
         _destinationLocation == null ||
-        _radarApiKey == null)
-      return;
+        _radarApiKey == null){
+      return;}
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.drawRoute(
       controller: controller,
@@ -592,11 +593,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   }
 
   void _showError(String message) {
-    if (mounted)
+    if (mounted){
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
-  }
+  }}
 
   void _cancelJourneySubscriptions() {
     _distanceSub?.cancel();
@@ -610,6 +611,32 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final salesFlags = context.watch<SalesFlags>();
+
+    // Single flag for whole screen
+    if (!salesFlags.journey) {
+      return Scaffold(
+        backgroundColor: _bgLight,
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.location_off_rounded, size: 64, color: Colors.grey),
+              SizedBox(height: 16),
+              Text(
+                "Journey Tracking Unavailabe Right Now",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Stack(
       children: [
         SizedBox.expand(
@@ -621,14 +648,13 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                 styleString: snap.data!,
                 initialCameraPosition: _initialCameraPosition,
                 onMapCreated: (c) {
-                  if (!_controllerCompleter.isCompleted)
-                    _controllerCompleter.complete(c);
-
+                  if (!_controllerCompleter.isCompleted){
+                    _controllerCompleter.complete(c);}
                   if (_isJourneyActive) {
-                    if (_currentUserLocation != null)
-                      _drawUserLocationPointer(_currentUserLocation!);
-                    if (_destinationLocation != null)
-                      _addDestinationMarker(_destinationLocation!);
+                    if (_currentUserLocation != null){
+                      _drawUserLocationPointer(_currentUserLocation!);}
+                    if (_destinationLocation != null){
+                      _addDestinationMarker(_destinationLocation!);}
                     if (_routeTaken.isNotEmpty) _updateTravelledPolyline();
                   }
                 },

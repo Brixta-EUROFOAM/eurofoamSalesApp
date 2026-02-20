@@ -7,6 +7,8 @@ import 'package:salesmanapp/api/api_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:camera/camera.dart';
+import 'package:provider/provider.dart';
+import 'package:salesmanapp/core/feature_flags/sales_flags.dart';
 
 import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
 import 'package:salesmanapp/screens/forms/create_dvr.dart';
@@ -257,6 +259,8 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   // --- ACTIONS ---
 
   void _showSalesmanOps(BuildContext context) {
+    final flags = context.read<SalesFlags>();
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -281,55 +285,61 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                _buildActionSheetItem(
-                  icon: Icons.description_outlined,
-                  title: "Create DVR",
-                  subtitle: "Daily Visit Report",
-                  iconBg: const Color(0xFFEFF6FF),
-                  iconColor: Colors.blue,
-                  onTap: () =>
-                      _openDialog(CreateDvrScreen(employee: widget.employee)),
-                ),
-                _buildActionSheetItem(
-                  icon: Icons.store_mall_directory_outlined,
-                  title: "Add Dealer",
-                  subtitle: "Register new dealer",
-                  iconBg: const Color(0xFFF0FDF4),
-                  iconColor: Colors.green,
-                  onTap: () =>
-                      _openDialog(AddDealerForm(employee: widget.employee)),
-                ),
-                _buildActionSheetItem(
-                  icon: Icons.assessment_outlined,
-                  title: "Competition Form",
-                  subtitle: "Market intelligence report",
-                  iconBg: const Color(0xFFFFF7ED),
-                  iconColor: Colors.orange,
-                  onTap: () => _openDialog(
-                    CreateCompetitionFormScreen(employee: widget.employee),
+
+                if (flags.createDvr)
+                  _buildActionSheetItem(
+                    icon: Icons.description_outlined,
+                    title: "Create DVR",
+                    subtitle: "Daily Visit Report",
+                    iconBg: const Color(0xFFEFF6FF),
+                    iconColor: Colors.blue,
+                    onTap: () =>
+                        _openDialog(CreateDvrScreen(employee: widget.employee)),
                   ),
-                ),
-                // NEW: Sales Order Item (Moved from Bottom Nav)
-                _buildActionSheetItem(
-                  icon: Icons.shopping_cart_outlined,
-                  title: "Sales Orders",
-                  subtitle: "Manage orders",
-                  iconBg: const Color(0xFFF3E8FF), // Purple-ish background
-                  iconColor: Colors.purple,
-                  // SalesOrderScreen is a full screen, not a dialog usually, but _openDialog works if it handles it.
-                  // Or navigate push. Let's use push for full screen feel.
-                  onTap: () {
-                    Navigator.pop(context); // Close bottom sheet first
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            SalesOrderScreen(employee: widget.employee),
-                      ),
-                    );
-                  },
-                ),
-                // REMOVED: Assign Task (CreateDailyTaskScreen)
+
+                if (flags.addDealer)
+                  _buildActionSheetItem(
+                    icon: Icons.store_mall_directory_outlined,
+                    title: "Add Dealer",
+                    subtitle: "Register new dealer",
+                    iconBg: const Color(0xFFF0FDF4),
+                    iconColor: Colors.green,
+                    onTap: () =>
+                        _openDialog(AddDealerForm(employee: widget.employee)),
+                  ),
+
+                if (flags.competitionForm)
+                  _buildActionSheetItem(
+                    icon: Icons.assessment_outlined,
+                    title: "Competition Form",
+                    subtitle: "Market intelligence report",
+                    iconBg: const Color(0xFFFFF7ED),
+                    iconColor: Colors.orange,
+                    onTap: () => _openDialog(
+                      CreateCompetitionFormScreen(employee: widget.employee),
+                    ),
+                  ),
+
+                if (flags.salesOrders)
+                  _buildActionSheetItem(
+                    icon: Icons.shopping_cart_outlined,
+                    title: "Sales Orders",
+                    subtitle: "Manage orders",
+                    iconBg: const Color(0xFFF3E8FF),
+                    iconColor: Colors.purple,
+                    // SalesOrderScreen is a full screen, not a dialog usually, but _openDialog works if it handles it.
+                    // Or navigate push. Use push for full screen feel.
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              SalesOrderScreen(employee: widget.employee),
+                        ),
+                      );
+                    },
+                  ),
               ],
             ),
           ),
@@ -497,6 +507,14 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       userArea = (widget.employee as dynamic).area ?? "N/A";
     } catch (_) {}
 
+    // Watch flags to conditionally render the master card
+    final flags = context.watch<SalesFlags>();
+    final bool showSalesOpsCard =
+        flags.createDvr ||
+        flags.addDealer ||
+        flags.competitionForm ||
+        flags.salesOrders;
+
     return Scaffold(
       backgroundColor: _bgLight,
       appBar: AppBar(
@@ -637,27 +655,29 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 ],
               ),
             ).animate().slideY(begin: 0.1, duration: 400.ms),
-
             const SizedBox(height: 32),
-            Text(
-              "Operations",
-              style: TextStyle(
-                color: _textDark,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
 
-            // --- 2. SALES OPS TRIGGER ---
-            _buildFintechCard(
-              title: "Sales Operations",
-              subtitle: "Dealers, DVRs, Competition",
-              icon: Icons.business_center_outlined,
-              iconColor: Colors.blueAccent,
-              iconBg: const Color(0xFFEFF6FF),
-              onTap: () => _showSalesmanOps(context),
-            ).animate().slideY(begin: 0.2, duration: 500.ms),
+            if (showSalesOpsCard) ...[
+              Text(
+                "Operations",
+                style: TextStyle(
+                  color: _textDark,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // --- 2. SALES OPS TRIGGER ---
+              _buildFintechCard(
+                title: "Sales Operations",
+                subtitle: "Dealers, DVRs, Competition",
+                icon: Icons.business_center_outlined,
+                iconColor: Colors.blueAccent,
+                iconBg: const Color(0xFFEFF6FF),
+                onTap: () => _showSalesmanOps(context),
+              ).animate().slideY(begin: 0.2, duration: 500.ms),
+            ],
           ],
         ),
       ),
