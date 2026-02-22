@@ -19,6 +19,7 @@ import '../technicalSide/models/mason_kyc_model.dart';
 import '../technicalSide/models/mason_rewards_model.dart';
 import '../technicalSide/models/sites_model.dart';
 import '../technicalSide/models/mason_pc_model.dart';
+import '../technicalSide/models/tso_meetings_model.dart';
 
 // --- ✅ 1. (NEW) TSO USER HELPER CLASS (DEFINED HERE) ---
 class TsoUser {
@@ -905,29 +906,6 @@ class ApiService {
   Future<void> deleteSalesOrder(String orderId) =>
       _delete('sales-orders/$orderId');
 
-  Future<Employee> adminLogin(String loginId, String password) async {
-    dev.log('Admin Login Step 1: Authenticating', name: 'ApiService');
-    final loginResponse = await _post('auth/login', {
-      'loginId': loginId,
-      'password': password,
-    }, (json) => json as Map<String, dynamic>);
-
-    final token = loginResponse['token'] as String?;
-    final userId = loginResponse['userId']?.toString();
-
-    if (token == null || userId == null) {
-      throw Exception('Login failed: Server did not return token or user ID.');
-    }
-
-    _authToken = token;
-    dev.log('Admin Login Step 2: Token stored.', name: 'ApiService');
-
-    dev.log(
-      'Admin Login Step 3: Fetching profile for user $userId',
-      name: 'ApiService',
-    );
-    return fetchEmployeeProfile(userId);
-  }
 
   Future<Employee> fetchEmployeeProfile(String userId) async {
     final json = await _get(
@@ -1137,4 +1115,84 @@ class ApiService {
       (json) => (json as List).map((e) => Mason.fromJson(e)).toList(),
     );
   }
+
+  Future<List<TsoMeeting>> fetchTsoMeetings({
+    String? startDate,
+    String? endDate,
+    String? type,
+    int? createdByUserId,
+    int page = 1,
+    int limit = 50,
+    String? sortBy,
+    String? sortDir,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+    };
+
+    if (startDate != null) queryParams['startDate'] = startDate;
+    if (endDate != null) queryParams['endDate'] = endDate;
+    if (type != null) queryParams['type'] = type;
+    if (createdByUserId != null) queryParams['createdByUserId'] = createdByUserId.toString();
+    if (sortBy != null) queryParams['sortBy'] = sortBy;
+    if (sortDir != null) queryParams['sortDir'] = sortDir;
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get(
+      'tso-meetings?$queryString',
+      (json) => (json as List).map((item) => TsoMeeting.fromJson(item)).toList(),
+    );
+  }
+
+  Future<List<TsoMeeting>> fetchTsoMeetingsByUserId(
+    int userId, {
+    String? startDate,
+    String? endDate,
+    int page = 1,
+    int limit = 50,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+    };
+
+    if (startDate != null) queryParams['startDate'] = startDate;
+    if (endDate != null) queryParams['endDate'] = endDate;
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get(
+      'tso-meetings/user/$userId?$queryString',
+      (json) => (json as List).map((item) => TsoMeeting.fromJson(item)).toList(),
+    );
+  }
+
+  Future<TsoMeeting> fetchTsoMeetingById(String meetingId) async {
+    return _get(
+      'tso-meetings/$meetingId',
+      (json) => TsoMeeting.fromJson(json),
+    );
+  }
+
+  Future<TsoMeeting> createTsoMeeting(TsoMeeting meeting) async {
+    return _post(
+      'tso-meetings',
+      meeting.toJson(),
+      (json) => TsoMeeting.fromJson(json),
+    );
+  }
+
+  Future<TsoMeeting> updateTsoMeeting(
+    String meetingId,
+    Map<String, dynamic> updateData,
+  ) async {
+    return _patch(
+      'tso-meetings/$meetingId',
+      updateData,
+      (json) => TsoMeeting.fromJson(json),
+    );
+  }
+
 }

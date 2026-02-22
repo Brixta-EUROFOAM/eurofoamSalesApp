@@ -22,9 +22,8 @@ import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_kyc.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_rewards.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/add_site_form.dart';
 import 'package:salesmanapp/technicalSide/screens/all_masons_screen.dart';
-
-// 🟢 NEW IMPORT FOR PENDING REGISTRATIONS
 import 'package:salesmanapp/technicalSide/screens/pending_masons_screen.dart';
+import 'package:salesmanapp/technicalSide/screens/forms/tso_meetings_form.dart';
 
 // ---------------------------------------------------------------------------
 // 🟢 INTERNAL CAMERA SCREEN
@@ -258,7 +257,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     if (!mounted) return;
     _setGreeting();
     // If day is already completed, do NOT touch attendance state
-    if (!_isDayComplete){
+    if (!_isDayComplete) {
       _checkAttendanceStatus();
     }
   }
@@ -634,14 +633,13 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     Navigator.push(context, MaterialPageRoute(builder: (context) => page));
   }
 
-  // 🟢 UPDATED MASON ACTION SHEET
   void _showMasonActions(BuildContext context) {
     final flags = context.read<TechnicalFlags>();
     if (!flags.masonManagement) return;
 
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // ✅ IMPORTANT
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -816,6 +814,18 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                 onTap: () {
                   Navigator.pop(context);
                   _openFullScreen(AddDealerForm(employee: widget.employee));
+                },
+              ),
+            if (flags.logTsoMeeting)
+              _buildActionSheetItem(
+                icon: Icons.handshake_rounded,
+                title: "Log Meetings",
+                subtitle: "Record meeting details and expenses",
+                iconBg: const Color(0xFFEEF2FF),
+                iconColor: const Color(0xFF4F46E5),
+                onTap: () {
+                  Navigator.pop(context);
+                  _openFullScreen(TsoMeetingsForm(employee: widget.employee));
                 },
               ),
           ],
