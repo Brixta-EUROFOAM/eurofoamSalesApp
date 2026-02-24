@@ -109,14 +109,12 @@ class _CreateDailyTaskScreenState extends State<CreateDailyTaskScreen> {
 
       final newTask = DailyTask(
         userId: int.parse(widget.employee.id),
-        assignedByUserId: int.parse(widget.employee.id),
+        //assignedByUserId: int.parse(widget.employee.id),
         taskDate: DateTime.now(),
         visitType: _selectedVisitType!,
         status: 'Assigned',
-        pjpId: _selectedPjp?.id,
-        relatedDealerId: relatedDealerId,
-        siteName: _siteNameController.text.isNotEmpty ? _siteNameController.text : null,
-        description: _descriptionController.text.isNotEmpty ? _descriptionController.text : null,
+        id: _selectedPjp?.id,
+        dealerId: relatedDealerId,
       );
 
       await _apiService.createDailyTask(newTask);

@@ -85,13 +85,10 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
 
     final journeyData = {
       'taskId': task.id!,
-      'pjpId': task.pjpId,
-      // Pass distinct dealer keys
-      'dealerId': task.relatedDealerId, // String? (UUID)
-      'verifiedDealerId': task.relatedVerifiedDealerId, // int?
-
-      'displayName': task.siteName ?? task.dealerName ?? "Site Visit",
-      'description': task.description,
+      'pjpId': task.pjpBatchId,
+      'dealerId': task.dealerId,
+      'displayName': task.dealerNameSnapshot ?? "Site Visit",
+      'description': task.objective,
       'coordinates': null,
       'visitType': task.visitType,
     };
@@ -188,10 +185,24 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                       child: CircularProgressIndicator(color: _cardNavy),
                     );
                   }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24.0),
+                        child: Text(
+                          "Data Error:\n${snapshot.error}",
+                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                  }
 
                   final allTasks = snapshot.data ?? [];
 
-                  final tasks = allTasks.where((t) => t.status.toLowerCase() != 'completed').toList();
+                  final tasks = allTasks
+                      .where((t) => t.status.toLowerCase() != 'completed')
+                      .toList();
 
                   if (tasks.isEmpty) {
                     return _buildEmptyState();
@@ -300,14 +311,11 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
         ).showSnackBar(const SnackBar(content: Text("Invalid task ID")));
         return;
       }
-
       try {
         await _apiService.updateDailyTaskStatus(task.id!, "Completed");
-
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Task marked as completed")),
         );
-
         _refreshTasks();
       } catch (e) {
         ScaffoldMessenger.of(
@@ -341,7 +349,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
       endActionPane: ActionPane(
         motion: const StretchMotion(),
         children: [
-          // ✅ END VISIT
           SlidableAction(
             onPressed: (_) => _handleEndTask(task),
             backgroundColor: Colors.red,
@@ -354,128 +361,282 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
           ),
         ],
       ),
-      child: Container(
-        decoration: BoxDecoration(
-          color: _surfaceWhite,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 4,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+      child: GestureDetector(
+        onTap: () => _showTaskDetailsBottomSheet(task),
+        child: Container(
+          decoration: BoxDecoration(
+            color: _surfaceWhite,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 15,
+                offset: const Offset(0, 5),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: statusColor.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            task.status.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: statusColor,
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: statusColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              task.status.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: statusColor,
+                              ),
                             ),
                           ),
-                        ),
-                        const Spacer(),
-                        if (task.visitType.isNotEmpty)
-                          Text(
-                            task.visitType.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: _textGrey,
+                          const Spacer(),
+                          if (task.visitType != null &&
+                              task.visitType!.isNotEmpty)
+                            Text(
+                              task.visitType!.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: _textGrey,
+                              ),
                             ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      task.siteName ?? task.dealerName ?? "Unnamed Visit",
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: isCompleted ? _textGrey : _textDark,
-                        decoration: isCompleted
-                            ? TextDecoration.lineThrough
-                            : null,
+                        ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (task.description != null &&
-                        task.description!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          task.description!,
-                          style: TextStyle(fontSize: 13, color: _textGrey),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                      const SizedBox(height: 8),
+                      Text(
+                        task.dealerNameSnapshot ?? "Unnamed Dealer",
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isCompleted ? _textGrey : _textDark,
+                          decoration: isCompleted
+                              ? TextDecoration.lineThrough
+                              : null,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.location_on_outlined,
-                          size: 14,
-                          color: _textGrey,
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
+                      if (task.objective != null && task.objective!.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
                           child: Text(
-                            task.relatedDealerId != null
-                                ? "Dealer ID: ${task.relatedDealerId}"
-                                : "Location pending",
-                            style: TextStyle(fontSize: 12, color: _textGrey),
+                            task.objective!,
+                            style: TextStyle(fontSize: 13, color: _textGrey),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              if (!isCompleted)
-                Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    size: 16,
-                    color: _textGrey.withOpacity(0.3),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.location_on_outlined,
+                            size: 14,
+                            color: _textGrey,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              task.area != null && task.zone != null
+                                  ? "${task.area}, ${task.zone}"
+                                  : (task.dealerId != null
+                                        ? "Dealer ID: ${task.dealerId}"
+                                        : "Location pending"),
+                              style: TextStyle(fontSize: 12, color: _textGrey),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-            ],
+                if (!isCompleted)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 12),
+                    child: Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      size: 16,
+                      color: _textGrey.withOpacity(0.3),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showTaskDetailsBottomSheet(DailyTask task) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              Text(
+                task.dealerNameSnapshot ?? "Unnamed Dealer",
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: _textDark,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _cardNavy.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      task.status.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: _cardNavy,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (task.week != null)
+                    Text(
+                      "Week: ${task.week}",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _textGrey,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              Text(
+                "Visit Details",
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: _textDark,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              _buildDetailRow(
+                Icons.description_outlined,
+                "Objective",
+                task.objective ?? "No objective set",
+              ),
+              _buildDetailRow(
+                Icons.phone_outlined,
+                "Phone",
+                task.dealerMobile ?? "Not available",
+              ),
+              _buildDetailRow(
+                Icons.map_outlined,
+                "Zone",
+                task.zone ?? "Pending",
+              ),
+              _buildDetailRow(
+                Icons.place_outlined,
+                "Area",
+                task.area ?? "Pending",
+              ),
+              if (task.route != null && task.route!.isNotEmpty)
+                _buildDetailRow(
+                  Icons.directions_outlined,
+                  "Route",
+                  task.route!,
+                ),
+
+              const SizedBox(height: 32),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // Helper widget for clean layout in the bottom sheet
+  Widget _buildDetailRow(IconData icon, String title, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: _textGrey),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: TextStyle(fontSize: 12, color: _textGrey)),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _textDark,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

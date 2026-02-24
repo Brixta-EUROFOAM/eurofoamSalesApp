@@ -43,8 +43,8 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  //static const String _baseUrl = 'http://65.0.208.126'; //aws
-  static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  static const String _baseUrl = 'http://65.0.208.126'; //aws
+  //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
   //static const String _baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
 
   // --- ✅ FIX: Initialize http.Client ---
@@ -765,7 +765,6 @@ class ApiService {
     String? endDate,
     String? status,
   }) async {
-    // Build query parameters based on your backend logic
     final queryParams = <String, String>{
       if (startDate != null) 'startDate': startDate,
       if (endDate != null) 'endDate': endDate,
@@ -773,12 +772,17 @@ class ApiService {
     };
 
     final queryString = Uri(queryParameters: queryParams).query;
-
-    final endpoint =
-        'daily-tasks/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
+    final endpoint = 'daily-tasks/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
+    
     return _get(
       endpoint,
-      (json) => (json as List).map((item) => DailyTask.fromJson(item)).toList(),
+      (json) {
+        final dataArray = json is Map<String, dynamic> && json.containsKey('data') 
+            ? json['data'] 
+            : json;
+            
+        return (dataArray as List).map((item) => DailyTask.fromJson(item)).toList();
+      },
     );
   }
 

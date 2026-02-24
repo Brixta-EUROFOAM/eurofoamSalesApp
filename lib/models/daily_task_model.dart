@@ -5,92 +5,86 @@ DailyTask dailyTaskFromJson(String str) => DailyTask.fromJson(json.decode(str));
 String dailyTaskToJson(DailyTask data) => json.encode(data.toJson());
 
 class DailyTask {
-    final String? id;
-    final int userId;
-    final int assignedByUserId;
-    final DateTime taskDate;
-    final String visitType;
-    
-    // Dealer references
-    final String? relatedDealerId; // For "dealers" table (string ID)
-    final int? relatedVerifiedDealerId; // For "verifiedDealers" table (int ID)
-    
-    final String? siteName;
-    final String? description;
-    final String status;
-    
-    // Additional info from schema
-    final String? dealerName;
-    final String? dealerCategory;
-    final String? pjpCycle;
-    
-    // PJP & Site links
-    final String? pjpId;
-    final String? siteId; // UUID from technicalSites
+  final String? id;
+  final String? pjpBatchId;
+  final int userId;
+  final String? dealerId;
+  final String? dealerNameSnapshot;
+  final String? dealerMobile;
+  final String? zone;
+  final String? area;
+  final String? route;
+  final String? objective;
+  final String? visitType;
+  final int? requiredVisitCount;
+  final String? week;
+  final DateTime taskDate;
+  final String status;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
-    final DateTime? createdAt;
-    final DateTime? updatedAt;
+  DailyTask({
+    this.id,
+    this.pjpBatchId,
+    required this.userId,
+    this.dealerId,
+    this.dealerNameSnapshot,
+    this.dealerMobile,
+    this.zone,
+    this.area,
+    this.route,
+    this.objective,
+    this.visitType,
+    this.requiredVisitCount,
+    this.week,
+    required this.taskDate,
+    required this.status,
+    this.createdAt,
+    this.updatedAt,
+  });
 
-    DailyTask({
-        this.id,
-        required this.userId,
-        required this.assignedByUserId,
-        required this.taskDate,
-        required this.visitType,
-        this.relatedDealerId,
-        this.relatedVerifiedDealerId,
-        this.siteName,
-        this.description,
-        required this.status,
-        this.dealerName,
-        this.dealerCategory,
-        this.pjpCycle,
-        this.pjpId,
-        this.siteId,
-        this.createdAt,
-        this.updatedAt,
-    });
-
-    factory DailyTask.fromJson(Map<String, dynamic> json) => DailyTask(
+  factory DailyTask.fromJson(Map<String, dynamic> json) => DailyTask(
         id: json["id"]?.toString(),
-        userId: json["userId"] is int ? json["userId"] : int.tryParse(json["userId"].toString()) ?? 0,
-        assignedByUserId: json["assignedByUserId"] is int ? json["assignedByUserId"] : int.tryParse(json["assignedByUserId"].toString()) ?? 0,
+        pjpBatchId: json["pjpBatchId"]?.toString(),
+        userId: json["userId"] is int
+            ? json["userId"]
+            : int.tryParse(json["userId"].toString()) ?? 0,
+        dealerId: json["dealerId"]?.toString(),
+        dealerNameSnapshot: json["dealerNameSnapshot"]?.toString(),
+        dealerMobile: json["dealerMobile"]?.toString(),
+        zone: json["zone"]?.toString(),
+        area: json["area"]?.toString(),
+        route: json["route"]?.toString(),
+        objective: json["objective"]?.toString(),
+        visitType: json["visitType"]?.toString(),
+        requiredVisitCount: json["requiredVisitCount"] is int
+            ? json["requiredVisitCount"]
+            : int.tryParse(json["requiredVisitCount"]?.toString() ?? ''),
+        week: json["week"]?.toString(),
         taskDate: DateTime.parse(json["taskDate"]),
-        visitType: json["visitType"] ?? '',
-        
-        relatedDealerId: json["relatedDealerId"]?.toString(),
-        relatedVerifiedDealerId: json["relatedVerifiedDealerId"] is int ? json["relatedVerifiedDealerId"] : int.tryParse(json["relatedVerifiedDealerId"]?.toString() ?? ''),
+        status: json["status"]?.toString() ?? 'Assigned',
+        createdAt: json["createdAt"] == null
+            ? null
+            : DateTime.parse(json["createdAt"]),
+        updatedAt: json["updatedAt"] == null
+            ? null
+            : DateTime.parse(json["updatedAt"]),
+      );
 
-        siteName: json["siteName"],
-        description: json["description"],
-        status: json["status"] ?? 'Assigned',
-        
-        dealerName: json["dealerName"],
-        dealerCategory: json["dealerCategory"],
-        pjpCycle: json["pjpCycle"],
-        
-        pjpId: json["pjpId"]?.toString(),
-        siteId: json["siteId"]?.toString(),
-
-        createdAt: json["createdAt"] == null ? null : DateTime.parse(json["createdAt"]),
-        updatedAt: json["updatedAt"] == null ? null : DateTime.parse(json["updatedAt"]),
-    );
-
-    /// Converts the object into a Map for creating a new task.
-    Map<String, dynamic> toJson() => {
+  Map<String, dynamic> toJson() => {
+        "pjpBatchId": pjpBatchId,
         "userId": userId,
-        "assignedByUserId": assignedByUserId,
-        "taskDate": taskDate.toIso8601String(),
+        "dealerId": dealerId,
+        "dealerNameSnapshot": dealerNameSnapshot,
+        "dealerMobile": dealerMobile,
+        "zone": zone,
+        "area": area,
+        "route": route,
+        "objective": objective,
         "visitType": visitType,
-        "relatedDealerId": relatedDealerId,
-        "relatedVerifiedDealerId": relatedVerifiedDealerId,
-        "siteName": siteName,
-        "description": description,
+        "requiredVisitCount": requiredVisitCount,
+        "week": week,
+        "taskDate": taskDate.toIso8601String(),
         "status": status,
-        "dealerName": dealerName,
-        "dealerCategory": dealerCategory,
-        "pjpCycle": pjpCycle,
-        "pjpId": pjpId,
-        "siteId": siteId,
-    };
+      };
 }

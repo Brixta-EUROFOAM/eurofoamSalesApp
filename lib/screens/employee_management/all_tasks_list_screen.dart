@@ -116,12 +116,10 @@ class _AllTasksListScreenState extends State<AllTasksListScreen> {
 
     // LOGIC: Show Dealer Name -> Site Name -> Description
     String displayName = "Unknown Visit";
-    if (t.dealerName != null && t.dealerName!.isNotEmpty) {
-      displayName = t.dealerName!;
-    } else if (t.siteName != null && t.siteName!.isNotEmpty) {
-      displayName = t.siteName!;
+    if (t.dealerNameSnapshot != null && t.dealerNameSnapshot!.isNotEmpty) {
+      displayName = t.dealerNameSnapshot!;
     } else {
-      displayName = t.description ?? 'No Description';
+      displayName = t.visitType ?? 'No Description';
     }
 
     return Container(
@@ -164,8 +162,8 @@ class _AllTasksListScreenState extends State<AllTasksListScreen> {
                     Text("Visit: ${t.visitType}", style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
                     
                     // Show ID if available just for extra context since name is now main title
-                    if (t.relatedDealerId != null)
-                       Text("ID: ${t.relatedDealerId}", style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
+                    if (t.dealerId != null)
+                       Text("ID: ${t.dealerId}", style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
                   ],
                 ),
               ),
