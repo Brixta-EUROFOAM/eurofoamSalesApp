@@ -43,9 +43,9 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  static const String _baseUrl = 'http://65.0.208.126'; //aws
-  //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
-  //static const String _baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
+  static String baseUrl = 'http://65.0.208.126'; //aws
+  //static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  //static String baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
 
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
@@ -75,7 +75,7 @@ class ApiService {
   };
 
   Future<T> _get<T>(String endpoint, T Function(dynamic json) fromJson) async {
-    final url = Uri.parse('$_baseUrl/api/$endpoint');
+    final url = Uri.parse('$baseUrl/api/$endpoint');
     dev.log('GET: $url', name: 'ApiService');
 
     try {
@@ -109,7 +109,7 @@ class ApiService {
     Map<String, dynamic> body,
     T Function(dynamic json) fromJson,
   ) async {
-    final url = Uri.parse('$_baseUrl/api/$endpoint');
+    final url = Uri.parse('$baseUrl/api/$endpoint');
     dev.log('POST: $url', name: 'ApiService');
 
     final headers = _authHeaders;
@@ -155,7 +155,7 @@ class ApiService {
     Map<String, dynamic> body,
     T Function(dynamic json) fromJson,
   ) async {
-    final url = Uri.parse('$_baseUrl/api/$endpoint');
+    final url = Uri.parse('$baseUrl/api/$endpoint');
     dev.log('PATCH: $url', name: 'ApiService');
 
     final headers = _authHeaders;
@@ -190,7 +190,7 @@ class ApiService {
   }
 
   Future<void> _delete(String endpoint) async {
-    final url = Uri.parse('$_baseUrl/api/$endpoint');
+    final url = Uri.parse('$baseUrl/api/$endpoint');
     dev.log('DELETE: $url', name: 'ApiService');
 
     try {
@@ -216,7 +216,7 @@ class ApiService {
   // LEGACY/CORE METHODS (Kept for completeness)
   // -------------------------------------------------------------------
   Future<String> uploadImageToR2(File imageFile) async {
-    final url = Uri.parse('$_baseUrl/api/r2/upload-direct');
+    final url = Uri.parse('$baseUrl/api/r2/upload-direct');
     dev.log('POST (Multipart): $url', name: 'ApiService');
     try {
       final request = http.MultipartRequest('POST', url);
@@ -598,7 +598,7 @@ class ApiService {
       'noOfMasonPcSchemes': noOfMasonPcSchemes,
     };
     body.removeWhere((key, value) => value == null);
-    final url = Uri.parse('$_baseUrl/api/bulkpjp');
+    final url = Uri.parse('$baseUrl/api/bulkpjp');
     dev.log('POST (Bulk): $url', name: 'ApiService');
     try {
       final response = await http
@@ -679,7 +679,7 @@ class ApiService {
   Future<Map<String, dynamic>> submitMasonKyc(
     Map<String, dynamic> kycData,
   ) async {
-    final url = Uri.parse('$_baseUrl/api/kyc-submissions');
+    final url = Uri.parse('$baseUrl/api/kyc-submissions');
     dev.log('POST (Direct): $url', name: 'ApiService');
 
     try {
@@ -720,7 +720,7 @@ class ApiService {
       // ✅ JUST CALL THE API DIRECTLY USING THE PASSED ID
       final response = await _client.post(
         // Use _client if available, or http.post
-        Uri.parse('$_baseUrl/api/auth/register-interest'),
+        Uri.parse('$baseUrl/api/auth/register-interest'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           "phoneNumber": phone,

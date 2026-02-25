@@ -24,7 +24,7 @@ import 'package:salesmanapp/screens/forms/create_dvr.dart';
 // --- Technical Map Style & Tools ---
 import 'package:salesmanapp/core/app_kernel.dart';
 import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_controller.dart';
-import 'package:salesmanapp/features/journeylocation/journeylocation_controller.dart'; // 🚀 Added for Location Result
+import 'package:salesmanapp/features/journeylocation/journeylocation_controller.dart'; 
 import 'package:salesmanapp/services/states/journeyStates/journey_screen_state.dart';
 
 // --- UI OVERLAY ---
@@ -32,13 +32,13 @@ import 'package:salesmanapp/technicalSide/screens/journeyUi/journey_overlay_mana
 
 // --- SALES STATE MACHINES ---
 import 'package:salesmanapp/services/states/journeyStates/sales_journey_screen_state.dart';
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart'; // 🚀 Added
 
 class EmployeeJourneyScreen extends StatefulWidget {
   final Employee employee;
   final Map<String, dynamic>? initialJourneyData;
   final VoidCallback? onDestinationConsumed;
-  final Function(Pjp pjp, Dealer dealer, DateTime checkInTime)?
-  onJourneyCompleted;
+  final Function(Pjp pjp, Dealer dealer, DateTime checkInTime)? onJourneyCompleted;
 
   const EmployeeJourneyScreen({
     super.key,
@@ -84,16 +84,25 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   bool _isJourneyActive = false;
   bool _hasArrived = false;
   final _destinationController = TextEditingController();
+  
+  // 🚀 Added Journey Mode Logic
+  JourneyMode _journeyMode = JourneyMode.planned;
+  String? _backupTaskId;
+  LatLng? _backupDestination;
+  String? _backupDealerId;
+  Dealer? _backupActiveDealer; // 🚀 Backup memory cache
 
   // ---------- DATA ----------
   String? _taskId;
   String? _dealerId;
   int? _verifiedDealerId;
+  Dealer? _activeDealer; // 🚀 O(1) Memory Cache for instant navigation
 
   // ---------- THEME ----------
   final Color _bgLight = const Color(0xFFF3F4F6);
   final Color _cardNavy = const Color(0xFF0F172A);
   final Color _dangerRed = const Color(0xFFEF4444);
+  final Color _textGrey = const Color(0xFF6B7280);
 
   // =====================================================
   // INIT
@@ -160,6 +169,84 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   }
 
   // =====================================================
+  // 🚀 UNPLANNED MODE TOGGLE
+  // =====================================================
+  void _toggleJourneyMode() async {
+    setState(() {
+      _journeyMode = _journeyMode == JourneyMode.planned 
+          ? JourneyMode.unplanned 
+          : JourneyMode.planned;
+    });
+
+    if (_journeyMode == JourneyMode.unplanned) {
+      if (_taskId != null) {
+        _backupTaskId = _taskId;
+        _backupDestination = _destinationLocation;
+        _backupDealerId = _dealerId;
+        _backupActiveDealer = _activeDealer;
+      }
+      setState(() {
+        _taskId = null;
+        _dealerId = null;
+        _activeDealer = null; // Clear cache
+        _destinationLocation = null;
+        _destinationController.text = "";
+        _distanceDisplay = "Select Destination";
+      });
+      await _removeRouteLine();
+      await _removeDestinationMarker();
+    } else {
+      if (_backupTaskId != null) {
+        setState(() {
+          _taskId = _backupTaskId;
+          _dealerId = _backupDealerId;
+          _activeDealer = _backupActiveDealer; // Restore cache
+          _destinationLocation = _backupDestination;
+          _destinationController.text = "Planned Task Active"; // Fallback name
+        });
+        if (_destinationLocation != null) {
+          _addDestinationMarker(_destinationLocation!);
+          _getDirectionsAndDrawRoute();
+        }
+      }
+    }
+  }
+
+  Future<void> _openDealerSearch() async {
+    final result = await showDialog<Dealer>(
+      context: context,
+      builder: (context) => _ServerDealerSearchDialog(api: ApiService()),
+    );
+
+    if (result != null) {
+      setState(() {
+        _dealerId = result.id;
+        _activeDealer = result; // 🚀 CACHE IN MEMORY
+        _destinationController.text = result.name;
+        _distanceDisplay = "Calculating Route...";
+      });
+
+      if (result.latitude != null && result.longitude != null) {
+        _destinationLocation = LatLng(result.latitude!, result.longitude!);
+        await _addDestinationMarker(_destinationLocation!);
+        
+        if (_currentUserLocation == null) {
+          await _determinePositionAndMoveCamera();
+        }
+        
+        if (_currentUserLocation != null) {
+          await _getDirectionsAndDrawRoute();
+          await _fitBounds();
+        }
+      } else {
+        _showError("Selected dealer has no GPS coordinates.");
+      }
+
+      setState(() => _distanceDisplay = "Ready to start");
+    }
+  }
+
+  // =====================================================
   // RESTORE & START HOOKS
   // =====================================================
 
@@ -212,9 +299,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     setState(() {
       _isJourneyActive = true;
       _taskId = snapshot.taskId;
+      _journeyMode = JourneyMode.planned; // Lock UI to active
       _destinationController.text = snapshot.displayName ?? "Resumed Journey";
-      _distanceDisplay =
-          "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
+      _distanceDisplay = "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
 
       _currentUserLocation = snapshot.lastPosition;
       _routeTaken.clear();
@@ -289,6 +376,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _dealerId = data['dealerId']?.toString();
     _verifiedDealerId = data['verifiedDealerId'];
     _taskId = data['taskId']?.toString();
+    _journeyMode = JourneyMode.planned;
 
     final String displayName = data['displayName'] ?? "Visit";
 
@@ -308,6 +396,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     if (_dealerId != null) {
       try {
         final dealer = await ApiService().fetchDealerById(_dealerId!);
+        _activeDealer = dealer; // 🚀 CACHE IN MEMORY
 
         if (dealer.latitude != null && dealer.longitude != null) {
           _destinationLocation = LatLng(dealer.latitude!, dealer.longitude!);
@@ -335,7 +424,15 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   // =====================================================
 
   Future<void> _handleStart() async {
-    if (_taskId == null) return;
+    // Validation
+    if (_journeyMode == JourneyMode.planned && _taskId == null) {
+      _showError("Select a planned task first.");
+      return;
+    }
+    if (_journeyMode == JourneyMode.unplanned && _dealerId == null) {
+      _showError("Select a dealer for the unplanned visit.");
+      return;
+    }
 
     final hasPermission = await _ensureJourneyPermission();
     if (!hasPermission) return;
@@ -348,10 +445,12 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _journeyStartMachine.dispatch(
       StartSalesJourneyIntent(
         userId: int.parse(widget.employee.id),
-        taskId: _taskId!,
+        taskId: _taskId, 
         displayName: _destinationController.text,
         dealerId: _dealerId,
         verifiedDealerId: _verifiedDealerId,
+        journeyMode: _journeyMode,
+        destinationLocation: _destinationLocation,
         trackingController: _controller,
         apiService: ApiService(),
       ),
@@ -381,12 +480,19 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _cancelJourneySubscriptions();
 
     if (mounted) {
+      // 🚀 1. Capture the CACHED DEALER object before resetting!
+      final completedDealer = _activeDealer;
+
       setState(() {
         _isJourneyActive = false;
         _distanceDisplay = "0.00 km";
         _taskId = null;
+        _dealerId = null; 
+        _activeDealer = null; // 👈 Clean cache
         _hasArrived = false;
         _routeTaken.clear();
+        _journeyMode = JourneyMode.planned; // Reset mode
+        _destinationController.clear();
       });
 
       await _removeRouteLine();
@@ -397,42 +503,28 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         context: context,
         builder: (_) => AlertDialog(
           title: const Text("Journey Completed"),
-          content: const Text("Open DVR now?"),
+          content: const Text("Would you like to fill the Daily Visit Report now?"),
           actions: [
             TextButton(
-              child: const Text("Later"),
+              child: const Text("Later", style: TextStyle(color: Colors.grey)),
               onPressed: () => Navigator.pop(context),
             ),
             ElevatedButton(
-              child: const Text("Open DVR"),
-              onPressed: () async {
-                Navigator.pop(context);
+              style: ElevatedButton.styleFrom(backgroundColor: _cardNavy),
+              child: const Text("Open DVR", style: TextStyle(color: Colors.white)),
+              onPressed: () { 
+                // 🚀 2. SYNCHRONOUS NAVIGATION! NO MORE 'async/await' DELAY. (O(1) Time Complexity)
+                Navigator.pop(context); // Close dialog
                 
-                if (_dealerId == null) {
-                  _showError("Dealer not found for DVR.");
-                  return;
-                }
-
-                try {
-                  /// Fetch dealer fresh (same logic you used earlier)
-                  final dealer = await ApiService().fetchDealerById(_dealerId!);
-
-                  if (!mounted) return;
-
-                  /// 🚀 OPEN DVR SCREEN
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => CreateDvrScreen(
-                        employee: widget.employee,
-                        dealer: dealer,
-                        initialCheckInTime: DateTime.now(),
-                      ),
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CreateDvrScreen(
+                      employee: widget.employee,
+                      dealer: completedDealer, // Pre-filled from memory instantly
                     ),
-                  );
-                } catch (e) {
-                  _showError("Failed to open DVR: $e");
-                }
+                  ),
+                );
               },
             ),
           ],
@@ -494,7 +586,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     try {
       final location = await JourneyLocationLogic.resolveCurrentLocation(
         onEnsurePermissions: _ensureJourneyPermission,
-        // 🚀 FIX: Delegate this directly to the AppKernel feature controller so the types match perfectly
         onFetchLocationFromController: () async {
           return await AppKernel.instance
               .feature<JourneyLocationController>()
@@ -565,7 +656,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   }
 
   Future<void> _removeRouteLine() async {
-    // 🚀 FIX: Prevent removing layers that haven't been added yet
     if (!_isRouteLineLayerAdded) return;
 
     final controller = await _controllerCompleter.future;
@@ -612,8 +702,10 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   @override
   Widget build(BuildContext context) {
     final salesFlags = context.watch<SalesFlags>();
+    final bool isPlanned = _journeyMode == JourneyMode.planned;
+    final bool canStartJourney = _isJourneyActive || 
+        (isPlanned ? _taskId != null : _dealerId != null);
 
-    // Single flag for whole screen
     if (!salesFlags.journey) {
       return Scaffold(
         backgroundColor: _bgLight,
@@ -695,15 +787,13 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                 idlePanel: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _IdleJourneyPanel(
-                      destinationName: _destinationController.text,
-                    ),
+                    _buildIdleJourneyPanel(context, isPlanned),
                     const SizedBox(height: 24),
                     _StartJourneySlider(
                       key: ValueKey(_isJourneyActive),
                       isJourneyActive: false,
                       onSlideAction: _handleStart,
-                      canStart: _taskId != null,
+                      canStart: canStartJourney,
                       cardNavy: _cardNavy,
                       dangerRed: _dangerRed,
                     ),
@@ -716,49 +806,55 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       ],
     );
   }
-}
 
-// =====================================================
-// IDLE PANEL
-// =====================================================
-
-class _IdleJourneyPanel extends StatelessWidget {
-  final String destinationName;
-
-  const _IdleJourneyPanel({required this.destinationName});
-
-  @override
-  Widget build(BuildContext context) {
-    const Color cardNavy = Color(0xFF0F172A);
-    const Color textGrey = Color(0xFF6B7280);
-
+  Widget _buildIdleJourneyPanel(BuildContext context, bool isPlanned) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: cardNavy.withOpacity(0.05),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(
-                Icons.location_on_rounded,
-                color: cardNavy,
-                size: 20,
+            Icon(
+              isPlanned ? Icons.assignment_outlined : Icons.storefront_outlined,
+              color: _textGrey,
+              size: 20,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isPlanned ? "PLANNED TASK" : "UNPLANNED VISIT",
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF1E293B),
+                      fontSize: 12,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  Text(
+                    isPlanned
+                        ? "Assigned via Sales Plan"
+                        : "Ad-hoc Dealer Visit",
+                    style: TextStyle(
+                      color: _textGrey.withOpacity(0.7),
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                destinationName.isEmpty
-                    ? "Waiting for selection..."
-                    : destinationName,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: cardNavy,
+            TextButton.icon(
+              onPressed: _toggleJourneyMode,
+              icon: const Icon(Icons.swap_horiz, size: 16),
+              label: Text(isPlanned ? "UNPLANNED" : "PLANNED"),
+              style: TextButton.styleFrom(
+                foregroundColor: _cardNavy,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                textStyle: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ),
@@ -767,29 +863,63 @@ class _IdleJourneyPanel extends StatelessWidget {
         const SizedBox(height: 16),
         Container(
           height: 60,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Colors.white, 
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFE2E8F0)),
-          ),
-          child: Row(
-            children: const [
-              Icon(Icons.info_outline_rounded, color: textGrey, size: 20),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  "Slide below to start tracking.",
-                  style: TextStyle(
-                    color: textGrey,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
-                ),
+            border: Border.all(color: const Color(0xFFE2E8F0)), 
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
               ),
             ],
           ),
+          child: Center(
+            child: TextField(
+              controller: _destinationController,
+              readOnly: true,
+              style: const TextStyle(
+                color: Color(0xFF0F172A),
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+              decoration: InputDecoration(
+                prefixIcon: Icon(
+                  isPlanned ? Icons.explore : Icons.location_on_outlined,
+                  color: const Color(0xFF0F172A),
+                ),
+                hintText: isPlanned
+                    ? "Select a Task to Begin"
+                    : "Waiting for Dealer selection...",
+                hintStyle: const TextStyle(color: Color(0xFF64748B)),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+              ),
+            ),
+          ),
         ),
+        if (!isPlanned)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.search),
+              label: const Text("SEARCH DEALERS"),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _cardNavy,
+                side: BorderSide(color: _cardNavy),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+              ),
+              onPressed: _openDealerSearch,
+            ),
+          ),
       ],
     );
   }
@@ -845,7 +975,7 @@ class _StartJourneySlider extends StatelessWidget {
           color: Color(0xFF0F172A),
           size: 26,
         ),
-        text: isEnabled ? 'SLIDE TO START VISIT' : 'SELECT TASK FIRST',
+        text: isEnabled ? 'SLIDE TO START VISIT' : 'SELECT DESTINATION FIRST',
         enabled: isEnabled,
         textStyle: TextStyle(
           color: isEnabled ? Colors.white : const Color(0xFF94A3B8),
@@ -857,6 +987,84 @@ class _StartJourneySlider extends StatelessWidget {
         elevation: 0,
         height: 76,
         sliderRotate: false,
+      ),
+    );
+  }
+}
+
+// ============================================================
+// 🔎 DEALER SEARCH DIALOG (Reusable from DVR)
+// ============================================================
+class _ServerDealerSearchDialog extends StatefulWidget {
+  final ApiService api;
+
+  const _ServerDealerSearchDialog({required this.api});
+
+  @override
+  State<_ServerDealerSearchDialog> createState() =>
+      _ServerDealerSearchDialogState();
+}
+
+class _ServerDealerSearchDialogState
+    extends State<_ServerDealerSearchDialog> {
+  List<Dealer> _dealers = [];
+  bool _isLoading = false;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _performSearch("");
+  }
+
+  void _onSearchChanged(String query) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      _performSearch(query);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    setState(() => _isLoading = true);
+
+    final results = await widget.api.fetchDealers(search: query, limit: 20);
+
+    if (mounted) {
+      setState(() {
+        _dealers = results;
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text("Select Dealer"),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: 420,
+        child: Column(
+          children: [
+            TextField(onChanged: _onSearchChanged, decoration: const InputDecoration(hintText: "Search name...")),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView.builder(
+                      itemCount: _dealers.length,
+                      itemBuilder: (context, index) {
+                        final dealer = _dealers[index];
+                        return ListTile(
+                          title: Text(dealer.name),
+                          subtitle: Text(dealer.address),
+                          onTap: () => Navigator.pop(context, dealer),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }

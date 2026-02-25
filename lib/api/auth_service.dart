@@ -9,9 +9,9 @@ import '../models/employee_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {
-  static const String _baseUrl = 'http://65.0.208.126'; //aws
-  //static const String _baseUrl = 'http://10.0.2.2:8000'; //localhost connection
-  //static const String _baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
+  static String baseUrl = 'http://65.0.208.126'; //aws
+  //static  String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  //static String baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
 
   final _storage = const FlutterSecureStorage();
   static const String _kCachedProfileKey = 'offline_user_profile_cache';
@@ -47,7 +47,7 @@ class AuthService {
     String deviceId,
     String? fcmToken,
   ) async {
-    final url = Uri.parse('$_baseUrl/api/auth/login');
+    final url = Uri.parse('$baseUrl/api/auth/login');
     final requestBody = jsonEncode({
       'loginId': loginId.trim(),
       'password': password,
@@ -103,7 +103,7 @@ class AuthService {
   /// It now requires a token to be sent in the headers.
   /// Fetches the user profile and CACHES it for offline use.
   Future<Employee> _fetchUserProfile(String userId, String token) async {
-    final url = Uri.parse('$_baseUrl/api/users/$userId');
+    final url = Uri.parse('$baseUrl/api/users/$userId');
     dev.log('--- Fetching User Profile with Token ---', name: 'AuthService');
     try {
       final response = await http
@@ -257,7 +257,7 @@ class AuthService {
     String fcmToken,
     String deviceId,
   ) async {
-    final url = Uri.parse('$_baseUrl/api/users/device');
+    final url = Uri.parse('$baseUrl/api/users/device');
 
     // USING PRINT SO IT DEFINITELY SHOWS UP
     print("🔵 [Sync] Step 1: Process Started.");

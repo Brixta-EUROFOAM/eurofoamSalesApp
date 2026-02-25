@@ -1,3 +1,5 @@
+// lib/services/states/journeyStates/sales_journey_screen_state.dart
+
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
@@ -9,6 +11,8 @@ import 'package:salesmanapp/features/salesJourney/sales_journey_controller.dart'
 import 'package:salesmanapp/services/journeyFgTaskHandler/journey_foreground_service.dart';
 import 'package:salesmanapp/services/states/taskStates/start_sales_journey.dart';
 import 'package:salesmanapp/services/websocket/session_manager.dart';
+import 'package:salesmanapp/models/daily_task_model.dart'; // 🚀 Added for DailyTask model
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart'; // 🚀 Added for JourneyMode
 
 // ==========================================
 // 1. START JOURNEY STATE MACHINE
@@ -35,19 +39,23 @@ class SalesJourneyStartFailure extends SalesJourneyStartState {
 
 class StartSalesJourneyIntent {
   final int userId;
-  final String taskId;
+  final String? taskId; // 🚀 Made Nullable for Unplanned
   final String displayName;
   final String? dealerId;
   final int? verifiedDealerId;
+  final JourneyMode journeyMode; // 🚀 Added to know the state
+  final LatLng? destinationLocation; // 🚀 Added for tracking
   final SalesJourneyController trackingController;
   final ApiService apiService;
 
   StartSalesJourneyIntent({
     required this.userId,
-    required this.taskId,
+    this.taskId,
     required this.displayName,
     this.dealerId,
     this.verifiedDealerId,
+    required this.journeyMode,
+    this.destinationLocation,
     required this.trackingController,
     required this.apiService,
   });
@@ -65,12 +73,39 @@ class SalesJourneyStartStateMachine
         desiredAccuracy: LocationAccuracy.high,
       );
 
+      String workingTaskId = intent.taskId ?? "";
+
+      // 🚀 UNPLANNED LOGIC: Create a dummy Task on the fly
+      if (intent.journeyMode == JourneyMode.unplanned &&
+          workingTaskId.isEmpty) {
+        value = SalesJourneyStartProcessing("Creating Unplanned Task...");
+
+        final newTask = DailyTask(
+          id: const Uuid()
+              .v4(), // Generate local ID, backend will replace/accept it
+          userId: intent.userId,
+          dealerId: intent.dealerId,
+          dealerNameSnapshot: intent.displayName,
+          taskDate: DateTime.now(),
+          status: 'In Progress', // Hardcoded active status
+          visitType: 'Unplanned',
+        );
+
+        final createdTask = await intent.apiService.createDailyTask(newTask);
+        // 🚀 FIX: Safely unwrap the nullable ID, falling back to the local UUID if needed
+        workingTaskId = createdTask.id ?? newTask.id ?? "";
+      }
+
+      if (workingTaskId.isEmpty) {
+        throw Exception("Failed to initialize task tracking ID.");
+      }
+
       value = SalesJourneyStartProcessing("Initializing offline tracking...");
 
       // 1. Execute DB Insertion (Offline First)
       final currentJourneyId = await StartSalesJourneyState().execute(
         userId: intent.userId,
-        taskId: intent.taskId,
+        taskId: workingTaskId, // Use the resolved ID
         displayName: intent.displayName,
         dealerId: intent.dealerId,
         verifiedDealerId: intent.verifiedDealerId,
@@ -88,15 +123,16 @@ class SalesJourneyStartStateMachine
       // 3. Inform Controller to setup Streams
       intent.trackingController.setJourneyActive(currentJourneyId, 0.0);
 
-      // 4. Queue API Update (Offline First approach)
-      // Note: If you have an OP_UPDATE_TASK_STATUS in your SyncWorker, use that instead.
-      // For now, we fire and forget without crashing the flow.
-      intent.apiService
-          .updateDailyTaskStatus(intent.taskId, 'In Progress')
-          .catchError((e) {
-            if (kDebugMode){
-              print("⚠️ Task Status Update Failed (Queued for Sync): $e");
-    }});
+      // 4. Queue API Update for Planned Tasks (If not Unplanned)
+      if (intent.journeyMode == JourneyMode.planned) {
+        intent.apiService
+            .updateDailyTaskStatus(workingTaskId, 'In Progress')
+            .catchError((e) {
+              if (kDebugMode) {
+                print("⚠️ Task Status Update Failed (Queued for Sync): $e");
+              }
+            });
+      }
 
       value = SalesJourneyStartSuccess(currentJourneyId);
     } catch (e) {
@@ -106,9 +142,8 @@ class SalesJourneyStartStateMachine
 }
 
 // ==========================================
-// 2. STOP JOURNEY STATE MACHINE
+// 2. STOP JOURNEY STATE MACHINE (Unchanged)
 // ==========================================
-
 class StopSalesJourneyIntent {
   final int userId;
   final String taskId;
@@ -131,14 +166,10 @@ class SalesJourneyStopStateMachine {
   Future<void> dispatch(StopSalesJourneyIntent intent) async {
     try {
       final db = AppDatabase.instance;
-
-      // Technical side saves final distance as KM!
       final double distanceInKm = intent.totalDistance / 1000.0;
 
-      // 1. Stop Local Journey (Drift)
       await db.stopLocalJourney(intent.currentJourneyId, distanceInKm);
 
-      // 2. Queue the STOP operation for the SyncWorker (Matches Technical exactly)
       final stopPayload = {
         'status': 'COMPLETED',
         'totalDistance': distanceInKm,
@@ -156,20 +187,12 @@ class SalesJourneyStopStateMachine {
         ),
       );
 
-      // 3. Stop Foreground Service
       await JourneyForegroundService.stop();
-
-      // 4. Reset Controller
       intent.trackingController.setJourneyInactive();
-
-      // 5. Trigger UI Cleanup
       intent.onCleanup();
 
-      // 6. Trigger Sync (If you use SessionManager globally)
       await SessionManager.instance.startSession(intent.userId);
-
       SessionManager.instance.triggerSync();
-      
     } catch (e) {
       if (kDebugMode) print("Stop failed: $e");
       intent.onCleanup();
@@ -178,7 +201,7 @@ class SalesJourneyStopStateMachine {
 }
 
 // ==========================================
-// 3. RESTORE JOURNEY STATE MACHINE
+// 3. RESTORE JOURNEY STATE MACHINE (Unchanged)
 // ==========================================
 class RestoreSalesJourneySnapshot {
   final String journeyId;
@@ -226,9 +249,7 @@ class RestoreSalesJourneyStateMachine extends ValueNotifier<RestoreSalesState> {
     try {
       final active = await intent.db.getActiveJourney();
 
-      // Must be an active journey explicitly tied to a Task
       if (active != null && active.taskId != null) {
-        // Fetch path history for Polyline drawing
         final rawPositions = await intent.db.getBreadcrumbsForJourney(
           active.id,
         );
@@ -240,14 +261,12 @@ class RestoreSalesJourneyStateMachine extends ValueNotifier<RestoreSalesState> {
         final snapshot = RestoreSalesJourneySnapshot(
           journeyId: active.id,
           taskId: active.taskId!,
-          // active.siteName holds the 'displayName' (Dealer Name) saved during start!
           displayName: active.siteName ?? "Active Visit",
           distance: active.totalDistance,
           path: path,
           lastPosition: lastPos,
         );
 
-        // Ask UI for permission to resume
         final shouldResume = await intent.askUser(snapshot);
 
         if (shouldResume) {
@@ -255,16 +274,13 @@ class RestoreSalesJourneyStateMachine extends ValueNotifier<RestoreSalesState> {
             active.id,
             active.totalDistance,
           );
-
           await JourneyForegroundService.start(
             title: snapshot.displayName ?? "Active Journey",
             subtitle: "Resuming Tracking...",
             initialDistance: snapshot.distance,
           );
-
           value = RestoreSalesResumed(snapshot);
         } else {
-          // If discarded, stop it in DB
           await intent.db.stopLocalJourney(active.id, active.totalDistance);
         }
       }

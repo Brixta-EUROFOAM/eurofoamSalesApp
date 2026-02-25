@@ -85,8 +85,7 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
   Future<void> _takePicture() async {
     if (_controller == null ||
         !_controller!.value.isInitialized ||
-        _isTakingPicture)
-      return;
+        _isTakingPicture) return;
 
     try {
       setState(() => _isTakingPicture = true);
@@ -327,8 +326,6 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                     subtitle: "Manage orders",
                     iconBg: const Color(0xFFF3E8FF),
                     iconColor: Colors.purple,
-                    // SalesOrderScreen is a full screen, not a dialog usually, but _openDialog works if it handles it.
-                    // Or navigate push. Use push for full screen feel.
                     onTap: () {
                       Navigator.pop(context);
                       Navigator.push(
@@ -389,55 +386,60 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
   Future<void> _performAttendanceAction(bool isCheckIn) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
+    // 1. Time Lock Check (Instant feedback, no spinners)
+    if (!isCheckIn && _lastCheckInTime != null) {
+      final difference = DateTime.now().difference(_lastCheckInTime!);
+      if (difference.inMinutes < 60) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text("Wait ${60 - difference.inMinutes} more minute(s) before checkout."),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => isCheckIn ? _isCheckingIn = true : _isCheckingOut = true);
 
     try {
-      // time lock 60 mins
-      if (!isCheckIn) {
-        if (_lastCheckInTime != null) {
-          final difference = DateTime.now().difference(_lastCheckInTime!);
+      // 🚀 SPEED OPTIMIZATION 1: PRE-WARM GPS
+      // Fire the GPS request *before* opening the camera. 
+      // It will lock onto the satellites while the user is posing for the photo!
+      Future<Position?> locationFuture = _getCurrentPosition().timeout(const Duration(seconds: 15));
 
-          if (difference.inMinutes < 60) {
-            scaffoldMessenger.showSnackBar(
-              SnackBar(
-                content: Text(
-                  "Wait ${60 - difference.inMinutes} more minute(s) before checkout.",
-                ),
-                backgroundColor: Colors.red,
-              ),
-            );
-            return;
-          }
-        }
-      }
-
-      /// 🚀 OPEN OPTIMIZED CAMERA (same as DVR/TVR)
+      // 📸 OPEN CAMERA
       final imagePath = await Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const _InlineCameraScreen()),
       );
 
+      // 🚀 SPEED OPTIMIZATION 2: QUIET CANCEL
       if (imagePath == null || imagePath is! String) {
-        throw Exception("Photo required");
+        // User closed camera without taking a photo. Just abort silently.
+        setState(() => isCheckIn ? _isCheckingIn = false : _isCheckingOut = false);
+        return; 
       }
 
       final File imageFile = File(imagePath);
 
+      // 🚀 SPEED OPTIMIZATION 3: AWAIT PRE-WARMED GPS
+      // Because we started it 3 seconds ago, this will likely resolve instantly (O(1) perceived time).
+      final Position? position = await locationFuture;
+      if (position == null) throw Exception("Location verification failed. Please enable GPS.");
+
+      // 🚀 SPEED OPTIMIZATION 4: PARALLEL NETWORK PIPELINE
+      // Upload the image AND reverse-geocode the address at the EXACT same time.
       final results = await Future.wait([
-        _getCurrentPosition().timeout(const Duration(seconds: 10)),
         _apiService.uploadImageToR2(imageFile),
+        _resolveAddress(position.latitude, position.longitude),
       ]);
 
-      final Position? position = results[0] as Position?;
-      final String imageUrl = results[1] as String;
+      final String imageUrl = results[0] as String;
+      final String address = results[1] as String;
 
-      if (position == null) throw Exception("Location verification failed.");
-
-      String address = "Live Location";
-      try {
-        address = await _resolveAddress(position.latitude, position.longitude);
-      } catch (_) {}
-
+      // Final API Submit
       if (isCheckIn) {
         final data = {
           'userId': int.parse(widget.employee.id),
@@ -469,6 +471,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
         await _apiService.checkOut(data);
         if (mounted) setState(() => _isCheckedIn = false);
       }
+      
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(isCheckIn ? 'Checked In!' : 'Checked Out!'),
@@ -507,7 +510,6 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       userArea = (widget.employee as dynamic).area ?? "N/A";
     } catch (_) {}
 
-    // Watch flags to conditionally render the master card
     final flags = context.watch<SalesFlags>();
     final bool showSalesOpsCard =
         flags.createDvr ||
@@ -789,7 +791,6 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 ],
               ),
             ),
-            // CHANGED: Replaced Icon with Text "Open"
             const Text(
               "Open",
               style: TextStyle(

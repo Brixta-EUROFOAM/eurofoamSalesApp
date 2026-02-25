@@ -37,6 +37,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   final Color _surfaceWhite = Colors.white;
   final Color _accentGreen = const Color(0xFF10B981);
   final Color _pendingOrange = const Color(0xFFF59E0B);
+  final Color _dangerRed = const Color(0xFFEF4444);
 
   @override
   void initState() {
@@ -69,17 +70,17 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   }
 
   Future<void> _handleStartTask(DailyTask task) async {
-    if (task.status.toLowerCase() == 'completed') {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Task already completed")));
+    if (task.status.toLowerCase() == 'completed' || task.status.toLowerCase() == 'failed') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Task is no longer active.")),
+      );
       return;
     }
 
     if (task.id == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Invalid task ID")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Invalid task ID")),
+      );
       return;
     }
 
@@ -96,11 +97,258 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
     try {
       widget.onStartJourney(journeyData);
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Error starting task: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error starting task: $e")),
+      );
     }
   }
+
+  // ===========================================================================
+  // 🚀 RESCHEDULE LOGIC (3 STRIKES RULE)
+  // ===========================================================================
+  
+  // Helper to extract the current reschedule count from the objective string
+  int _getRescheduleCount(String? objective) {
+    if (objective == null) return 0;
+    if (objective.contains("[Rescheduled x3]")) return 3;
+    if (objective.contains("[Rescheduled x2]")) return 2;
+    if (objective.contains("[Rescheduled x1]")) return 1;
+    return 0;
+  }
+
+  void _showEndTaskBottomSheet(DailyTask task) {
+    String selectedReason = '';
+    final TextEditingController remarkController = TextEditingController();
+
+    final int currentStrikes = _getRescheduleCount(task.objective);
+    final bool maxStrikesReached = currentStrikes >= 3;
+
+    // If max strikes reached, they CANNOT reschedule. Only fail or complete.
+    final List<String> reasons = maxStrikesReached 
+        ? ["Day End (Completed)", "Failed (Max Reschedules Reached)"]
+        : ["Day End (Completed)", "Shop Closed", "Dealer Unavailable", "Reschedule / Other"];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            final bool isReschedule = selectedReason != '' && 
+                                      selectedReason != "Day End (Completed)" && 
+                                      selectedReason != "Failed (Max Reschedules Reached)";
+
+            return Container(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                top: 24, left: 24, right: 24,
+              ),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "End Visit",
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: _textDark),
+                      ),
+                      if (currentStrikes > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: maxStrikesReached ? _dangerRed.withOpacity(0.1) : _pendingOrange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            "Strike $currentStrikes of 3",
+                            style: TextStyle(
+                              color: maxStrikesReached ? _dangerRed : _pendingOrange,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    maxStrikesReached 
+                      ? "This visit has been rescheduled 3 times. It must be completed or marked as failed."
+                      : "Why are you ending this visit?",
+                    style: TextStyle(
+                      fontSize: 14, 
+                      color: maxStrikesReached ? _dangerRed : _textGrey,
+                      fontWeight: maxStrikesReached ? FontWeight.bold : FontWeight.normal,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+
+                  // REASON CHIPS
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 10,
+                    children: reasons.map((reason) {
+                      final bool isSelected = selectedReason == reason;
+                      Color chipColor = _pendingOrange;
+                      if (reason == "Day End (Completed)") chipColor = _accentGreen;
+                      if (reason == "Failed (Max Reschedules Reached)") chipColor = _dangerRed;
+
+                      return ChoiceChip(
+                        label: Text(reason),
+                        selected: isSelected,
+                        selectedColor: chipColor.withOpacity(0.2),
+                        labelStyle: TextStyle(
+                          color: isSelected ? chipColor : _textGrey,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        ),
+                        onSelected: (selected) {
+                          setModalState(() => selectedReason = selected ? reason : '');
+                        },
+                      );
+                    }).toList(),
+                  ),
+
+                  // TEXT FIELD FOR RESCHEDULE
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 300),
+                    child: isReschedule
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 20),
+                            child: TextField(
+                              controller: remarkController,
+                              maxLines: 2,
+                              decoration: InputDecoration(
+                                hintText: "Add remarks for tomorrow's visit...",
+                                filled: true,
+                                fillColor: _bgLight,
+                                border: InputBorder.none,
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: Colors.grey.shade300),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  borderSide: BorderSide(color: _cardNavy),
+                                ),
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // SUBMIT BUTTON
+                  SizedBox(
+                    width: double.infinity,
+                    height: 54,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: selectedReason == "Failed (Max Reschedules Reached)" ? _dangerRed : _cardNavy,
+                        disabledBackgroundColor: Colors.grey.shade300,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      onPressed: selectedReason.isEmpty ? null : () {
+                        Navigator.pop(context);
+                        _executeEndTaskLogic(task, selectedReason, remarkController.text, currentStrikes);
+                      },
+                      child: Text(
+                        selectedReason == "Failed (Max Reschedules Reached)" 
+                            ? "MARK AS FAILED"
+                            : (isReschedule ? "RESCHEDULE TO TOMORROW" : "COMPLETE VISIT"),
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks, int currentStrikes) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
+    if (reason == "Day End (Completed)") {
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text("Completing task...")));
+      try {
+        await _apiService.updateDailyTaskStatus(task.id!, "Completed");
+        _refreshTasks();
+      } catch (e) {
+        scaffoldMessenger.showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+      }
+      return;
+    }
+
+    if (reason == "Failed (Max Reschedules Reached)") {
+      scaffoldMessenger.showSnackBar(const SnackBar(content: Text("Marking task as Failed..."), backgroundColor: Colors.red));
+      try {
+        await _apiService.updateDailyTaskStatus(task.id!, "Failed");
+        _refreshTasks();
+      } catch (e) {
+        scaffoldMessenger.showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+      }
+      return;
+    }
+
+    // --- 🚀 FIXED RESCHEDULE LOGIC ---
+    scaffoldMessenger.showSnackBar(const SnackBar(content: Text("Rescheduling to tomorrow...")));
+    try {
+      final int newStrikeCount = currentStrikes + 1;
+      
+      // Clean previous tags from the objective string if they exist
+      String cleanObjective = task.objective ?? 'No objective set';
+      cleanObjective = cleanObjective.replaceAll(RegExp(r'\[Rescheduled x\d\] '), '');
+      
+      // Prepend the new strike count
+      final String combinedObjective = "[Rescheduled x$newStrikeCount] Reason: $reason ${remarks.isNotEmpty ? '($remarks)' : ''} | $cleanObjective";
+      
+      final tomorrowTask = DailyTask(
+        id: null, // 🛡️ Safest: Let the backend generate the UUID
+        pjpBatchId: task.pjpBatchId,
+        userId: task.userId,
+        dealerId: task.dealerId,
+        dealerNameSnapshot: task.dealerNameSnapshot,
+        dealerMobile: task.dealerMobile,
+        zone: task.zone,
+        area: task.area,
+        route: task.route,
+        objective: combinedObjective,
+        visitType: task.visitType,
+        requiredVisitCount: task.requiredVisitCount,
+        week: task.week,
+        taskDate: DateTime.now().add(const Duration(days: 1)), // 🚀 MOVED TO TOMORROW
+        status: "Assigned", // 🚀 MUST BE A VALID DB STATUS
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      // 1️⃣ Run sequentially instead of Future.wait()
+      // First, successfully create the duplicate task for tomorrow.
+      await _apiService.createDailyTask(tomorrowTask);
+
+      // 2️⃣ ONLY if the new task is created, mark today's task as "Failed".
+      // We use "Failed" because it is a valid Zod/DB schema enum, and the salesman 
+      // technically "failed" to complete it today.
+      await _apiService.updateDailyTaskStatus(task.id!, "Failed");
+
+      // 3️⃣ Refresh the UI so the failed task disappears from the active list.
+      _refreshTasks();
+    } catch (e) {
+      scaffoldMessenger.showSnackBar(SnackBar(content: Text("Failed to reschedule: $e"), backgroundColor: Colors.red));
+    }
+  }
+  // ===========================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -137,37 +385,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
             ),
           ],
         ),
-        // actions: [
-        //    Padding(
-        //     padding: const EdgeInsets.only(right: 20.0),
-        //     child: InkWell(
-        //       onTap: () {
-        //          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Create Task Feature Coming Soon")));
-        //       },
-        //       borderRadius: BorderRadius.circular(12),
-        //       child: Container(
-        //         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        //         decoration: BoxDecoration(
-        //           color: _cardNavy,
-        //           borderRadius: BorderRadius.circular(16),
-        //           boxShadow: [
-        //             BoxShadow(color: _cardNavy.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))
-        //           ]
-        //         ),
-        //         child: const Row(
-        //           children: [
-        //             Icon(Icons.add, color: Colors.white, size: 18),
-        //             SizedBox(width: 4),
-        //             Text(
-        //               "Add Visit",
-        //               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-        //             ),
-        //           ],
-        //         ),
-        //       ),
-        //     ),
-        //   )
-        // ],
       ),
       body: Column(
         children: [
@@ -200,9 +417,13 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
 
                   final allTasks = snapshot.data ?? [];
 
+                  // Hide tasks that are completed, failed, or rescheduled
                   final tasks = allTasks
-                      .where((t) => t.status.toLowerCase() != 'completed')
-                      .toList();
+                      .where((t) => 
+                        t.status.toLowerCase() != 'completed' && 
+                        t.status.toLowerCase() != 'rescheduled' &&
+                        t.status.toLowerCase() != 'failed'
+                      ).toList();
 
                   if (tasks.isEmpty) {
                     return _buildEmptyState();
@@ -299,38 +520,13 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   }
 
   Widget _buildTaskCard(DailyTask task) {
-    final isCompleted = task.status.toLowerCase() == 'completed';
-    final isStarted =
-        task.status.toLowerCase() == 'started' ||
-        task.status.toLowerCase() == 'in progress';
-
-    Future<void> _handleEndTask(DailyTask task) async {
-      if (task.id == null || task.id!.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("Invalid task ID")));
-        return;
-      }
-      try {
-        await _apiService.updateDailyTaskStatus(task.id!, "Completed");
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Task marked as completed")),
-        );
-        _refreshTasks();
-      } catch (e) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text("Failed to end task: $e")));
-      }
-    }
+    final isStarted = task.status.toLowerCase() == 'started' || task.status.toLowerCase() == 'in progress';
 
     Color statusColor = _cardNavy;
-    if (isCompleted) statusColor = _accentGreen;
     if (isStarted) statusColor = Colors.blue;
     if (task.status.toLowerCase() == 'assigned') statusColor = _pendingOrange;
 
     return Slidable(
-      enabled: !isCompleted,
       startActionPane: ActionPane(
         motion: const StretchMotion(),
         children: [
@@ -350,7 +546,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
         motion: const StretchMotion(),
         children: [
           SlidableAction(
-            onPressed: (_) => _handleEndTask(task),
+            onPressed: (_) => _showEndTaskBottomSheet(task),
             backgroundColor: Colors.red,
             foregroundColor: Colors.white,
             icon: Icons.stop_circle_rounded,
@@ -431,10 +627,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
-                          color: isCompleted ? _textGrey : _textDark,
-                          decoration: isCompleted
-                              ? TextDecoration.lineThrough
-                              : null,
+                          color: _textDark,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -475,15 +668,14 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                     ],
                   ),
                 ),
-                if (!isCompleted)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 12),
-                    child: Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      size: 16,
-                      color: _textGrey.withOpacity(0.3),
-                    ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 16,
+                    color: _textGrey.withOpacity(0.3),
                   ),
+                ),
               ],
             ),
           ),
@@ -610,7 +802,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
     );
   }
 
-  // Helper widget for clean layout in the bottom sheet
   Widget _buildDetailRow(IconData icon, String title, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),

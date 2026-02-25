@@ -58,11 +58,44 @@ import 'package:salesmanapp/technicalSide/screens/technical_nav_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_bagLift.dart';
 // Assuming this defines navigatorKey
 import 'package:firebase_core/firebase_core.dart';
+//REMOTE CONFIG STUFF
+import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:flutter/foundation.dart';
+
 
 // 1. DEFINE GLOBAL KEY FOR NAVIGATOR
 // We'll use this to get a BuildContext that's always under MaterialApp.
 final GlobalKey<NavigatorState> globalNavigatorKey =
     GlobalKey<NavigatorState>();
+
+Future<void> setupRemoteConfig() async {
+  try {
+    final remoteConfig = FirebaseRemoteConfig.instance;
+
+    await remoteConfig.setConfigSettings(RemoteConfigSettings(
+      fetchTimeout: const Duration(minutes: 1),
+      // Set to 0 in debug mode so changes reflect instantly
+      minimumFetchInterval: kDebugMode ? const Duration(seconds: 0) : const Duration(hours: 1),
+    ));
+
+    // Fallback just in case they open the app with no internet
+    await remoteConfig.setDefaults(const {
+      "api_base_url": "http://65.0.208.126",
+    });
+
+    await remoteConfig.fetchAndActivate();
+
+    final String fetchedUrl = remoteConfig.getString("api_base_url");
+
+    if (fetchedUrl.isNotEmpty) {
+      ApiService.baseUrl = fetchedUrl;
+      AuthService.baseUrl = fetchedUrl;
+      debugPrint("✅ Firebase Remote Config: Base URL set to $fetchedUrl");
+    }
+  } catch (e) {
+    debugPrint("⚠️ Failed to fetch Remote Config: $e");
+  }
+}
 
 Future<void> main() async {
   final flags = TechnicalFlags.dev;
@@ -71,6 +104,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   debugPrint("Firebase Initialized Successfully.");
+
+  await setupRemoteConfig();
+
   final kernel = AppKernel.instance;
   //KERNEL REGISTRATION
 

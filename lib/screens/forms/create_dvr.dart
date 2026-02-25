@@ -48,7 +48,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   Dealer? _selectedParentDealer;
 
   DateTime? _checkInTime;
-  File? _inTimeImageFile;
   String? _inTimeImageUrl;
   Position? _checkInLocation;
 
@@ -59,6 +58,14 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   static const Color _cardNavy = Color(0xFF0F172A);
   static const Color _inputFill = Color(0xFFF9FAFB);
   static const Color _accentGreen = Color(0xFF10B981);
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.dealer != null) {
+      _selectedDealer = widget.dealer;
+    }
+  }
 
   /// ------------------------------------------------
   /// 🔎 DEALER SEARCH
@@ -86,7 +93,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   }
 
   /// ------------------------------------------------
-  /// 📸 INLINE CAMERA CHECK-IN
+  /// 📸 INLINE CAMERA CHECK-IN (O(1) Optimized)
   /// ------------------------------------------------
   Future<void> _handleCheckIn() async {
     if (_selectedDealer == null) {
@@ -99,31 +106,42 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     setState(() => _isUploadingImage = true);
 
     try {
+      // 🚀 SPEED OPTIMIZATION 1: Pre-warm GPS before opening camera
+      Future<Position> locationFuture = Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      ).timeout(const Duration(seconds: 15));
+
+      // 📸 OPEN CAMERA
       final imagePath = await Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const DvrCameraScreen()),
       );
 
+      // 🚀 SPEED OPTIMIZATION 2: Quiet Cancel
       if (imagePath == null) {
         setState(() => _isUploadingImage = false);
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      final File imageFile = File(imagePath);
 
-      final file = File(imagePath);
-      final url = await _apiService.uploadImageToR2(file);
+      // 🚀 SPEED OPTIMIZATION 3: Parallel Execution
+      // Upload image and await GPS concurrently
+      final results = await Future.wait([
+        locationFuture,
+        _apiService.uploadImageToR2(imageFile),
+      ]);
 
       setState(() {
         _checkInTime = DateTime.now();
-        _checkInLocation = position;
-        _inTimeImageFile = file;
-        _inTimeImageUrl = url;
+        _checkInLocation = results[0] as Position; // Extract GPS
+        _inTimeImageUrl = results[1] as String;    // Extract Image URL
         _isUploadingImage = false;
       });
-    } catch (_) {
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Check-In Error: $e"), backgroundColor: Colors.red),
+      );
       setState(() => _isUploadingImage = false);
     }
   }
@@ -205,6 +223,9 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       }
     } catch (e) {
       debugPrint("DVR Error $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Failed to submit DVR"), backgroundColor: Colors.red),
+      );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -256,7 +277,8 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                   if (_checkInTime == null) ...[
                     SwitchListTile(
                       value: _isSubDealerVisit,
-                      title: const Text("Sub Dealer Visit"),
+                      activeColor: _cardNavy,
+                      title: const Text("Sub Dealer Visit", style: TextStyle(fontWeight: FontWeight.w600)),
                       onChanged: (v) {
                         setState(() {
                           _isSubDealerVisit = v;
@@ -294,12 +316,15 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
 
                     ElevatedButton.icon(
                       onPressed: _isUploadingImage ? null : _handleCheckIn,
-                      icon: const Icon(Icons.camera_alt),
-                      label: const Text("CHECK-IN WITH PHOTO"),
+                      icon: _isUploadingImage 
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Icon(Icons.camera_alt),
+                      label: Text(_isUploadingImage ? "CHECKING IN..." : "CHECK-IN WITH PHOTO"),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _cardNavy,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                   ]
@@ -319,10 +344,11 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
                         backgroundColor: _accentGreen,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       ),
                       child: _isSubmitting
-                          ? const CircularProgressIndicator(color: Colors.white)
-                          : const Text("SUBMIT & CHECK-OUT"),
+                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                          : const Text("SUBMIT & CHECK-OUT", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
                     ),
                   ],
                 ],
@@ -336,10 +362,11 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
 
   Widget _buildSelector(String text) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       decoration: BoxDecoration(
         color: _inputFill,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
       ),
       child: Row(
         children: [
@@ -348,6 +375,8 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
               text,
               style: TextStyle(
                 color: text.contains("Select") ? _textGrey : _textDark,
+                fontWeight: text.contains("Select") ? FontWeight.normal : FontWeight.w600,
+                fontSize: 15,
               ),
             ),
           ),
@@ -359,7 +388,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
 }
 
 /// ------------------------------------------------------------
-/// 🔎 DEALER SEARCH DIALOG
+/// 🔎 UPGRADED DEALER SEARCH DIALOG (ZONE DISPLAY)
 /// ------------------------------------------------------------
 class _ServerDealerSearchDialog extends StatefulWidget {
   final ApiService api;
@@ -367,12 +396,10 @@ class _ServerDealerSearchDialog extends StatefulWidget {
   const _ServerDealerSearchDialog({required this.api});
 
   @override
-  State<_ServerDealerSearchDialog> createState() =>
-      _ServerDealerSearchDialogState();
+  State<_ServerDealerSearchDialog> createState() => _ServerDealerSearchDialogState();
 }
 
-class _ServerDealerSearchDialogState
-    extends State<_ServerDealerSearchDialog> {
+class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   List<Dealer> _dealers = [];
   bool _isLoading = false;
   Timer? _debounce;
@@ -380,7 +407,7 @@ class _ServerDealerSearchDialogState
   @override
   void initState() {
     super.initState();
-    _performSearch("");
+    _performSearch(""); 
   }
 
   void _onSearchChanged(String query) {
@@ -393,45 +420,116 @@ class _ServerDealerSearchDialogState
   Future<void> _performSearch(String query) async {
     setState(() => _isLoading = true);
 
-    final results =
-        await widget.api.fetchDealers(search: query, limit: 20);
-
-    if (mounted) {
-      setState(() {
-        _dealers = results;
-        _isLoading = false;
-      });
+    try {
+      final results = await widget.api.fetchDealers(search: query, limit: 20);
+      if (mounted) {
+        setState(() {
+          _dealers = results;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text("Select Dealer"),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text("Select Dealer", style: TextStyle(fontWeight: FontWeight.w900)),
+      contentPadding: const EdgeInsets.only(left: 20, right: 20, top: 10, bottom: 0),
       content: SizedBox(
         width: double.maxFinite,
-        height: 420,
+        height: MediaQuery.of(context).size.height * 0.5,
         child: Column(
           children: [
-            TextField(onChanged: _onSearchChanged),
-            const SizedBox(height: 12),
+            // Styled Search Box
+            TextField(
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: "Search by name or zone...",
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
+                filled: true,
+                fillColor: const Color(0xFFF9FAFB),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+              ),
+            ),
+            const SizedBox(height: 16),
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
-                      itemCount: _dealers.length,
-                      itemBuilder: (context, index) {
-                        final dealer = _dealers[index];
-                        return ListTile(
-                          title: Text(dealer.name),
-                          onTap: () => Navigator.pop(context, dealer),
-                        );
-                      },
-                    ),
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF0F172A)))
+                  : _dealers.isEmpty
+                      ? const Center(child: Text("No dealers found.", style: TextStyle(color: Colors.grey)))
+                      : ListView.separated(
+                          itemCount: _dealers.length,
+                          separatorBuilder: (context, index) => Divider(color: Colors.grey.shade200, height: 1),
+                          itemBuilder: (context, index) {
+                            final dealer = _dealers[index];
+                            
+                            // 🚀 THE FIX: Safely map 'region' directly from the model without dynamic casting
+                            final String displayZone = dealer.region.isNotEmpty 
+                                ? dealer.region 
+                                : "Unknown Zone";
+
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+                              leading: const CircleAvatar(
+                                backgroundColor: Color(0xFFEFF6FF), // Light blue
+                                child: Icon(Icons.storefront, color: Colors.blueAccent, size: 20),
+                              ),
+                              title: Text(
+                                dealer.name, 
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF111827))
+                              ),
+                              subtitle: Padding(
+                                padding: const EdgeInsets.only(top: 4.0),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange.shade50,
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(color: Colors.orange.shade200)
+                                      ),
+                                      child: Text(
+                                        "Zone: $displayZone",
+                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange.shade800),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        dealer.address ,
+                                        style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              onTap: () => Navigator.pop(context, dealer),
+                            );
+                          },
+                        ),
             ),
           ],
         ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("CANCEL", style: TextStyle(color: Colors.grey)),
+        ),
+      ],
     );
   }
 }
