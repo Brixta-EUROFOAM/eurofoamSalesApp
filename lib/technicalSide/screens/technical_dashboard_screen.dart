@@ -760,7 +760,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => Padding(
+      builder: (sheetContext) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -782,22 +782,32 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                 subtitle: "Technical Visit Report Form",
                 iconBg: const Color(0xFFF0FDF4),
                 iconColor: Colors.green,
-                onTap: () {
-                  Navigator.pop(context);
+                onTap: () async {
+                  // 1. Close the sheet using the sheet's specific context
+                  Navigator.pop(sheetContext); 
+
+                  // Soft Warning: Shows message but DOES NOT block operation
                   if (!_isCheckedIn) {
-                    ScaffoldMessenger.of(context).showSnackBar(
+                    // Use 'this.context' from the Dashboard state
+                    ScaffoldMessenger.of(this.context).showSnackBar(
                       const SnackBar(
-                        content: Text("Please Check In first to start visit reports."),
+                        content: Text("Hey! YOU did NOT check in today!!"),
                         duration: Duration(seconds: 3),
-                        backgroundColor: Colors.redAccent,
+                        backgroundColor: Colors.orange, 
                       ),
                     );
-                    return;
+                    // Wait for 3 seconds so the user reads it
+                    await Future.delayed(const Duration(seconds: 3));
                   }
+                  
+                  // Safety check after the delay
+                  if (!mounted) return;
+                  
                   showDialog(
-                    context: context,
+                    // 2. Safely open the Dialog on the Dashboard's active context
+                    context: this.context, 
                     barrierDismissible: false,
-                    builder: (context) =>
+                    builder: (dialogContext) =>
                         CreateTvrScreen(employee: widget.employee),
                   );
                 },
@@ -810,7 +820,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                 iconBg: const Color(0xFFECFEFF),
                 iconColor: Colors.cyan,
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
                   _openFullScreen(AddSiteForm(employee: widget.employee));
                 },
               ),
@@ -822,7 +832,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                 iconBg: const Color(0xFFFDF4FF),
                 iconColor: Colors.purple,
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
                   _openFullScreen(AddDealerForm(employee: widget.employee));
                 },
               ),
@@ -833,18 +843,23 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                 subtitle: "Record meeting details and expenses",
                 iconBg: const Color(0xFFEEF2FF),
                 iconColor: const Color(0xFF4F46E5),
-                onTap: () {
-                  Navigator.pop(context);
+                onTap: () async {
+                  Navigator.pop(sheetContext); // Close bottom sheet
+
+                  // Soft Warning: Shows message but DOES NOT block operation
                   if (!_isCheckedIn) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text("Please Check In first to log meetings."),
+                        content: Text("Hey! YOU did NOT check in today!!"),
                         duration: Duration(seconds: 3),
-                        backgroundColor: Colors.redAccent,
+                        backgroundColor: Colors.orange, // Warning color
                       ),
                     );
-                    return;
+                    // Wait for 3 seconds so the user reads it
+                    await Future.delayed(const Duration(seconds: 3));
                   }
+                  // Safety check after the delay
+                  if (!mounted) return;
                   _openFullScreen(TsoMeetingsForm(employee: widget.employee));
                 },
               ),

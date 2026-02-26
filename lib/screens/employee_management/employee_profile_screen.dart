@@ -429,7 +429,7 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         child: const Icon(Icons.engineering_rounded, color: Color(0xFF0F766E), size: 26),
                       ),
                       title: const Text("Switch to Technical Side", style: TextStyle(color: Color(0xFF0F766E), fontWeight: FontWeight.w800, fontSize: 16)),
-                      subtitle: const Text("Access TSE Dashboard & Tools", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                      subtitle: const Text("Access TSE Dashboard Side", style: TextStyle(color: Colors.grey, fontSize: 13)),
                       trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Color(0xFF0F766E)),
                       onTap: () async {
                         // 1. Verify Role explicitly

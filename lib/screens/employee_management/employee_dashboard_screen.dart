@@ -85,7 +85,8 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
   Future<void> _takePicture() async {
     if (_controller == null ||
         !_controller!.value.isInitialized ||
-        _isTakingPicture) return;
+        _isTakingPicture)
+      return;
 
     try {
       setState(() => _isTakingPicture = true);
@@ -292,18 +293,25 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                     subtitle: "Daily Visit Report",
                     iconBg: const Color(0xFFEFF6FF),
                     iconColor: Colors.blue,
-                    onTap: () {
+                    onTap: () async {
+                      Navigator.pop(context); // Close bottom sheet
+
+                      // Soft Warning: Shows message but DOES NOT block operation
                       if (!_isCheckedIn) {
-                        Navigator.pop(context); // Close bottom sheet
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
-                            content: Text("Please Check In first to start visit reports."),
+                            content: Text("Hey! YOU did NOT check in today!!"),
                             duration: Duration(seconds: 3),
-                            backgroundColor: Colors.redAccent,
+                            backgroundColor: Colors.orange, // Warning color
                           ),
                         );
-                        return;
+                        
+                        // Wait for 3 seconds so the user reads it
+                        await Future.delayed(const Duration(seconds: 3));
                       }
+                      // Safety check after the delay
+                      if (!mounted) return;
+                      // Proceeds to open the form anyway
                       _openDialog(CreateDvrScreen(employee: widget.employee));
                     },
                   ),
@@ -398,14 +406,16 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
   Future<void> _performAttendanceAction(bool isCheckIn) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
-    
+
     // 1. Time Lock Check (Instant feedback, no spinners)
     if (!isCheckIn && _lastCheckInTime != null) {
       final difference = DateTime.now().difference(_lastCheckInTime!);
       if (difference.inMinutes < 60) {
         scaffoldMessenger.showSnackBar(
           SnackBar(
-            content: Text("Wait ${60 - difference.inMinutes} more minute(s) before checkout."),
+            content: Text(
+              "Wait ${60 - difference.inMinutes} more minute(s) before checkout.",
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -417,9 +427,11 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
     try {
       // 🚀 SPEED OPTIMIZATION 1: PRE-WARM GPS
-      // Fire the GPS request *before* opening the camera. 
+      // Fire the GPS request *before* opening the camera.
       // It will lock onto the satellites while the user is posing for the photo!
-      Future<Position?> locationFuture = _getCurrentPosition().timeout(const Duration(seconds: 15));
+      Future<Position?> locationFuture = _getCurrentPosition().timeout(
+        const Duration(seconds: 15),
+      );
 
       // 📸 OPEN CAMERA
       final imagePath = await Navigator.push(
@@ -430,8 +442,10 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       // 🚀 SPEED OPTIMIZATION 2: QUIET CANCEL
       if (imagePath == null || imagePath is! String) {
         // User closed camera without taking a photo. Just abort silently.
-        setState(() => isCheckIn ? _isCheckingIn = false : _isCheckingOut = false);
-        return; 
+        setState(
+          () => isCheckIn ? _isCheckingIn = false : _isCheckingOut = false,
+        );
+        return;
       }
 
       final File imageFile = File(imagePath);
@@ -439,7 +453,8 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       // 🚀 SPEED OPTIMIZATION 3: AWAIT PRE-WARMED GPS
       // Because we started it 3 seconds ago, this will likely resolve instantly (O(1) perceived time).
       final Position? position = await locationFuture;
-      if (position == null) throw Exception("Location verification failed. Please enable GPS.");
+      if (position == null)
+        throw Exception("Location verification failed. Please enable GPS.");
 
       // 🚀 SPEED OPTIMIZATION 4: PARALLEL NETWORK PIPELINE
       // Upload the image AND reverse-geocode the address at the EXACT same time.
@@ -483,7 +498,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
         await _apiService.checkOut(data);
         if (mounted) setState(() => _isCheckedIn = false);
       }
-      
+
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(isCheckIn ? 'Checked In!' : 'Checked Out!'),

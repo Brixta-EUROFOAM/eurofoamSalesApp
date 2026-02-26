@@ -515,7 +515,7 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                         child: const Icon(Icons.business_center_rounded, color: Colors.blueAccent, size: 26),
                       ),
                       title: const Text("Switch to Sales Force", style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.w800, fontSize: 16)),
-                      subtitle: const Text("Access EMP Dashboard & Tools", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                      subtitle: const Text("Access EMP Dashboard Side", style: TextStyle(color: Colors.grey, fontSize: 13)),
                       trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.blueAccent),
                       onTap: () async {
                         // 1. Update SharedPrefs to false (Sales Mode)
