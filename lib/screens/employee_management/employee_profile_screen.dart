@@ -407,7 +407,10 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                 // ---------------------------------------------------------
                 // --- ACCOUNT SWITCHER (Only visible if Dual Role) ---
                 // ---------------------------------------------------------
-                if (flags.accountSwitcher && widget.employee.isTechnicalRole) ...[
+                if (flags.accountSwitcher && 
+                    widget.employee.isTechnicalRole && 
+                    widget.employee.techLoginId != null && 
+                    widget.employee.techLoginId!.isNotEmpty) ...[
                   const SizedBox(height: 32),
                   Text(
                     "Switch Portal",
