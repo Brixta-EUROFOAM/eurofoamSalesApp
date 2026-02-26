@@ -463,8 +463,8 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
         _resolveAddress(position.latitude, position.longitude),
       ]);
 
-      final String imageUrl = results[0] as String;
-      final String address = results[1] as String;
+      final String imageUrl = results[0];
+      final String address = results[1];
 
       // Final API Submit
       if (isCheckIn) {

@@ -18,6 +18,8 @@ class SalesJourneyController {
     required SalesJourneyCapabilities caps,
   }) : _caps = caps;
 
+  SalesJourneyCapabilities get caps => _caps;
+
   // State
   bool isJourneyActive = false;
   String? currentJourneyId;
