@@ -784,6 +784,16 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                 iconColor: Colors.green,
                 onTap: () {
                   Navigator.pop(context);
+                  if (!_isCheckedIn) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Please Check In first to start visit reports."),
+                        duration: Duration(seconds: 3),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                    return;
+                  }
                   showDialog(
                     context: context,
                     barrierDismissible: false,
@@ -825,6 +835,16 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                 iconColor: const Color(0xFF4F46E5),
                 onTap: () {
                   Navigator.pop(context);
+                  if (!_isCheckedIn) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Please Check In first to log meetings."),
+                        duration: Duration(seconds: 3),
+                        backgroundColor: Colors.redAccent,
+                      ),
+                    );
+                    return;
+                  }
                   _openFullScreen(TsoMeetingsForm(employee: widget.employee));
                 },
               ),

@@ -9,6 +9,7 @@ class SalesFlags {
   final bool salesOrders;
 
   final bool showDbViewer;
+  final bool accountSwitcher;
 
   const SalesFlags({
     required this.journey,
@@ -19,6 +20,7 @@ class SalesFlags {
     required this.salesOrders,
 
     required this.showDbViewer,
+    required this.accountSwitcher,
   });
 
   static const SalesFlags dev = SalesFlags(
@@ -30,5 +32,6 @@ class SalesFlags {
     salesOrders: false,
 
     showDbViewer: false,
+    accountSwitcher: true,
   );
 }

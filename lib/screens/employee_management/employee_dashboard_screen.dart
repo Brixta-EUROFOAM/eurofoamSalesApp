@@ -292,8 +292,20 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                     subtitle: "Daily Visit Report",
                     iconBg: const Color(0xFFEFF6FF),
                     iconColor: Colors.blue,
-                    onTap: () =>
-                        _openDialog(CreateDvrScreen(employee: widget.employee)),
+                    onTap: () {
+                      if (!_isCheckedIn) {
+                        Navigator.pop(context); // Close bottom sheet
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Please Check In first to start visit reports."),
+                            duration: Duration(seconds: 3),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                        return;
+                      }
+                      _openDialog(CreateDvrScreen(employee: widget.employee));
+                    },
                   ),
 
                 if (flags.addDealer)

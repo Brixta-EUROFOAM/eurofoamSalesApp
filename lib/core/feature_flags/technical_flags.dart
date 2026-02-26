@@ -31,6 +31,7 @@ class TechnicalFlags {
   final bool unplannedJourney;
 
   final bool showDbViewer;
+  final bool accountSwitcher;
 
   const TechnicalFlags({
     required this.attendance,
@@ -58,6 +59,7 @@ class TechnicalFlags {
     required this.journeyNotifications,
     required this.unplannedJourney,
     required this.showDbViewer,
+    required this.accountSwitcher,
   });
 
   static const TechnicalFlags dev = TechnicalFlags(
@@ -91,5 +93,6 @@ class TechnicalFlags {
     unplannedJourney: true,
 
     showDbViewer: false,
+    accountSwitcher: true,
   );
 }

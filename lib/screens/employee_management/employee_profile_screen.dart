@@ -7,6 +7,7 @@ import 'package:salesmanapp/models/leave_application_model.dart';
 import 'package:salesmanapp/api/auth_service.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/widgets/theme_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:salesmanapp/models/attendance_model.dart';
@@ -396,6 +397,56 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                             builder: (context) => DriftDbViewer(db),
                           ),
                         );
+                      },
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 32),
+
+                // ---------------------------------------------------------
+                // --- ACCOUNT SWITCHER (Only visible if Dual Role) ---
+                // ---------------------------------------------------------
+                if (flags.accountSwitcher && widget.employee.isTechnicalRole) ...[
+                  const SizedBox(height: 32),
+                  Text(
+                    "Switch Portal",
+                    style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: _surfaceWhite,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: const Color(0xFF0F766E).withOpacity(0.3), width: 1.5),
+                      boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8))],
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      leading: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(12)),
+                        child: const Icon(Icons.engineering_rounded, color: Color(0xFF0F766E), size: 26),
+                      ),
+                      title: const Text("Switch to Technical Side", style: TextStyle(color: Color(0xFF0F766E), fontWeight: FontWeight.w800, fontSize: 16)),
+                      subtitle: const Text("Access TSE Dashboard & Tools", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Color(0xFF0F766E)),
+                      onTap: () async {
+                        // 1. Verify Role explicitly
+                        if (widget.employee.isTechnicalRole) {
+                          // 2. Update SharedPrefs so auto-login remembers the state
+                          final prefs = await SharedPreferences.getInstance();
+                          await prefs.setBool('is_technical_mode', true);
+                          
+                          // 3. Navigate securely to Tech Portal passing the current employee session
+                          if (context.mounted) {
+                            Navigator.of(context).pushNamedAndRemoveUntil(
+                              '/technical_home',
+                              (route) => false,
+                              arguments: widget.employee,
+                            );
+                          }
+                        }
                       },
                     ),
                   ),

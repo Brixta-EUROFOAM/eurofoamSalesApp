@@ -6,6 +6,7 @@ import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/api/auth_service.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/widgets/theme_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:salesmanapp/models/attendance_model.dart';
@@ -484,6 +485,51 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                             builder: (context) => DriftDbViewer(db),
                           ),
                         );
+                      },
+                    ),
+                  ),
+                ],
+
+                // ---------------------------------------------------------
+                // --- ACCOUNT SWITCHER (Only visible if Dual Role) ---
+                // ---------------------------------------------------------
+                if (flags.accountSwitcher && widget.employee.isTechnicalRole) ...[
+                  const SizedBox(height: 32),
+                  Text(
+                    "Switch Portal",
+                    style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: _surfaceWhite,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(color: Colors.blueAccent.withOpacity(0.3), width: 1.5),
+                      boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8))],
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      leading: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(12)),
+                        child: const Icon(Icons.business_center_rounded, color: Colors.blueAccent, size: 26),
+                      ),
+                      title: const Text("Switch to Sales Force", style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.w800, fontSize: 16)),
+                      subtitle: const Text("Access EMP Dashboard & Tools", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.blueAccent),
+                      onTap: () async {
+                        // 1. Update SharedPrefs to false (Sales Mode)
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setBool('is_technical_mode', false);
+                        
+                        // 2. Navigate securely to Sales Portal passing the current employee session
+                        if (context.mounted) {
+                          Navigator.of(context).pushNamedAndRemoveUntil(
+                            '/home',
+                            (route) => false,
+                            arguments: widget.employee,
+                          );
+                        }
                       },
                     ),
                   ),
