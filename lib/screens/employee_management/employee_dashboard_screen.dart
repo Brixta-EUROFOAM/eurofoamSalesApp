@@ -114,7 +114,11 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
               _controller != null) {
             return Stack(
               children: [
-                Center(child: CameraPreview(_controller!)),
+                Center(
+                  child: CameraPreview(
+                    _controller!,
+                  ).animate().fadeIn(duration: 400.ms),
+                ),
                 SafeArea(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -148,17 +152,27 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
                         padding: const EdgeInsets.only(bottom: 40),
                         child: InkWell(
                           onTap: _takePicture,
-                          child: Container(
-                            height: 80,
-                            width: 80,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 4),
-                              color: _isTakingPicture
-                                  ? Colors.white
-                                  : Colors.white24,
-                            ),
-                          ),
+                          child:
+                              Container(
+                                    height: 80,
+                                    width: 80,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 4,
+                                      ),
+                                      color: _isTakingPicture
+                                          ? Colors.white
+                                          : Colors.white24,
+                                    ),
+                                  )
+                                  .animate(target: _isTakingPicture ? 1 : 0)
+                                  .scaleXY(
+                                    end: 0.9,
+                                    duration: 150.ms,
+                                    curve: Curves.easeOut,
+                                  ),
                         ),
                       ),
                     ],
@@ -276,87 +290,113 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Animated Title
                 Text(
-                  "Sales Operations",
-                  style: TextStyle(
-                    color: _textDark,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                      "Sales Operations",
+                      style: TextStyle(
+                        color: _textDark,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(duration: 400.ms)
+                    .slideY(begin: 0.2, curve: Curves.easeOutBack),
+
                 const SizedBox(height: 16),
 
                 if (flags.createDvr)
                   _buildActionSheetItem(
-                    icon: Icons.description_outlined,
-                    title: "Create DVR",
-                    subtitle: "Daily Visit Report",
-                    iconBg: const Color(0xFFEFF6FF),
-                    iconColor: Colors.blue,
-                    onTap: () async {
-                      Navigator.pop(context); // Close bottom sheet
+                        icon: Icons.description_outlined,
+                        title: "Create DVR",
+                        subtitle: "Daily Visit Report",
+                        iconBg: const Color(0xFFEFF6FF),
+                        iconColor: Colors.blue,
+                        onTap: () {
+                          Navigator.pop(
+                            context,
+                          ); // Close bottom sheet immediately
 
-                      // Soft Warning: Shows message but DOES NOT block operation
-                      if (!_isCheckedIn) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Hey! YOU did NOT check in today!!"),
-                            duration: Duration(seconds: 3),
-                            backgroundColor: Colors.orange, // Warning color
-                          ),
-                        );
-                        
-                        // Wait for 3 seconds so the user reads it
-                        await Future.delayed(const Duration(seconds: 3));
-                      }
-                      // Safety check after the delay
-                      if (!mounted) return;
-                      // Proceeds to open the form anyway
-                      _openDialog(CreateDvrScreen(employee: widget.employee));
-                    },
-                  ),
+                          // Soft Warning: Fire the snackbar but DO NOT WAIT!
+                          if (!_isCheckedIn) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  "Hey! YOU did NOT check in today!!",
+                                ),
+                                duration: Duration(seconds: 3),
+                                backgroundColor: Colors.orange,
+                              ),
+                            );
+                          }
+
+                          // 🔥 PROPER FIX: Push as a full-screen route, perfectly smooth.
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  CreateDvrScreen(employee: widget.employee),
+                            ),
+                          );
+                        },
+                      )
+                      .animate()
+                      .fadeIn(delay: 100.ms)
+                      .slideX(begin: -0.1, curve: Curves.easeOutCubic),
 
                 if (flags.addDealer)
                   _buildActionSheetItem(
-                    icon: Icons.store_mall_directory_outlined,
-                    title: "Add Dealer",
-                    subtitle: "Register new dealer",
-                    iconBg: const Color(0xFFF0FDF4),
-                    iconColor: Colors.green,
-                    onTap: () =>
-                        _openDialog(AddDealerForm(employee: widget.employee)),
-                  ),
+                        icon: Icons.store_mall_directory_outlined,
+                        title: "Add Dealer",
+                        subtitle: "Register new dealer",
+                        iconBg: const Color(0xFFF0FDF4),
+                        iconColor: Colors.green,
+                        onTap: () => _openDialog(
+                          AddDealerForm(employee: widget.employee),
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(delay: 150.ms)
+                      .slideX(begin: -0.1, curve: Curves.easeOutCubic),
 
                 if (flags.competitionForm)
                   _buildActionSheetItem(
-                    icon: Icons.assessment_outlined,
-                    title: "Competition Form",
-                    subtitle: "Market intelligence report",
-                    iconBg: const Color(0xFFFFF7ED),
-                    iconColor: Colors.orange,
-                    onTap: () => _openDialog(
-                      CreateCompetitionFormScreen(employee: widget.employee),
-                    ),
-                  ),
+                        icon: Icons.assessment_outlined,
+                        title: "Competition Form",
+                        subtitle: "Market intelligence report",
+                        iconBg: const Color(0xFFFFF7ED),
+                        iconColor: Colors.orange,
+                        onTap: () => _openDialog(
+                          CreateCompetitionFormScreen(
+                            employee: widget.employee,
+                          ),
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(delay: 200.ms)
+                      .slideX(begin: -0.1, curve: Curves.easeOutCubic),
 
                 if (flags.salesOrders)
                   _buildActionSheetItem(
-                    icon: Icons.shopping_cart_outlined,
-                    title: "Sales Orders",
-                    subtitle: "Manage orders",
-                    iconBg: const Color(0xFFF3E8FF),
-                    iconColor: Colors.purple,
-                    onTap: () {
-                      Navigator.pop(context);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              SalesOrderScreen(employee: widget.employee),
-                        ),
-                      );
-                    },
-                  ),
+                        icon: Icons.shopping_cart_outlined,
+                        title: "Sales Orders",
+                        subtitle: "Manage orders",
+                        iconBg: const Color(0xFFF3E8FF),
+                        iconColor: Colors.purple,
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  SalesOrderScreen(employee: widget.employee),
+                            ),
+                          );
+                        },
+                      )
+                      .animate()
+                      .fadeIn(delay: 250.ms)
+                      .slideX(begin: -0.1, curve: Curves.easeOutCubic),
               ],
             ),
           ),
@@ -407,7 +447,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   Future<void> _performAttendanceAction(bool isCheckIn) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
-    // 1. Time Lock Check (Instant feedback, no spinners)
+    // 1. Time Lock Check
     if (!isCheckIn && _lastCheckInTime != null) {
       final difference = DateTime.now().difference(_lastCheckInTime!);
       if (difference.inMinutes < 60) {
@@ -427,8 +467,6 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
     try {
       // 🚀 SPEED OPTIMIZATION 1: PRE-WARM GPS
-      // Fire the GPS request *before* opening the camera.
-      // It will lock onto the satellites while the user is posing for the photo!
       Future<Position?> locationFuture = _getCurrentPosition().timeout(
         const Duration(seconds: 15),
       );
@@ -441,7 +479,6 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
       // 🚀 SPEED OPTIMIZATION 2: QUIET CANCEL
       if (imagePath == null || imagePath is! String) {
-        // User closed camera without taking a photo. Just abort silently.
         setState(
           () => isCheckIn ? _isCheckingIn = false : _isCheckingOut = false,
         );
@@ -451,13 +488,11 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       final File imageFile = File(imagePath);
 
       // 🚀 SPEED OPTIMIZATION 3: AWAIT PRE-WARMED GPS
-      // Because we started it 3 seconds ago, this will likely resolve instantly (O(1) perceived time).
       final Position? position = await locationFuture;
       if (position == null)
         throw Exception("Location verification failed. Please enable GPS.");
 
       // 🚀 SPEED OPTIMIZATION 4: PARALLEL NETWORK PIPELINE
-      // Upload the image AND reverse-geocode the address at the EXACT same time.
       final results = await Future.wait([
         _apiService.uploadImageToR2(imageFile),
         _resolveAddress(position.latitude, position.longitude),
@@ -560,29 +595,36 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                 widget.employee.displayName[0],
                 style: TextStyle(color: _cardNavy, fontWeight: FontWeight.bold),
               ),
+            ).animate().scale(
+              delay: 100.ms,
+              duration: 400.ms,
+              curve: Curves.easeOutBack,
             ),
             const SizedBox(width: 12),
             Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _greeting,
-                  style: TextStyle(
-                    color: _textGrey,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Text(
-                  widget.employee.displayName,
-                  style: TextStyle(
-                    color: _textDark,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _greeting,
+                      style: TextStyle(
+                        color: _textGrey,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      widget.employee.displayName,
+                      style: TextStyle(
+                        color: _textDark,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                )
+                .animate()
+                .fadeIn(delay: 200.ms, duration: 400.ms)
+                .slideX(begin: -0.1, curve: Curves.easeOut),
           ],
         ),
       ),
@@ -593,119 +635,140 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
           children: [
             // --- 1. HERO ATTENDANCE CARD ---
             Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: _cardNavy,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: _cardNavy.withOpacity(0.4),
-                    blurRadius: 16,
-                    offset: const Offset(0, 8),
-                  ),
-                ],
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        "Attendance Status",
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 14,
-                        ),
-                      ),
-                      const Icon(
-                        Icons.access_time,
-                        color: Colors.white54,
-                        size: 18,
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: _cardNavy,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _cardNavy.withOpacity(0.4),
+                        blurRadius: 16,
+                        offset: const Offset(0, 8),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    _isCheckedIn ? "Checked In" : "Ready to Start?",
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.location_on,
-                        color: Colors.white.withOpacity(0.7),
-                        size: 14,
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Attendance Status",
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.7),
+                              fontSize: 14,
+                            ),
+                          ),
+                          const Icon(
+                            Icons.access_time,
+                            color: Colors.white54,
+                            size: 18,
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(height: 24),
                       Text(
-                        'Area: $userArea',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 14,
+                        _isCheckedIn ? "Checked In" : "Ready to Start?",
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
                         ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.location_on,
+                            color: Colors.white.withOpacity(0.7),
+                            size: 14,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Area: $userArea',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.7),
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 32),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildGlassButton(
+                              "CHECK IN",
+                              Icons.login,
+                              _isCheckingIn,
+                              !_isCheckedIn,
+                              _isCheckedIn ? null : _handleCheckIn,
+                              isPulseActive:
+                                  !_isCheckedIn, // Pulsing attention grabber
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildGlassButton(
+                              "CHECK OUT",
+                              Icons.logout,
+                              _isCheckingOut,
+                              _isCheckedIn,
+                              !_isCheckedIn ? null : _handleCheckOut,
+                              isPulseActive: false,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 32),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildGlassButton(
-                          "CHECK IN",
-                          Icons.login,
-                          _isCheckingIn,
-                          !_isCheckedIn,
-                          _isCheckedIn ? null : _handleCheckIn,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildGlassButton(
-                          "CHECK OUT",
-                          Icons.logout,
-                          _isCheckingOut,
-                          _isCheckedIn,
-                          !_isCheckedIn ? null : _handleCheckOut,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ).animate().slideY(begin: 0.1, duration: 400.ms),
+                )
+                .animate()
+                .fadeIn(duration: 600.ms, curve: Curves.easeOut)
+                .scale(begin: const Offset(0.9, 0.9), curve: Curves.easeOutBack)
+                .shimmer(
+                  delay: 800.ms,
+                  duration: 1500.ms,
+                  color: Colors.white24,
+                ), // Premium Sheen Effect
+
             const SizedBox(height: 32),
 
             if (showSalesOpsCard) ...[
               Text(
-                "Operations",
-                style: TextStyle(
-                  color: _textDark,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+                    "Operations",
+                    style: TextStyle(
+                      color: _textDark,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  )
+                  .animate()
+                  .fadeIn(delay: 400.ms)
+                  .slideX(begin: -0.1, curve: Curves.easeOut),
               const SizedBox(height: 16),
 
               // --- 2. SALES OPS TRIGGER ---
               _buildFintechCard(
-                title: "Sales Operations",
-                subtitle: "Dealers, DVRs, Competition",
-                icon: Icons.business_center_outlined,
-                iconColor: Colors.blueAccent,
-                iconBg: const Color(0xFFEFF6FF),
-                onTap: () => _showSalesmanOps(context),
-              ).animate().slideY(begin: 0.2, duration: 500.ms),
+                    title: "Sales Operations",
+                    subtitle: "Dealers, DVRs, Competition",
+                    icon: Icons.business_center_outlined,
+                    iconColor: Colors.blueAccent,
+                    iconBg: const Color(0xFFEFF6FF),
+                    onTap: () => _showSalesmanOps(context),
+                  )
+                  .animate()
+                  .fadeIn(delay: 500.ms, duration: 500.ms)
+                  .scale(
+                    begin: const Offset(0.95, 0.95),
+                    curve: Curves.easeOutBack,
+                  ),
             ],
           ],
         ),
@@ -718,9 +781,10 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     IconData icon,
     bool loading,
     bool active,
-    VoidCallback? onTap,
-  ) {
-    return InkWell(
+    VoidCallback? onTap, {
+    bool isPulseActive = false,
+  }) {
+    Widget button = InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
@@ -761,6 +825,15 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
               ),
       ),
     );
+
+    // Add continuous subtle shimmer if it's the primary action
+    if (isPulseActive && active && !loading) {
+      button = button
+          .animate(onPlay: (controller) => controller.repeat(reverse: true))
+          .shimmer(duration: 2.seconds, color: Colors.blue.withOpacity(0.3));
+    }
+
+    return button;
   }
 
   Widget _buildFintechCard({

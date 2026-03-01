@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_radar/flutter_radar.dart';
+import 'package:flutter_animate/flutter_animate.dart'; // 🚀 Premium Animations
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
@@ -121,14 +122,6 @@ class _AddDealerFormState extends State<AddDealerForm> {
           _addressController.text = addressDetails['address'] ?? '';
           _areaController.text = addressDetails['area'] ?? '';
           _pinCodeController.text = addressDetails['pinCode'] ?? '';
-          // Auto-match logic: If the fetched region matches one of our options, select it
-          //final fetchedRegion = addressDetails['region'] ?? '';
-          // if (_zones.contains(fetchedRegion)) {
-          //   _selectedRegion = fetchedRegion;
-          // } else {
-          //   // Optional: Reset if no match found to force manual selection
-          //   _selectedRegion = null;
-          // }
         });
       }
     } catch (e) {
@@ -198,9 +191,7 @@ class _AddDealerFormState extends State<AddDealerForm> {
         verificationStatus: 'PENDING',
       );
 
-      // Default Radius
       const double radius = 50.0;
-
       await _apiService.createDealer(newDealer, radius: radius);
 
       scaffoldMessenger.showSnackBar(
@@ -377,14 +368,18 @@ class _AddDealerFormState extends State<AddDealerForm> {
           ),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          "Add New Dealer",
-          style: TextStyle(
-            color: _textDark,
-            fontWeight: FontWeight.bold,
-            fontSize: 16,
-          ),
-        ),
+        title:
+            const Text(
+                  "Add New Dealer",
+                  style: TextStyle(
+                    color: _textDark,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                )
+                .animate()
+                .fadeIn(duration: 400.ms)
+                .slideY(begin: -0.2), // 🚀 Animated Title
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -396,403 +391,445 @@ class _AddDealerFormState extends State<AddDealerForm> {
               children: [
                 // --- Location Card ---
                 Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: _surfaceWhite,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      child: Column(
                         children: [
                           Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFEFF6FF),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(
-                                  Icons.location_on,
-                                  color: Colors.blueAccent,
-                                  size: 20,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              const Text(
-                                "Geo-Tagging",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: _textDark,
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_isFetchingLocation)
-                            const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: _cardNavy,
-                              ),
-                            )
-                          else
-                            ElevatedButton.icon(
-                              onPressed: _fetchLocationAndAddress,
-                              icon: const Icon(Icons.my_location, size: 16),
-                              label: Text(
-                                _currentPosition == null ? "Fetch" : "Update",
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _cardNavy,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                      if (_currentPosition != null) ...[
-                        const SizedBox(height: 16),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF0FDF4),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFBBF7D0)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(
-                                Icons.check_circle,
-                                color: _accentGreen,
-                                size: 16,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                "Captured: ${_currentPosition!.latitude.toStringAsFixed(4)}, ${_currentPosition!.longitude.toStringAsFixed(4)}",
-                                style: const TextStyle(
-                                  color: Color(0xFF15803D),
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      _buildFintechInput(
-                        controller: _addressController,
-                        label: "Address",
-                        hint: "Fetched automatically...",
-                        icon: Icons.map_outlined,
-                        readOnly: false,
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment
-                            .start, // Align for validation errors
-                        children: [
-                          // --- UPDATED REGION/ZONE DROPDOWN ---
-                          Expanded(
-                            child: _buildFintechDropdown(
-                              value: _selectedRegion,
-                              label: "Region/Zone",
-                              // Providing a specific validation message makes it mandatory
-                              validatorMsg: "Zone is required",
-                              items: _zones.map((zone) {
-                                return DropdownMenuItem(
-                                  value: zone,
-                                  child: Text(
-                                    zone,
-                                    style: const TextStyle(fontSize: 13),
-                                    overflow: TextOverflow.ellipsis,
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEFF6FF),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.location_on,
+                                      color: Colors.blueAccent,
+                                      size: 20,
+                                    ),
                                   ),
-                                );
-                              }).toList(),
-                              onChanged: (val) {
-                                setState(() => _selectedRegion = val);
-                              },
-                            ),
+                                  const SizedBox(width: 12),
+                                  const Text(
+                                    "Geo-Tagging",
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      color: _textDark,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              if (_isFetchingLocation)
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: _cardNavy,
+                                  ),
+                                )
+                              else
+                                ElevatedButton.icon(
+                                  onPressed: _fetchLocationAndAddress,
+                                  icon: const Icon(Icons.my_location, size: 16),
+                                  label: Text(
+                                    _currentPosition == null
+                                        ? "Fetch"
+                                        : "Update",
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _cardNavy,
+                                    foregroundColor: Colors.white,
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _buildFintechInput(
-                              controller: _areaController,
-                              label: "Area",
-                              hint: "Area",
-                              icon: Icons.share_location,
-                              readOnly: false,
-                            ),
+                          if (_currentPosition != null) ...[
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0FDF4),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFBBF7D0),
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(
+                                    Icons.check_circle,
+                                    color: _accentGreen,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    "Captured: ${_currentPosition!.latitude.toStringAsFixed(4)}, ${_currentPosition!.longitude.toStringAsFixed(4)}",
+                                    style: const TextStyle(
+                                      color: Color(0xFF15803D),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ).animate().scale(
+                              curve: Curves.easeOutBack,
+                              duration: 400.ms,
+                            ), // 🚀 Animated Success
+                          ],
+                          const SizedBox(height: 16),
+                          _buildFintechInput(
+                            controller: _addressController,
+                            label: "Address",
+                            hint: "Fetched automatically...",
+                            icon: Icons.map_outlined,
+                            readOnly: false,
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: _buildFintechDropdown(
+                                  value: _selectedRegion,
+                                  label: "Region/Zone",
+                                  validatorMsg: "Zone is required",
+                                  items: _zones.map((zone) {
+                                    return DropdownMenuItem(
+                                      value: zone,
+                                      child: Text(
+                                        zone,
+                                        style: const TextStyle(fontSize: 13),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (val) {
+                                    setState(() => _selectedRegion = val);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: _buildFintechInput(
+                                  controller: _areaController,
+                                  label: "Area",
+                                  hint: "Area",
+                                  icon: Icons.share_location,
+                                  readOnly: false,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          _buildFintechInput(
+                            controller: _pinCodeController,
+                            label: "PIN Code",
+                            hint: "PIN",
+                            icon: Icons.pin_drop,
+                            readOnly: false,
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(
-                        controller: _pinCodeController,
-                        label: "PIN Code",
-                        hint: "PIN",
-                        icon: Icons.pin_drop,
-                        readOnly: false,
-                      ),
-                    ],
-                  ),
-                ),
+                    )
+                    .animate()
+                    .fadeIn(duration: 400.ms)
+                    .slideY(
+                      begin: 0.1,
+                      curve: Curves.easeOutCubic,
+                    ), // 🚀 Card Stagger
 
                 const SizedBox(height: 24),
 
                 // --- Details Card ---
                 Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: _surfaceWhite,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionHeader("Dealer Info"),
-                      const SizedBox(height: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionHeader("Dealer Info"),
+                          const SizedBox(height: 16),
 
-                      // --- SUB DEALER TOGGLE ---
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _bgLight,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: SwitchListTile(
-                          title: const Text(
-                            'Is this a Sub-dealer?',
-                            style: TextStyle(
-                              color: _textDark,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
+                          // --- SUB DEALER TOGGLE ---
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _bgLight,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: SwitchListTile(
+                              title: const Text(
+                                'Is this a Sub-dealer?',
+                                style: TextStyle(
+                                  color: _textDark,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              value: _isSubDealer,
+                              onChanged: (bool value) {
+                                setState(() {
+                                  _isSubDealer = value;
+                                  if (!value) {
+                                    _selectedParentDealerId = null;
+                                    _parentDealerDisplayController.clear();
+                                  }
+                                });
+                              },
+                              activeColor: _cardNavy,
+                              contentPadding: EdgeInsets.zero,
                             ),
                           ),
-                          value: _isSubDealer,
-                          onChanged: (bool value) {
-                            setState(() {
-                              _isSubDealer = value;
-                              if (!value) {
-                                _selectedParentDealerId = null;
-                                _parentDealerDisplayController.clear();
-                              }
-                            });
-                          },
-                          activeColor: _cardNavy,
-                          contentPadding: EdgeInsets.zero,
-                        ),
-                      ),
 
-                      if (_isSubDealer) ...[
-                        const SizedBox(height: 16),
-                        InkWell(
-                          onTap: () async {
-                            final Dealer? result = await showDialog(
-                              context: context,
-                              builder: (context) =>
-                                  _ServerDealerSearchDialog(api: _apiService),
-                            );
+                          // 🚀 O(1) AnimatedSize for fluid dropdown without heavy state reconstruction
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeInOutCubic,
+                            child: _isSubDealer
+                                ? Padding(
+                                    padding: const EdgeInsets.only(top: 16),
+                                    child: InkWell(
+                                      onTap: () async {
+                                        final Dealer? result = await showDialog(
+                                          context: context,
+                                          builder: (context) =>
+                                              _ServerDealerSearchDialog(
+                                                api: _apiService,
+                                              ),
+                                        );
 
-                            if (result != null) {
-                              setState(() {
-                                _selectedParentDealerId = result.id;
-                                _parentDealerDisplayController.text =
-                                    result.name;
-                              });
-                            }
-                          },
-                          child: IgnorePointer(
-                            child: _buildFintechInput(
-                              controller: _parentDealerDisplayController,
-                              label: "Parent Dealer",
-                              hint: "Tap to search...",
-                              icon: Icons.search,
-                              validator: (v) => _selectedParentDealerId == null
-                                  ? "Please select a parent dealer"
-                                  : null,
-                            ),
+                                        if (result != null) {
+                                          setState(() {
+                                            _selectedParentDealerId = result.id;
+                                            _parentDealerDisplayController
+                                                    .text =
+                                                result.name;
+                                          });
+                                        }
+                                      },
+                                      child: IgnorePointer(
+                                        child: _buildFintechInput(
+                                          controller:
+                                              _parentDealerDisplayController,
+                                          label: "Parent Dealer",
+                                          hint: "Tap to search...",
+                                          icon: Icons.search,
+                                          validator: (v) =>
+                                              _selectedParentDealerId == null
+                                              ? "Please select a parent dealer"
+                                              : null,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                : const SizedBox.shrink(),
                           ),
-                        ),
-                      ],
 
-                      const SizedBox(height: 16),
-                      _buildFintechInput(
-                        controller: _nameController,
-                        label: "Dealer/Firm Name",
-                        hint: "e.g. A.K. Enterprises",
-                        icon: Icons.store,
-                      ),
+                          const SizedBox(height: 16),
+                          _buildFintechInput(
+                            controller: _nameController,
+                            label: "Dealer/Firm Name",
+                            hint: "e.g. A.K. Enterprises",
+                            icon: Icons.store,
+                          ),
 
-                      const SizedBox(height: 16),
-                      _buildFintechDropdown(
-                        value: _selectedType,
-                        label: "Dealer Type",
-                        items:
-                            [
-                                  'Dealer Best',
-                                  'Dealer Non Best',
-                                  'Sub Dealer Best',
-                                  'Sub Dealer Non Best',
-                                ]
-                                .map(
-                                  (type) => DropdownMenuItem(
-                                    value: type,
-                                    child: Text(type),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (val) => setState(() => _selectedType = val),
-                        validatorMsg: 'Please select a type',
-                      ),
+                          const SizedBox(height: 16),
+                          _buildFintechDropdown(
+                            value: _selectedType,
+                            label: "Dealer Type",
+                            items:
+                                [
+                                      'Dealer Best',
+                                      'Dealer Non Best',
+                                      'Sub Dealer Best',
+                                      'Sub Dealer Non Best',
+                                    ]
+                                    .map(
+                                      (type) => DropdownMenuItem(
+                                        value: type,
+                                        child: Text(type),
+                                      ),
+                                    )
+                                    .toList(),
+                            onChanged: (val) =>
+                                setState(() => _selectedType = val),
+                            validatorMsg: 'Please select a type',
+                          ),
 
-                      const SizedBox(height: 16),
-                      _buildFintechInput(
-                        controller: _phoneNoController,
-                        label: "Phone Number",
-                        hint: "9876543210",
-                        icon: Icons.phone,
-                        keyboardType: TextInputType.phone,
+                          const SizedBox(height: 16),
+                          _buildFintechInput(
+                            controller: _phoneNoController,
+                            label: "Phone Number",
+                            hint: "9876543210",
+                            icon: Icons.phone,
+                            keyboardType: TextInputType.phone,
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 100.ms, duration: 400.ms)
+                    .slideY(
+                      begin: 0.1,
+                      curve: Curves.easeOutCubic,
+                    ), // 🚀 Card Stagger
 
                 const SizedBox(height: 24),
 
                 // --- Business Vitals Card ---
                 Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 15,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSectionHeader("Business Vitals"),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildFintechInput(
-                              controller: _totalPotentialController,
-                              label: "Total Potential",
-                              hint: "0.0",
-                              icon: Icons.trending_up,
-                              keyboardType: TextInputType.number,
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: _buildFintechInput(
-                              controller: _bestPotentialController,
-                              label: "Best Potential",
-                              hint: "0.0",
-                              icon: Icons.star_border,
-                              keyboardType: TextInputType.number,
-                            ),
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: _surfaceWhite,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 15,
+                            offset: const Offset(0, 5),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(
-                        controller: _brandSellingController,
-                        label: "Brands Selling",
-                        hint: "e.g. BrandA, BrandB",
-                        icon: Icons.branding_watermark,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionHeader("Business Vitals"),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _buildFintechInput(
+                                  controller: _totalPotentialController,
+                                  label: "Total Potential",
+                                  hint: "0.0",
+                                  icon: Icons.trending_up,
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: _buildFintechInput(
+                                  controller: _bestPotentialController,
+                                  label: "Best Potential",
+                                  hint: "0.0",
+                                  icon: Icons.star_border,
+                                  keyboardType: TextInputType.number,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          _buildFintechInput(
+                            controller: _brandSellingController,
+                            label: "Brands Selling",
+                            hint: "e.g. BrandA, BrandB",
+                            icon: Icons.branding_watermark,
+                          ),
+                          const SizedBox(height: 16),
+                          _buildFintechInput(
+                            controller: _feedbacksController,
+                            label: "Feedback",
+                            hint: "Market feedback...",
+                            icon: Icons.feedback_outlined,
+                          ),
+                          const SizedBox(height: 16),
+                          _buildFintechInput(
+                            controller: _remarksController,
+                            label: "Remarks (Optional)",
+                            hint: "Any other notes...",
+                            icon: Icons.note_alt_outlined,
+                            validator: (v) => null,
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(
-                        controller: _feedbacksController,
-                        label: "Feedback",
-                        hint: "Market feedback...",
-                        icon: Icons.feedback_outlined,
-                      ),
-                      const SizedBox(height: 16),
-                      _buildFintechInput(
-                        controller: _remarksController,
-                        label: "Remarks (Optional)",
-                        hint: "Any other notes...",
-                        icon: Icons.note_alt_outlined,
-                        validator: (v) => null,
-                      ),
-                    ],
-                  ),
-                ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 200.ms, duration: 400.ms)
+                    .slideY(
+                      begin: 0.1,
+                      curve: Curves.easeOutCubic,
+                    ), // 🚀 Card Stagger
 
                 const SizedBox(height: 32),
 
                 // --- Submit Button ---
                 SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: _isSubmitting || _currentPosition == null
-                        ? null
-                        : _submitForm,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _cardNavy,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 18),
-                      elevation: 4,
-                      shadowColor: _cardNavy.withOpacity(0.4),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      disabledBackgroundColor: Colors.grey[300],
-                    ),
-                    child: _isSubmitting
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text(
-                            'SUBMIT DEALER',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              letterSpacing: 1.0,
-                            ),
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: _isSubmitting || _currentPosition == null
+                            ? null
+                            : _submitForm,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _cardNavy,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          elevation: 4,
+                          shadowColor: _cardNavy.withOpacity(0.4),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                  ),
-                ),
+                          disabledBackgroundColor: Colors.grey[300],
+                        ),
+                        child: _isSubmitting
+                            ? const SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text(
+                                'SUBMIT DEALER',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 300.ms, duration: 400.ms)
+                    .scale(
+                      begin: const Offset(0.9, 0.9),
+                      curve: Curves.easeOutBack,
+                    ), // 🚀 Button Stagger
+
                 const SizedBox(height: 40),
               ],
             ),
@@ -946,9 +983,15 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, null),
-          child: const Text("CANCEL"),
+          child: const Text(
+            "CANCEL",
+            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+          ),
         ),
       ],
-    );
+    ).animate().scale(
+      curve: Curves.easeOutBack,
+      duration: 400.ms,
+    ); // 🚀 Spring-loaded Dialog
   }
 }

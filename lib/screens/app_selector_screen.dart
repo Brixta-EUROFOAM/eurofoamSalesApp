@@ -17,10 +17,10 @@ class _AppSelectorScreenState extends State<AppSelectorScreen> {
   bool _isCheckingAutoLogin = true;
 
   // --- FINTECH THEME PALETTE ---
-  static const Color _bgLight   = Color(0xFFF3F4F6); // Corporate Grey
-  static const Color _textDark  = Color(0xFF111827); // Navy/Black
-  static const Color _textGrey  = Color(0xFF6B7280); // Subtitle Grey
-  static const Color _cardNavy  = Color(0xFF0F172A); // Deep Navy
+  static const Color _bgLight = Color(0xFFF3F4F6); // Corporate Grey
+  static const Color _textDark = Color(0xFF111827); // Navy/Black
+  static const Color _textGrey = Color(0xFF6B7280); // Subtitle Grey
+  static const Color _cardNavy = Color(0xFF0F172A); // Deep Navy
 
   @override
   void initState() {
@@ -28,10 +28,10 @@ class _AppSelectorScreenState extends State<AppSelectorScreen> {
     _checkAutoLogin();
   }
 
-Future<void> _checkAutoLogin() async {
+  Future<void> _checkAutoLogin() async {
     try {
       final Employee? employee = await _authService.tryAutoLogin();
-      
+
       // If logged out (null), stop loading and show the selector screen
       if (!mounted || employee == null) {
         setState(() => _isCheckingAutoLogin = false);
@@ -39,88 +39,117 @@ Future<void> _checkAutoLogin() async {
       }
 
       final prefs = await SharedPreferences.getInstance();
-      
+
       // 1. RECOVERY: Get stored mode. If null (Process Death), infer from Role.
       bool? isTechnicalMode = prefs.getBool('is_technical_mode');
-      
+
       // "Self-Healing": If preference is wiped, restore it based on the User Role
       if (isTechnicalMode == null) {
         if (employee.isTechnicalRole) {
-           isTechnicalMode = true; 
-           await prefs.setBool('is_technical_mode', true);
+          isTechnicalMode = true;
+          await prefs.setBool('is_technical_mode', true);
         } else {
-           isTechnicalMode = false;
-           await prefs.setBool('is_technical_mode', false);
+          isTechnicalMode = false;
+          await prefs.setBool('is_technical_mode', false);
         }
       }
 
       // 2. NAVIGATION LOGIC
       if (isTechnicalMode == true) {
-         // ✅ INTENDED MODE: TECHNICAL
-         
-         // SECURITY CHECK: Do they actually have the role?
-         if (employee.isTechnicalRole) {
-            // Permission Granted -> Go to Tech Home
-            Navigator.of(context).pushNamedAndRemoveUntil(
-              '/technical_home',
-              (route) => false,
-              arguments: employee,
-            );
-         } else {
-            // ⛔️ PERMISSION DENIED (Role Mismatch)
-            // The app thought we were in Tech mode, but the User Role is Sales.
-            // Redirect to Login (Technical Interface) to fix the session.
-            Navigator.of(context).pushNamedAndRemoveUntil(
-              '/salesforce_login_page', // Matches route defined in main.dart
-              (route) => false,
-              arguments: {'isTechnical': true}, // Force Tech UI on Login
-            );
-            
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text("Session role mismatch. Please login again."),
-                backgroundColor: Colors.red,
-              ),
-            );
-         }
-      } else {
-         // ✅ INTENDED MODE: SALESMAN
-         Navigator.of(context).pushNamedAndRemoveUntil(
-            '/home', 
+        // ✅ INTENDED MODE: TECHNICAL
+
+        // SECURITY CHECK: Do they actually have the role?
+        if (employee.isTechnicalRole) {
+          // Permission Granted -> Go to Tech Home
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/technical_home',
             (route) => false,
             arguments: employee,
-         );
-      }
+          );
+        } else {
+          // ⛔️ PERMISSION DENIED (Role Mismatch)
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            '/salesforce_login_page',
+            (route) => false,
+            arguments: {'isTechnical': true},
+          );
 
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Session role mismatch. Please login again."),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else {
+        // ✅ INTENDED MODE: SALESMAN
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          '/home',
+          (route) => false,
+          arguments: employee,
+        );
+      }
     } catch (e) {
       // 🛑 HANDLE OFFLINE / ERRORS
-      // If AuthService throws (e.g. SocketException), we catch it here.
       if (mounted) {
-         setState(() => _isCheckingAutoLogin = false);
-         
-         // Optional: Feedback to user
-         // ScaffoldMessenger.of(context).showSnackBar(
-         //    SnackBar(content: Text("Connection failed. Please try again.")),
-         // );
+        setState(() => _isCheckingAutoLogin = false);
       }
     }
   }
 
   void _navigateToLogin(BuildContext context, bool isTechnical) {
     Navigator.of(context).pushNamed(
-      '/salesforce_login_page', // Matches route defined in main.dart
+      '/salesforce_login_page',
       arguments: {'isTechnical': isTechnical},
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Tiny loading state while we check token
+    // 🚀 PREMIUM LOADING STATE (O(1) Animation)
+    // Instead of a boring spinner, we show a breathing, shimmering logo.
     if (_isCheckingAutoLogin) {
-      return const Scaffold(
+      return Scaffold(
         backgroundColor: _bgLight,
         body: Center(
-          child: CircularProgressIndicator(),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.token, size: 50, color: _cardNavy),
+                  )
+                  .animate(onPlay: (c) => c.repeat(reverse: true))
+                  .scaleXY(end: 1.1, duration: 800.ms, curve: Curves.easeInOut)
+                  .shimmer(
+                    duration: 1500.ms,
+                    color: Colors.blue.withOpacity(0.2),
+                  ),
+
+              const SizedBox(height: 24),
+              const Text(
+                    "Authenticating Session...",
+                    style: TextStyle(
+                      color: _textGrey,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.0,
+                    ),
+                  )
+                  .animate(onPlay: (c) => c.repeat(reverse: true))
+                  .fadeIn(duration: 800.ms),
+            ],
+          ),
         ),
       );
     }
@@ -136,80 +165,105 @@ Future<void> _checkAutoLogin() async {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Spacer(),
-                
+
                 // --- Logo / Header ---
                 Align(
                   alignment: Alignment.center,
-                  child: Container(
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 20,
-                          offset: const Offset(0, 10),
-                        )
-                      ]
-                    ),
-                    child: const Icon(Icons.token, size: 50, color: _cardNavy), 
-                  ),
+                  child:
+                      Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.token,
+                              size: 50,
+                              color: _cardNavy,
+                            ),
+                          )
+                          .animate()
+                          .scale(curve: Curves.easeOutBack, duration: 600.ms)
+                          .fadeIn(),
                 ),
                 const SizedBox(height: 32),
+
                 const Text(
-                  'WELCOME',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    letterSpacing: 3.0,
-                    fontWeight: FontWeight.w600,
-                    color: _textGrey,
-                  ),
-                ),
+                      'WELCOME',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        letterSpacing: 3.0,
+                        fontWeight: FontWeight.w600,
+                        color: _textGrey,
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 200.ms, duration: 400.ms)
+                    .slideY(begin: 0.5, curve: Curves.easeOutCubic),
+
                 const SizedBox(height: 8),
+
                 const Text(
-                  'SELECT PORTAL',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    color: _textDark,
-                    letterSpacing: -0.5,
-                  ),
-                ),
+                      'SELECT PORTAL',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: _textDark,
+                        letterSpacing: -0.5,
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 300.ms, duration: 400.ms)
+                    .slideY(begin: 0.3, curve: Curves.easeOutCubic),
+
                 const SizedBox(height: 60),
 
-                //Sales Portal
+                // --- Sales Portal ---
                 _buildPortalCard(
-                  context,
-                  title: 'SALES FORCE',
-                  subtitle: '(EMP)',
-                  icon: Icons.business_center,
-                  color: Colors.blueAccent,
-                  isTechnical: false,
-                ).animate().slideX(begin: -1, duration: 600.ms, curve: Curves.easeOut),
+                      context,
+                      title: 'SALES FORCE',
+                      subtitle: '(EMP)',
+                      icon: Icons.business_center,
+                      color: Colors.blueAccent,
+                      isTechnical: false,
+                    )
+                    .animate()
+                    .fadeIn(delay: 400.ms, duration: 500.ms)
+                    .slideY(begin: 0.2, curve: Curves.easeOutCubic),
 
                 const SizedBox(height: 24),
 
-                //Technical Portal
+                // --- Technical Portal ---
                 _buildPortalCard(
-                  context,
-                  title: 'TECHNICAL SIDE',
-                  subtitle: '(TSE)',
-                  icon: Icons.engineering,
-                  color: const Color(0xFF0F766E),       // Teal for Tech
-                  bgColor: const Color(0xFFF0FDF4),     // Light Teal BG
-                  isTechnical: true,
-                ).animate().slideX(begin: 1, duration: 600.ms, curve: Curves.easeOut, delay: 200.ms),
-                  
+                      context,
+                      title: 'TECHNICAL SIDE',
+                      subtitle: '(TSE)',
+                      icon: Icons.engineering,
+                      color: const Color(0xFF0F766E), // Teal for Tech
+                      bgColor: const Color(0xFFF0FDF4), // Light Teal BG
+                      isTechnical: true,
+                    )
+                    .animate()
+                    .fadeIn(delay: 500.ms, duration: 500.ms)
+                    .slideY(begin: 0.2, curve: Curves.easeOutCubic),
+
                 const Spacer(),
-                  
+
                 const Text(
                   "Secure Enterprise Login",
                   textAlign: TextAlign.center,
                   style: TextStyle(color: _textGrey, fontSize: 12),
-                ),
+                ).animate().fadeIn(delay: 800.ms, duration: 600.ms),
+
                 const SizedBox(height: 20),
               ],
             ),
@@ -219,7 +273,8 @@ Future<void> _checkAutoLogin() async {
     );
   }
 
-  Widget _buildPortalCard(BuildContext context, {
+  Widget _buildPortalCard(
+    BuildContext context, {
     required String title,
     required String subtitle,
     required IconData icon,
@@ -290,7 +345,11 @@ Future<void> _checkAutoLogin() async {
                   color: _bgLight,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.arrow_forward_rounded, color: Colors.grey, size: 20),
+                child: const Icon(
+                  Icons.arrow_forward_rounded,
+                  color: Colors.grey,
+                  size: 20,
+                ),
               ),
             ],
           ),

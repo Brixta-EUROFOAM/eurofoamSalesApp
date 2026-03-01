@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/widgets/theme_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_animate/flutter_animate.dart'; // 🚀 Premium Animations
 import 'package:salesmanapp/models/attendance_model.dart';
 import 'package:salesmanapp/models/daily_task_model.dart';
 import 'package:salesmanapp/models/daily_visit_report_model.dart';
@@ -28,10 +29,10 @@ import 'package:salesmanapp/core/feature_flags/sales_flags.dart';
 class SalesProfileStats {
   final int dvrsThisMonth;
   final int dvrsTotal;
-  
+
   final int totalTasks;
   final int completedTasks;
-  
+
   final int totalCheckIns;
   final int totalCheckOuts;
 
@@ -93,14 +94,12 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     final startMonthStr = DateFormat('yyyy-MM-dd').format(startOfMonth);
     final endMonthStr = DateFormat('yyyy-MM-dd').format(endOfMonth);
 
-    // 1. DVRs (Equivalent to TVRs)
-    var dvrsMonthFuture = _apiService.fetchDvrsForUser(
-      uid,
-      startDate: startMonthStr,
-      endDate: endMonthStr,
-    ).catchError((_) => <DailyVisitReport>[]);
-    
-    // 2. PJPs (Daily Tasks)
+    // 1. DVRs
+    var dvrsMonthFuture = _apiService
+        .fetchDvrsForUser(uid, startDate: startMonthStr, endDate: endMonthStr)
+        .catchError((_) => <DailyVisitReport>[]);
+
+    // 2. PJPs
     var tasksFuture = _apiService.fetchDailyTasksForUser(uid);
 
     // 3. Attendance
@@ -123,16 +122,17 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       final leaves = results[3] as List<LeaveApplication>;
 
       final totalIns = attendance.length;
-      final totalOuts = attendance.where((a) => a.outTimeTimestamp != null).length;
+      final totalOuts = attendance
+          .where((a) => a.outTimeTimestamp != null)
+          .length;
 
-      // Calculate Task stats
       final completedTasks = allTasks
           .where((t) => t.status.toLowerCase() == 'completed')
           .length;
 
       return SalesProfileStats(
         dvrsThisMonth: dvrsThisMonth.length,
-        dvrsTotal: dvrsThisMonth.length, // Placeholder if we don't fetch total separately
+        dvrsTotal: dvrsThisMonth.length,
         totalTasks: allTasks.length,
         completedTasks: completedTasks,
         totalCheckIns: totalIns,
@@ -174,7 +174,9 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open the form. Please contact support.')),
+          const SnackBar(
+            content: Text('Could not open the form. Please contact support.'),
+          ),
         );
       }
     }
@@ -183,7 +185,6 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    // Access the feature flags (Assuming SalesFlags exists similar to TechnicalFlags)
     final flags = context.read<SalesFlags>();
 
     return Scaffold(
@@ -201,18 +202,26 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             fontWeight: FontWeight.w900,
             letterSpacing: 1.5,
           ),
-        ),
+        ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.2),
       ),
       body: FutureBuilder<SalesProfileStats>(
         future: _statsFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting && snapshot.data == null) {
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              snapshot.data == null) {
             return Center(child: CircularProgressIndicator(color: _cardNavy));
           }
 
-          final stats = snapshot.data ?? SalesProfileStats(
-            dvrsThisMonth: 0, dvrsTotal: 0, totalTasks: 0, completedTasks: 0, totalCheckIns: 0, totalCheckOuts: 0,
-          );
+          final stats =
+              snapshot.data ??
+              SalesProfileStats(
+                dvrsThisMonth: 0,
+                dvrsTotal: 0,
+                totalTasks: 0,
+                completedTasks: 0,
+                totalCheckIns: 0,
+                totalCheckOuts: 0,
+              );
 
           return RefreshIndicator(
             onRefresh: _refreshStats,
@@ -223,19 +232,30 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
               children: [
                 // --- 1. PROFILE HEADER ---
                 _buildFintechProfileHeader(
-                  initials: getInitials(),
-                  displayName: widget.employee.displayName,
-                  email: widget.employee.email ?? 'No email',
-                  role: widget.employee.role ?? "Sales Force",
-                ),
+                      initials: getInitials(),
+                      displayName: widget.employee.displayName,
+                      email: widget.employee.email ?? 'No email',
+                      role: widget.employee.role ?? "Sales Force",
+                    )
+                    .animate()
+                    .fadeIn(duration: 600.ms)
+                    .scale(
+                      begin: const Offset(0.9, 0.9),
+                      curve: Curves.easeOutBack,
+                    ),
 
                 const SizedBox(height: 32),
 
                 // --- 2. OVERVIEW STATS ---
                 Text(
                   "Overview",
-                  style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold),
-                ),
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ).animate().fadeIn(delay: 100.ms).slideX(begin: -0.1),
+
                 const SizedBox(height: 16),
 
                 GridView.count(
@@ -248,53 +268,66 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                   children: [
                     // CARD 1: DVRs
                     _buildStatCard(
-                      title: "DVRs",
-                      value: stats.dvrsThisMonth.toString(),
-                      subtitle: "This month",
-                      footer: "Total: ${stats.dvrsTotal}",
-                      icon: Icons.assignment_turned_in_rounded,
-                      iconColor: Colors.blueAccent,
-                      iconBg: const Color(0xFFEFF6FF),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AllDvrListScreen(userId: int.parse(widget.employee.id)),
-                          ),
-                        );
-                      },
-                    ),
+                          title: "DVRs",
+                          value: stats.dvrsThisMonth.toString(),
+                          subtitle: "This month",
+                          footer: "Total: ${stats.dvrsTotal}",
+                          icon: Icons.assignment_turned_in_rounded,
+                          iconColor: Colors.blueAccent,
+                          iconBg: const Color(0xFFEFF6FF),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AllDvrListScreen(
+                                  userId: int.parse(widget.employee.id),
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                        .animate()
+                        .fadeIn(delay: 200.ms)
+                        .scaleXY(begin: 0.9, curve: Curves.easeOutBack),
 
                     // CARD 2: TASKS
                     _buildStatCard(
-                      title: "PJPs", // PJPs == Daily Tasks in Salesman Side
-                      value: stats.totalTasks.toString(),
-                      subtitle: "Assigned",
-                      footer: "Completed: ${stats.completedTasks}",
-                      icon: Icons.task_alt_rounded,
-                      iconColor: Colors.orange,
-                      iconBg: const Color(0xFFFFF7ED),
-                      onTap: () {
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => AllTasksListScreen(userId: int.parse(widget.employee.id)),
-                            ),
-                          );
-                      },
-                    ),
+                          title: "PJPs",
+                          value: stats.totalTasks.toString(),
+                          subtitle: "Assigned",
+                          footer: "Completed: ${stats.completedTasks}",
+                          icon: Icons.task_alt_rounded,
+                          iconColor: Colors.orange,
+                          iconBg: const Color(0xFFFFF7ED),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AllTasksListScreen(
+                                  userId: int.parse(widget.employee.id),
+                                ),
+                              ),
+                            );
+                          },
+                        )
+                        .animate()
+                        .fadeIn(delay: 300.ms)
+                        .scaleXY(begin: 0.9, curve: Curves.easeOutBack),
 
                     // CARD 3: ATTENDANCE
                     _buildStatCard(
-                      title: "Attendance",
-                      value: stats.totalCheckIns.toString(),
-                      subtitle: "Total Ins",
-                      footer: "Total In + Out: ${stats.totalCheckOuts}",
-                      icon: Icons.access_time_filled,
-                      iconColor: Colors.green,
-                      iconBg: const Color(0xFFECFDF5),
-                    ),
-                  ], 
+                          title: "Attendance",
+                          value: stats.totalCheckIns.toString(),
+                          subtitle: "Total Ins",
+                          footer: "Total In + Out: ${stats.totalCheckOuts}",
+                          icon: Icons.access_time_filled,
+                          iconColor: Colors.green,
+                          iconBg: const Color(0xFFECFDF5),
+                        )
+                        .animate()
+                        .fadeIn(delay: 400.ms)
+                        .scaleXY(begin: 0.9, curve: Curves.easeOutBack),
+                  ],
                 ),
 
                 const SizedBox(height: 32),
@@ -302,68 +335,135 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                 // --- 3. LEAVE APPLICATION ---
                 Text(
                   "Leave Application",
-                  style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold),
-                ),
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ).animate().fadeIn(delay: 450.ms).slideX(begin: -0.1),
+
                 const SizedBox(height: 16),
 
                 _buildDetailedLeaveCard(
-                  context: context,
-                  latestLeave: stats.latestLeave,
-                ),
+                      context: context,
+                      latestLeave: stats.latestLeave,
+                    )
+                    .animate()
+                    .fadeIn(delay: 500.ms)
+                    .slideY(begin: 0.1, curve: Curves.easeOutCubic),
 
                 const SizedBox(height: 32),
 
                 // --- 4. PREFERENCES (THEME) ---
                 Text(
                   "Preferences",
-                  style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold),
-                ),
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ).animate().fadeIn(delay: 550.ms).slideX(begin: -0.1),
+
                 const SizedBox(height: 16),
 
                 Container(
-                  padding: const EdgeInsets.all(20.0),
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8))],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('App Theme', style: TextStyle(color: _textGrey, fontWeight: FontWeight.w600, fontSize: 13)),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: SegmentedButton<ThemeMode>(
-                          style: ButtonStyle(
-                            backgroundColor: WidgetStateProperty.resolveWith<Color>((states) {
-                              if (states.contains(WidgetState.selected)) return _cardNavy;
-                              return _bgLight;
-                            }),
-                            foregroundColor: WidgetStateProperty.resolveWith<Color>((states) {
-                              if (states.contains(WidgetState.selected)) return Colors.white;
-                              return _textGrey;
-                            }),
-                            side: WidgetStateProperty.all(BorderSide.none),
-                            shape: WidgetStateProperty.all(RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                            padding: WidgetStateProperty.all(const EdgeInsets.symmetric(vertical: 12)),
+                      padding: const EdgeInsets.all(20.0),
+                      decoration: BoxDecoration(
+                        color: _surfaceWhite,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.06),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
                           ),
-                          segments: const [
-                            ButtonSegment(value: ThemeMode.light, label: Text('Light'), icon: Icon(Icons.light_mode_outlined, size: 18)),
-                            ButtonSegment(value: ThemeMode.dark, label: Text('Dark'), icon: Icon(Icons.dark_mode_outlined, size: 18)),
-                            ButtonSegment(value: ThemeMode.system, label: Text('Auto'), icon: Icon(Icons.phone_android_outlined, size: 18)),
-                          ],
-                          selected: {themeProvider.themeMode},
-                          onSelectionChanged: (Set<ThemeMode> newSelection) {
-                            themeProvider.setThemeMode(newSelection.first);
-                          },
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'App Theme',
+                            style: TextStyle(
+                              color: _textGrey,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<ThemeMode>(
+                              style: ButtonStyle(
+                                backgroundColor:
+                                    WidgetStateProperty.resolveWith<Color>((
+                                      states,
+                                    ) {
+                                      if (states.contains(WidgetState.selected))
+                                        return _cardNavy;
+                                      return _bgLight;
+                                    }),
+                                foregroundColor:
+                                    WidgetStateProperty.resolveWith<Color>((
+                                      states,
+                                    ) {
+                                      if (states.contains(WidgetState.selected))
+                                        return Colors.white;
+                                      return _textGrey;
+                                    }),
+                                side: WidgetStateProperty.all(BorderSide.none),
+                                shape: WidgetStateProperty.all(
+                                  RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                padding: WidgetStateProperty.all(
+                                  const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                              ),
+                              segments: const [
+                                ButtonSegment(
+                                  value: ThemeMode.light,
+                                  label: Text('Light'),
+                                  icon: Icon(
+                                    Icons.light_mode_outlined,
+                                    size: 18,
+                                  ),
+                                ),
+                                ButtonSegment(
+                                  value: ThemeMode.dark,
+                                  label: Text('Dark'),
+                                  icon: Icon(
+                                    Icons.dark_mode_outlined,
+                                    size: 18,
+                                  ),
+                                ),
+                                ButtonSegment(
+                                  value: ThemeMode.system,
+                                  label: Text('Auto'),
+                                  icon: Icon(
+                                    Icons.phone_android_outlined,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
+                              selected: {themeProvider.themeMode},
+                              onSelectionChanged:
+                                  (Set<ThemeMode> newSelection) {
+                                    themeProvider.setThemeMode(
+                                      newSelection.first,
+                                    );
+                                  },
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 600.ms)
+                    .slideY(begin: 0.1, curve: Curves.easeOutCubic),
 
-                //  ----- DEBUG TOOLS (ADDED) -----
+                //  ----- DEBUG TOOLS -----
                 if (flags.showDbViewer) ...[
                   const SizedBox(height: 16),
                   Container(
@@ -399,60 +499,102 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         );
                       },
                     ),
-                  ),
+                  ).animate().fadeIn(delay: 650.ms),
                 ],
-
-                const SizedBox(height: 32),
 
                 // ---------------------------------------------------------
                 // --- ACCOUNT SWITCHER (Only visible if Dual Role) ---
                 // ---------------------------------------------------------
-                if (flags.accountSwitcher && 
-                    widget.employee.isTechnicalRole && 
-                    widget.employee.techLoginId != null && 
+                if (flags.accountSwitcher &&
+                    widget.employee.isTechnicalRole &&
+                    widget.employee.techLoginId != null &&
                     widget.employee.techLoginId!.isNotEmpty) ...[
                   const SizedBox(height: 32),
                   Text(
                     "Switch Portal",
-                    style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
+                    style: TextStyle(
+                      color: _textDark,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ).animate().fadeIn(delay: 700.ms).slideX(begin: -0.1),
                   const SizedBox(height: 16),
+
+                  // 🚀 Add Premium Shimmer to Switcher
                   Container(
-                    decoration: BoxDecoration(
-                      color: _surfaceWhite,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: const Color(0xFF0F766E).withOpacity(0.3), width: 1.5),
-                      boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8))],
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      leading: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(color: const Color(0xFFF0FDF4), borderRadius: BorderRadius.circular(12)),
-                        child: const Icon(Icons.engineering_rounded, color: Color(0xFF0F766E), size: 26),
+                        decoration: BoxDecoration(
+                          color: _surfaceWhite,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: const Color(0xFF0F766E).withOpacity(0.3),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.06),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          leading: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0FDF4),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.engineering_rounded,
+                              color: Color(0xFF0F766E),
+                              size: 26,
+                            ),
+                          ),
+                          title: const Text(
+                            "Switch to Technical Side",
+                            style: TextStyle(
+                              color: Color(0xFF0F766E),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            "Access TSE Dashboard Side",
+                            style: TextStyle(color: Colors.grey, fontSize: 13),
+                          ),
+                          trailing: const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 16,
+                            color: Color(0xFF0F766E),
+                          ),
+                          onTap: () async {
+                            if (widget.employee.isTechnicalRole) {
+                              final prefs =
+                                  await SharedPreferences.getInstance();
+                              await prefs.setBool('is_technical_mode', true);
+                              if (context.mounted) {
+                                Navigator.of(context).pushNamedAndRemoveUntil(
+                                  '/technical_home',
+                                  (route) => false,
+                                  arguments: widget.employee,
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(delay: 750.ms)
+                      .slideY(begin: 0.1, curve: Curves.easeOutCubic)
+                      .animate(onPlay: (c) => c.repeat(reverse: true))
+                      .shimmer(
+                        duration: 2500.ms,
+                        color: const Color(0xFF0F766E).withOpacity(0.1),
                       ),
-                      title: const Text("Switch to Technical Side", style: TextStyle(color: Color(0xFF0F766E), fontWeight: FontWeight.w800, fontSize: 16)),
-                      subtitle: const Text("Access TSE Dashboard Side", style: TextStyle(color: Colors.grey, fontSize: 13)),
-                      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Color(0xFF0F766E)),
-                      onTap: () async {
-                        // 1. Verify Role explicitly
-                        if (widget.employee.isTechnicalRole) {
-                          // 2. Update SharedPrefs so auto-login remembers the state
-                          final prefs = await SharedPreferences.getInstance();
-                          await prefs.setBool('is_technical_mode', true);
-                          
-                          // 3. Navigate securely to Tech Portal passing the current employee session
-                          if (context.mounted) {
-                            Navigator.of(context).pushNamedAndRemoveUntil(
-                              '/technical_home',
-                              (route) => false,
-                              arguments: widget.employee,
-                            );
-                          }
-                        }
-                      },
-                    ),
-                  ),
                 ],
 
                 const SizedBox(height: 32),
@@ -460,41 +602,88 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                 // --- 5. ACCOUNT ACTIONS ---
                 Text(
                   "Account",
-                  style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold),
-                ),
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ).animate().fadeIn(delay: 800.ms).slideX(begin: -0.1),
                 const SizedBox(height: 16),
 
                 Container(
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8))],
-                  ),
-                  child: Theme(
-                    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: _cardNavy.withOpacity(0.05), borderRadius: BorderRadius.circular(10)),
-                        child: Icon(Icons.shield_outlined, color: _cardNavy, size: 20),
+                      decoration: BoxDecoration(
+                        color: _surfaceWhite,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.06),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
                       ),
-                      title: Text('Privacy & Security', style: TextStyle(color: _textDark, fontWeight: FontWeight.w600, fontSize: 15)),
-                      childrenPadding: const EdgeInsets.only(bottom: 12),
-                      children: [
-                        ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 24),
-                          leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                          title: const Text("Request Account Deletion", style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600, fontSize: 14)),
-                          trailing: const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
-                          onTap: _launchDeleteAccountUrl,
+                      child: Theme(
+                        data: Theme.of(
+                          context,
+                        ).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: _cardNavy.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.shield_outlined,
+                              color: _cardNavy,
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            'Privacy & Security',
+                            style: TextStyle(
+                              color: _textDark,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                          childrenPadding: const EdgeInsets.only(bottom: 12),
+                          children: [
+                            ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                              ),
+                              leading: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.redAccent,
+                              ),
+                              title: const Text(
+                                "Request Account Deletion",
+                                style: TextStyle(
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              trailing: const Icon(
+                                Icons.open_in_new,
+                                size: 16,
+                                color: Colors.grey,
+                              ),
+                              onTap: _launchDeleteAccountUrl,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                ),
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 850.ms)
+                    .slideY(begin: 0.1, curve: Curves.easeOutCubic),
 
                 const SizedBox(height: 32),
-                _LogoutButton(color: _dangerRed),
+                _LogoutButton(
+                  color: _dangerRed,
+                ).animate().fadeIn(delay: 950.ms),
               ],
             ),
           );
@@ -518,23 +707,63 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             border: Border.all(color: Colors.white, width: 4),
-            boxShadow: [BoxShadow(color: _cardNavy.withOpacity(0.15), blurRadius: 20, offset: const Offset(0, 10))],
+            boxShadow: [
+              BoxShadow(
+                color: _cardNavy.withOpacity(0.15),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
           child: CircleAvatar(
             radius: 50,
             backgroundColor: _cardNavy,
-            child: Text(initials, style: const TextStyle(fontSize: 32, color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1)),
+            child: Text(
+              initials,
+              style: const TextStyle(
+                fontSize: 32,
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1,
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 20),
-        Text(displayName, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: _textDark, letterSpacing: -0.5)),
+        Text(
+          displayName,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w900,
+            color: _textDark,
+            letterSpacing: -0.5,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text(email, style: TextStyle(color: _textGrey, fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+          email,
+          style: TextStyle(
+            color: _textGrey,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(color: _cardNavy.withOpacity(0.08), borderRadius: BorderRadius.circular(20)),
-          child: Text(role.toUpperCase(), style: TextStyle(color: _cardNavy, fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1)),
+          decoration: BoxDecoration(
+            color: _cardNavy.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            role.toUpperCase(),
+            style: TextStyle(
+              color: _cardNavy,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+              letterSpacing: 1,
+            ),
+          ),
         ),
       ],
     );
@@ -550,14 +779,22 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     required Color iconBg,
     VoidCallback? onTap,
   }) {
-    return GestureDetector(
+    return InkWell(
+      // Swapped to InkWell for native ripple tap feedback
       onTap: onTap,
+      borderRadius: BorderRadius.circular(24),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: _surfaceWhite,
           borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 15, offset: const Offset(0, 8))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.06),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -569,19 +806,50 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(14)),
+                  decoration: BoxDecoration(
+                    color: iconBg,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                   child: Icon(icon, color: iconColor, size: 24),
                 ),
-                if (onTap != null) Icon(Icons.arrow_forward_ios_rounded, size: 16, color: _textGrey.withOpacity(0.4)),
+                if (onTap != null)
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 16,
+                    color: _textGrey.withOpacity(0.4),
+                  ),
               ],
             ),
             const SizedBox(height: 20),
-            Text(value, style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: _textDark, letterSpacing: -1)),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                color: _textDark,
+                letterSpacing: -1,
+              ),
+            ),
             const SizedBox(height: 4),
-            Text(subtitle != null ? "$title\n$subtitle" : title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: _textGrey, height: 1.2)),
+            Text(
+              subtitle != null ? "$title\n$subtitle" : title,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: _textGrey,
+                height: 1.2,
+              ),
+            ),
             if (footer != null) ...[
               const SizedBox(height: 8),
-              Text(footer, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _textGrey.withOpacity(0.7))),
+              Text(
+                footer,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: _textGrey.withOpacity(0.7),
+                ),
+              ),
             ],
           ],
         ),
@@ -589,33 +857,47 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     );
   }
 
-  Widget _buildDetailedLeaveCard({required BuildContext context, required LeaveApplication? latestLeave}) {
-    const Color cardBg = Color(0xFFFEE2E2); 
+  Widget _buildDetailedLeaveCard({
+    required BuildContext context,
+    required LeaveApplication? latestLeave,
+  }) {
+    const Color cardBg = Color(0xFFFEE2E2);
     const Color iconColor = Colors.redAccent;
-    const IconData iconData = Icons.calendar_month_outlined; 
+    const IconData iconData = Icons.calendar_month_outlined;
 
-    return GestureDetector(
+    return InkWell(
       onTap: () async {
         final userId = int.parse(widget.employee.id);
-        // Navigate to the list screen you created
         await Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => AllLeavesListScreen(userId: userId)),
+          MaterialPageRoute(
+            builder: (_) => AllLeavesListScreen(userId: userId),
+          ),
         );
         _refreshStats();
       },
+      borderRadius: BorderRadius.circular(24),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: _surfaceWhite,
           borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 15, offset: const Offset(0, 8))],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.06),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            ),
+          ],
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(16)),
+              decoration: BoxDecoration(
+                color: cardBg,
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: const Icon(iconData, color: iconColor, size: 28),
             ),
             const SizedBox(width: 16),
@@ -623,16 +905,33 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Leaves", style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _textDark)),
+                  Text(
+                    "Leaves",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: _textDark,
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   Text(
-                    latestLeave != null ? "Latest: ${latestLeave.status}" : "Apply & view history", 
-                    style: TextStyle(fontSize: 13, color: _textGrey, fontWeight: FontWeight.w500)
+                    latestLeave != null
+                        ? "Latest: ${latestLeave.status}"
+                        : "Apply & view history",
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: _textGrey,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded, size: 16, color: _textGrey.withOpacity(0.4)),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 16,
+              color: _textGrey.withOpacity(0.4),
+            ),
           ],
         ),
       ),
@@ -648,16 +947,25 @@ class _LogoutButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return ElevatedButton.icon(
       icon: const Icon(Icons.logout_rounded, size: 20),
-      label: const Text('Log Out', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+      label: const Text(
+        'Log Out',
+        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+      ),
       onPressed: () async {
         await AuthService().logout();
-        if (context.mounted) Navigator.of(context).pushNamedAndRemoveUntil('/selector', (route) => false);
+        if (context.mounted)
+          Navigator.of(
+            context,
+          ).pushNamedAndRemoveUntil('/selector', (route) => false);
       },
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
         foregroundColor: color,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: color.withOpacity(0.2))),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: color.withOpacity(0.2)),
+        ),
         padding: const EdgeInsets.symmetric(vertical: 18),
       ),
     );

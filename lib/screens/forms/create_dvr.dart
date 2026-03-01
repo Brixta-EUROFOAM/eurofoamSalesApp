@@ -12,11 +12,17 @@ import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/screens/dvrwidgets/dvr_dealer_form.dart';
 import 'package:salesmanapp/screens/dvrwidgets/dvr_camera.dart';
 
+// SPECIAL ADD on's
+import 'package:url_launcher/url_launcher.dart';
+
 class CreateDvrScreen extends StatefulWidget {
   final Employee employee;
   final Pjp? pjp;
   final Dealer? dealer;
   final DateTime? initialCheckInTime;
+
+  /// 🔥 NEW: Callback to cleanly handle Dashboard routing
+  final VoidCallback? onReturnToDashboard;
 
   const CreateDvrScreen({
     super.key,
@@ -24,6 +30,7 @@ class CreateDvrScreen extends StatefulWidget {
     this.pjp,
     this.dealer,
     this.initialCheckInTime,
+    this.onReturnToDashboard,
   });
 
   @override
@@ -33,6 +40,9 @@ class CreateDvrScreen extends StatefulWidget {
 class _CreateDvrScreenState extends State<CreateDvrScreen> {
   final _formKey = GlobalKey<FormState>();
   final _dealerFormKey = GlobalKey<FormState>();
+
+  bool _showSummary = false;
+  String? _outImagePathLocal;
 
   final ApiService _apiService = ApiService();
 
@@ -97,9 +107,9 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   /// ------------------------------------------------
   Future<void> _handleCheckIn() async {
     if (_selectedDealer == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Select dealer first")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Select dealer first")));
       return;
     }
 
@@ -126,7 +136,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       final File imageFile = File(imagePath);
 
       // 🚀 SPEED OPTIMIZATION 3: Parallel Execution
-      // Upload image and await GPS concurrently
       final results = await Future.wait([
         locationFuture,
         _apiService.uploadImageToR2(imageFile),
@@ -135,12 +144,15 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       setState(() {
         _checkInTime = DateTime.now();
         _checkInLocation = results[0] as Position; // Extract GPS
-        _inTimeImageUrl = results[1] as String;    // Extract Image URL
+        _inTimeImageUrl = results[1] as String; // Extract Image URL
         _isUploadingImage = false;
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Check-In Error: $e"), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text("Check-In Error: $e"),
+          backgroundColor: Colors.red,
+        ),
       );
       setState(() => _isUploadingImage = false);
     }
@@ -163,10 +175,10 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       String? outTimeUrl;
 
       if (outImagePath != null) {
+        _outImagePathLocal = outImagePath;
         outTimeUrl = await _apiService.uploadImageToR2(File(outImagePath));
       }
 
-      /// 🔥 DEALER MAPPING BASED ON TOGGLE
       String? finalDealerId;
       String? finalSubDealerId;
 
@@ -191,15 +203,13 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
             double.tryParse("${_dealerFormData['dealerTotalPotential']}") ?? 0,
         dealerBestPotential:
             double.tryParse("${_dealerFormData['dealerBestPotential']}") ?? 0,
-        brandSelling:
-            (_dealerFormData['brandSelling'] as List<String>?) ?? [],
+        brandSelling: (_dealerFormData['brandSelling'] as List<String>?) ?? [],
         contactPerson: _dealerFormData['contactPerson'],
         contactPersonPhoneNo: _dealerFormData['contactPersonPhoneNo'],
         todayOrderMt:
             double.tryParse("${_dealerFormData['todayOrderMt']}") ?? 0,
         todayCollectionRupees:
-            double.tryParse("${_dealerFormData['todayCollectionRupees']}") ??
-                0,
+            double.tryParse("${_dealerFormData['todayCollectionRupees']}") ?? 0,
         feedbacks: "${_dealerFormData['feedbacks'] ?? ""}",
         solutionBySalesperson: _dealerFormData['solutionBySalesperson'],
         anyRemarks: _dealerFormData['anyRemarks'],
@@ -219,12 +229,15 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context);
+        setState(() => _showSummary = true);
       }
     } catch (e) {
       debugPrint("DVR Error $e");
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Failed to submit DVR"), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text("Failed to submit DVR"),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -232,132 +245,376 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   }
 
   /// ------------------------------------------------
-  /// 🎨 UI
+  /// 🎨 MAIN BUILD METHOD
   /// ------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: _surfaceWhite,
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  /// HEADER
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        title: const Text(
+          "Daily Visit Report",
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: _cardNavy,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: _showSummary
+            ? const SizedBox.shrink() // Hide back button on summary
+            : null,
+      ),
+      body: _showSummary ? _buildSummaryView() : _buildFormView(),
+    );
+  }
+
+  /// ------------------------------------------------
+  /// 📝 THE FORM VIEW (CHECK-IN + DATA ENTRY)
+  /// ------------------------------------------------
+  Widget _buildFormView() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            /// STEP 1 — CHECK IN CARD
+            if (_checkInTime == null) ...[
+              Card(
+                elevation: 2,
+                color: _surfaceWhite,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
                     children: [
-                      const Text(
-                        "Daily Visit Report",
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: _textDark,
+                      SwitchListTile(
+                        value: _isSubDealerVisit,
+                        activeColor: _accentGreen,
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text(
+                          "Sub Dealer Visit",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: _textDark,
+                          ),
+                        ),
+                        onChanged: (v) {
+                          setState(() {
+                            _isSubDealerVisit = v;
+                            _selectedDealer = null;
+                            _selectedParentDealer = null;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      InkWell(
+                        onTap: _openDealerSearch,
+                        child: _buildSelector(
+                          _selectedDealer?.name ??
+                              (_isSubDealerVisit
+                                  ? "Select Sub Dealer"
+                                  : "Select Dealer"),
                         ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.close, color: _textGrey),
-                        onPressed: () => Navigator.pop(context),
+                      if (_isSubDealerVisit) ...[
+                        const SizedBox(height: 16),
+                        InkWell(
+                          onTap: _openParentDealerSearch,
+                          child: _buildSelector(
+                            _selectedParentDealer?.name ??
+                                "Select Parent Dealer",
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _isUploadingImage ? null : _handleCheckIn,
+                          icon: _isUploadingImage
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.camera_alt),
+                          label: Text(
+                            _isUploadingImage
+                                ? "CHECKING IN..."
+                                : "CHECK-IN WITH PHOTO",
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _cardNavy,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-
-                  const Divider(height: 30),
-
-                  /// STEP 1 — TOGGLE DEALER TYPE
-                  if (_checkInTime == null) ...[
-                    SwitchListTile(
-                      value: _isSubDealerVisit,
-                      activeColor: _cardNavy,
-                      title: const Text("Sub Dealer Visit", style: TextStyle(fontWeight: FontWeight.w600)),
-                      onChanged: (v) {
-                        setState(() {
-                          _isSubDealerVisit = v;
-                          _selectedDealer = null;
-                          _selectedParentDealer = null;
-                        });
-                      },
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    /// DEALER SELECT
-                    InkWell(
-                      onTap: _openDealerSearch,
-                      child: _buildSelector(
-                        _selectedDealer?.name ??
-                            (_isSubDealerVisit
-                                ? "Select Sub Dealer"
-                                : "Select Dealer"),
-                      ),
-                    ),
-
-                    if (_isSubDealerVisit) ...[
-                      const SizedBox(height: 16),
-                      InkWell(
-                        onTap: _openParentDealerSearch,
-                        child: _buildSelector(
-                          _selectedParentDealer?.name ??
-                              "Select Parent Dealer",
+                ),
+              ),
+            ]
+            /// STEP 2 — FORM DETAILS
+            else ...[
+              DvrDealerFormWidget(
+                formKey: _dealerFormKey,
+                onDataChanged: (data) {
+                  _dealerFormData = data;
+                },
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: _isSubmitting ? null : _submitDvr,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _accentGreen,
+                  foregroundColor: Colors.white,
+                  elevation: 4,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: _isSubmitting
+                    ? const SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 2,
+                        ),
+                      )
+                    : const Text(
+                        "SUBMIT & CHECK-OUT",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          letterSpacing: 1.1,
                         ),
                       ),
-                    ],
+              ),
+              const SizedBox(height: 40),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
-                    const SizedBox(height: 24),
+  /// ------------------------------------------------
+  /// 🎉 THE SUMMARY & WHATSAPP VIEW
+  /// ------------------------------------------------
+  Widget _buildSummaryView() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Card(
+          elevation: 4,
+          color: _surfaceWhite,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Icon(Icons.check_circle, color: _accentGreen, size: 70),
+                const SizedBox(height: 16),
+                const Text(
+                  "Visit Completed!",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: _cardNavy,
+                  ),
+                ),
+                const Divider(height: 40),
 
-                    ElevatedButton.icon(
-                      onPressed: _isUploadingImage ? null : _handleCheckIn,
-                      icon: _isUploadingImage 
-                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Icon(Icons.camera_alt),
-                      label: Text(_isUploadingImage ? "CHECKING IN..." : "CHECK-IN WITH PHOTO"),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _cardNavy,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
+                _buildSummaryRow("Dealer", _selectedDealer?.name ?? "N/A"),
+                _buildSummaryRow(
+                  "Visit Type",
+                  _dealerFormData['visitType'] ?? "N/A",
+                ),
+                _buildSummaryRow(
+                  "Order Given",
+                  "${_dealerFormData['todayOrderMt'] ?? 0} MT",
+                ),
+                _buildSummaryRow(
+                  "Collection",
+                  "₹${_dealerFormData['todayCollectionRupees'] ?? 0}",
+                ),
+
+                const SizedBox(height: 24),
+                const Text(
+                  "Photos Captured:",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: _textDark,
+                    fontSize: 16,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildImageTile("Check-In", _inTimeImageUrl),
                     ),
-                  ]
-
-                  /// STEP 2 — FORM
-                  else ...[
-                    DvrDealerFormWidget(
-                      formKey: _dealerFormKey,
-                      onDataChanged: (data) {
-                        _dealerFormData = data;
-                      },
-                    ),
-                    const SizedBox(height: 30),
-                    ElevatedButton(
-                      onPressed: _isSubmitting ? null : _submitDvr,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _accentGreen,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildImageTile(
+                        "Check-Out",
+                        _outImagePathLocal,
+                        isLocal: true,
                       ),
-                      child: _isSubmitting
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                          : const Text("SUBMIT & CHECK-OUT", style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.1)),
                     ),
                   ],
-                ],
-              ),
+                ),
+
+                const SizedBox(height: 40),
+                ElevatedButton.icon(
+                  onPressed: _shareToWhatsApp,
+                  icon: const Icon(Icons.share, color: Colors.white),
+                  label: const Text(
+                    "SHARE TO WHATSAPP",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.0,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF25D366),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                /// 🔥 PROPER DASHBOARD ROUTING LOGIC
+                /// 🔥 PROPER DASHBOARD ROUTING LOGIC (O(1) Time/Space Complexity)
+                /// 🔥 CLEAN ARCHITECTURE: Standard Route Pop
+                TextButton(
+                  onPressed: () {
+                    // 1. Pop this full-screen route normally
+                    Navigator.pop(context);
+
+                    // 2. If we came from Journey, tell NavScreen to switch tabs
+                    if (widget.onReturnToDashboard != null) {
+                      widget.onReturnToDashboard!();
+                    }
+                  },
+                  child: const Text(
+                    "RETURN TO DASHBOARD",
+                    style: TextStyle(
+                      color: _textGrey,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildSummaryRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label, style: const TextStyle(color: _textGrey, fontSize: 15)),
+          Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: _textDark,
+              fontSize: 15,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImageTile(
+    String label,
+    String? pathOrUrl, {
+    bool isLocal = false,
+  }) {
+    if (pathOrUrl == null) return const SizedBox.shrink();
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: isLocal
+              ? Image.file(
+                  File(pathOrUrl),
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                )
+              : Image.network(
+                  pathOrUrl,
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            color: _textGrey,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _shareToWhatsApp() async {
+    final text =
+        '''
+*DVR Summary Report* 📊
+*Dealer:* ${_selectedDealer?.name ?? 'N/A'}
+*Type:* ${_dealerFormData['visitType'] ?? 'N/A'}
+*Order:* ${_dealerFormData['todayOrderMt'] ?? '0'} MT
+*Collection:* ₹${_dealerFormData['todayCollectionRupees'] ?? '0'}
+*Feedback:* ${_dealerFormData['feedbacks'] ?? 'None'}
+
+_Generated via Sales App_
+''';
+    final url = Uri.parse("whatsapp://send?text=${Uri.encodeComponent(text)}");
+
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("WhatsApp not installed or cannot be opened."),
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildSelector(String text) {
@@ -366,7 +623,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       decoration: BoxDecoration(
         color: _inputFill,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: Colors.grey.shade300),
       ),
       child: Row(
         children: [
@@ -375,7 +632,9 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
               text,
               style: TextStyle(
                 color: text.contains("Select") ? _textGrey : _textDark,
-                fontWeight: text.contains("Select") ? FontWeight.normal : FontWeight.w600,
+                fontWeight: text.contains("Select")
+                    ? FontWeight.normal
+                    : FontWeight.w600,
                 fontSize: 15,
               ),
             ),
@@ -387,16 +646,12 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   }
 }
 
-/// ------------------------------------------------------------
-/// 🔎 UPGRADED DEALER SEARCH DIALOG (ZONE DISPLAY)
-/// ------------------------------------------------------------
 class _ServerDealerSearchDialog extends StatefulWidget {
   final ApiService api;
-
   const _ServerDealerSearchDialog({required this.api});
-
   @override
-  State<_ServerDealerSearchDialog> createState() => _ServerDealerSearchDialogState();
+  State<_ServerDealerSearchDialog> createState() =>
+      _ServerDealerSearchDialogState();
 }
 
 class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
@@ -407,7 +662,7 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   @override
   void initState() {
     super.initState();
-    _performSearch(""); 
+    _performSearch("");
   }
 
   void _onSearchChanged(String query) {
@@ -419,7 +674,6 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
 
   Future<void> _performSearch(String query) async {
     setState(() => _isLoading = true);
-
     try {
       final results = await widget.api.fetchDealers(search: query, limit: 20);
       if (mounted) {
@@ -429,9 +683,7 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -439,14 +691,21 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text("Select Dealer", style: TextStyle(fontWeight: FontWeight.w900)),
-      contentPadding: const EdgeInsets.only(left: 20, right: 20, top: 10, bottom: 0),
+      title: const Text(
+        "Select Dealer",
+        style: TextStyle(fontWeight: FontWeight.w900),
+      ),
+      contentPadding: const EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 10,
+        bottom: 0,
+      ),
       content: SizedBox(
         width: double.maxFinite,
         height: MediaQuery.of(context).size.height * 0.5,
         child: Column(
           children: [
-            // Styled Search Box
             TextField(
               onChanged: _onSearchChanged,
               decoration: InputDecoration(
@@ -464,62 +723,92 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
             const SizedBox(height: 16),
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF0F172A)))
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF0F172A),
+                      ),
+                    )
                   : _dealers.isEmpty
-                      ? const Center(child: Text("No dealers found.", style: TextStyle(color: Colors.grey)))
-                      : ListView.separated(
-                          itemCount: _dealers.length,
-                          separatorBuilder: (context, index) => Divider(color: Colors.grey.shade200, height: 1),
-                          itemBuilder: (context, index) {
-                            final dealer = _dealers[index];
-                            
-                            // 🚀 THE FIX: Safely map 'region' directly from the model without dynamic casting
-                            final String displayZone = dealer.region.isNotEmpty 
-                                ? dealer.region 
-                                : "Unknown Zone";
-
-                            return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(vertical: 4, horizontal: 0),
-                              leading: const CircleAvatar(
-                                backgroundColor: Color(0xFFEFF6FF), // Light blue
-                                child: Icon(Icons.storefront, color: Colors.blueAccent, size: 20),
-                              ),
-                              title: Text(
-                                dealer.name, 
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xFF111827))
-                              ),
-                              subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 4.0),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.orange.shade50,
-                                        borderRadius: BorderRadius.circular(4),
-                                        border: Border.all(color: Colors.orange.shade200)
-                                      ),
-                                      child: Text(
-                                        "Zone: $displayZone",
-                                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange.shade800),
-                                      ),
+                  ? const Center(
+                      child: Text(
+                        "No dealers found.",
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: _dealers.length,
+                      separatorBuilder: (context, index) =>
+                          Divider(color: Colors.grey.shade200, height: 1),
+                      itemBuilder: (context, index) {
+                        final dealer = _dealers[index];
+                        final String displayZone = dealer.region.isNotEmpty
+                            ? dealer.region
+                            : "Unknown Zone";
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 0,
+                          ),
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFFEFF6FF),
+                            child: Icon(
+                              Icons.storefront,
+                              color: Colors.blueAccent,
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            dealer.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: Colors.orange.shade200,
                                     ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        dealer.address ,
-                                        style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                  ),
+                                  child: Text(
+                                    "Zone: $displayZone",
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.orange.shade800,
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
-                              onTap: () => Navigator.pop(context, dealer),
-                            );
-                          },
-                        ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    dealer.address,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF6B7280),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          onTap: () => Navigator.pop(context, dealer),
+                        );
+                      },
+                    ),
             ),
           ],
         ),

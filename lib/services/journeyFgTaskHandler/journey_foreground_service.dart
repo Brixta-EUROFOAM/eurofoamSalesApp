@@ -1,3 +1,5 @@
+// lib/services/journeyFgTaskHandler/journey_foreground_service.dart
+
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'journey_task_callbacks.dart';
 
@@ -5,21 +7,21 @@ class JourneyForegroundService {
   static Future<void> init() async {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
-        // 1️⃣ CHANGED ID: This forces Android to create a NEW channel with new settings
-        channelId: 'journey_tracking_silent_v1', 
-        channelName: 'Journey Tracking',
-        channelDescription: 'Tracks active journeys',
+        // 🚀 CHANGED ID: Forces Android to apply our new premium settings immediately.
+        channelId: 'premium_journey_tracking_v2', 
+        channelName: 'Active Journey Tracking',
+        channelDescription: 'Live distance tracking for your current visit.',
         
-        // 2️⃣ LOW IMPORTANCE: Updates the text silently (No Beep, No Pop-up)
+        // LOW priority prevents annoying buzzing, but VISIBILITY_PUBLIC puts it on the Lock Screen!
         channelImportance: NotificationChannelImportance.LOW, 
         priority: NotificationPriority.LOW, 
-        
         visibility: NotificationVisibility.VISIBILITY_PUBLIC,
-        enableVibration: false,
-        playSound: false, // Ensure sound is off
+        
+        // Adds a "started at" timestamp to the notification
+        showWhen: true, 
       ),
       iosNotificationOptions: const IOSNotificationOptions(
-        showNotification: true, // Usually better to show it on iOS
+        showNotification: true, 
         playSound: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
@@ -35,9 +37,9 @@ class JourneyForegroundService {
   static Future<void> start({
     required String title,
     required String subtitle,
-    double initialDistance = 0.0, // 🆕 Add this parameter
+    double initialDistance = 0.0, 
   }) async {
-    // If it's already running, just update the text (Prevents restarting/flickering)
+    // If it's already running, cleanly update the distance text without flashing the UI
     if (await FlutterForegroundTask.isRunningService) {
       await FlutterForegroundTask.updateService(
         notificationTitle: title,
@@ -46,23 +48,24 @@ class JourneyForegroundService {
       return;
     }
 
-    // ✅ FIX: Save the data explicitly before starting the service
+    // Pass the initial distance into the background isolate
     await FlutterForegroundTask.saveData(key: 'initialDistance', value: initialDistance);
 
     await FlutterForegroundTask.startService(
       serviceId: 101,
-      notificationTitle: title,
-      notificationText: subtitle,
+      notificationTitle: title, // e.g., "🎯 Navigating to: Dealer Name"
+      notificationText: subtitle, // e.g., "Distance: 1.25 km"
       callback: startJourneyTaskCallback,
       serviceTypes: [ForegroundServiceTypes.location],
-      // Removed 'data' parameter to fix the error
     );
   }
 
   static Future<void> stop() async {
     if (await FlutterForegroundTask.isRunningService) {
+      // Gracefully signal the isolate to stop the GPS stream first
       FlutterForegroundTask.sendDataToTask('STOP_GPS');
       await Future.delayed(const Duration(milliseconds: 100));
+      // Then kill the service banner
       await FlutterForegroundTask.stopService();
     }
   }

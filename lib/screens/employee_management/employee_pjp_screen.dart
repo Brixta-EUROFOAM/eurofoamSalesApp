@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/daily_task_model.dart';
 import 'package:salesmanapp/models/employee_model.dart';
@@ -107,7 +108,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
   // 🚀 RESCHEDULE LOGIC (3 STRIKES RULE)
   // ===========================================================================
   
-  // Helper to extract the current reschedule count from the objective string
   int _getRescheduleCount(String? objective) {
     if (objective == null) return 0;
     if (objective.contains("[Rescheduled x3]")) return 3;
@@ -123,7 +123,6 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
     final int currentStrikes = _getRescheduleCount(task.objective);
     final bool maxStrikesReached = currentStrikes >= 3;
 
-    // If max strikes reached, they CANNOT reschedule. Only fail or complete.
     final List<String> reasons = maxStrikesReached 
         ? ["Day End (Completed)", "Failed (Max Reschedules Reached)"]
         : ["Day End (Completed)", "Shop Closed", "Dealer Unavailable", "Reschedule / Other"];
@@ -174,7 +173,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                               fontSize: 12,
                             ),
                           ),
-                        ),
+                        ).animate().scale(curve: Curves.easeOutBack),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -218,6 +217,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                   // TEXT FIELD FOR RESCHEDULE
                   AnimatedSize(
                     duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOutCubic,
                     child: isReschedule
                         ? Padding(
                             padding: const EdgeInsets.only(top: 20),
@@ -238,7 +238,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                                   borderSide: BorderSide(color: _cardNavy),
                                 ),
                               ),
-                            ),
+                            ).animate().fadeIn().slideY(begin: -0.1),
                           )
                         : const SizedBox.shrink(),
                   ),
@@ -269,14 +269,14 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen> {
                   ),
                 ],
               ),
-            );
+            ).animate().slideY(begin: 1.0, duration: 400.ms, curve: Curves.easeOutCubic);
           },
         );
       },
     );
   }
 
-Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks, int currentStrikes) async {
+  Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks, int currentStrikes) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     
     if (reason == "Day End (Completed)") {
@@ -301,20 +301,17 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
       return;
     }
 
-    // --- 🚀 FIXED RESCHEDULE LOGIC ---
     scaffoldMessenger.showSnackBar(const SnackBar(content: Text("Rescheduling to tomorrow...")));
     try {
       final int newStrikeCount = currentStrikes + 1;
       
-      // Clean previous tags from the objective string if they exist
       String cleanObjective = task.objective ?? 'No objective set';
       cleanObjective = cleanObjective.replaceAll(RegExp(r'\[Rescheduled x\d\] '), '');
       
-      // Prepend the new strike count
       final String combinedObjective = "[Rescheduled x$newStrikeCount] Reason: $reason ${remarks.isNotEmpty ? '($remarks)' : ''} | $cleanObjective";
       
       final tomorrowTask = DailyTask(
-        id: null, // 🛡️ Safest: Let the backend generate the UUID
+        id: null,
         pjpBatchId: task.pjpBatchId,
         userId: task.userId,
         dealerId: task.dealerId,
@@ -327,28 +324,19 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
         visitType: task.visitType,
         requiredVisitCount: task.requiredVisitCount,
         week: task.week,
-        taskDate: DateTime.now().add(const Duration(days: 1)), // 🚀 MOVED TO TOMORROW
-        status: "Assigned", // 🚀 MUST BE A VALID DB STATUS
+        taskDate: DateTime.now().add(const Duration(days: 1)),
+        status: "Assigned",
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
 
-      // 1️⃣ Run sequentially instead of Future.wait()
-      // First, successfully create the duplicate task for tomorrow.
       await _apiService.createDailyTask(tomorrowTask);
-
-      // 2️⃣ ONLY if the new task is created, mark today's task as "Failed".
-      // We use "Failed" because it is a valid Zod/DB schema enum, and the salesman 
-      // technically "failed" to complete it today.
       await _apiService.updateDailyTaskStatus(task.id!, "Failed");
-
-      // 3️⃣ Refresh the UI so the failed task disappears from the active list.
       _refreshTasks();
     } catch (e) {
       scaffoldMessenger.showSnackBar(SnackBar(content: Text("Failed to reschedule: $e"), backgroundColor: Colors.red));
     }
   }
-  // ===========================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -374,7 +362,7 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
                 fontWeight: FontWeight.w900,
                 letterSpacing: -0.5,
               ),
-            ),
+            ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.1, curve: Curves.easeOut),
             Text(
               "$displayDay, $displayDate",
               style: TextStyle(
@@ -382,7 +370,7 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
-            ),
+            ).animate().fadeIn(delay: 100.ms, duration: 400.ms).slideX(begin: -0.1, curve: Curves.easeOut),
           ],
         ),
       ),
@@ -416,8 +404,6 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
                   }
 
                   final allTasks = snapshot.data ?? [];
-
-                  // Hide tasks that are completed, failed, or rescheduled
                   final tasks = allTasks
                       .where((t) => 
                         t.status.toLowerCase() != 'completed' && 
@@ -434,7 +420,11 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
                     itemCount: tasks.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 16),
                     itemBuilder: (_, index) {
-                      return _buildTaskCard(tasks[index]);
+                      // 🔥 O(1) Staggered list animation
+                      return _buildTaskCard(tasks[index])
+                          .animate()
+                          .fadeIn(delay: (index * 50).ms, duration: 400.ms)
+                          .slideY(begin: 0.1, curve: Curves.easeOutCubic);
                     },
                   );
                 },
@@ -464,7 +454,8 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
           return GestureDetector(
             onTap: () => _onDateSelected(date),
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
               width: 64,
               decoration: BoxDecoration(
                 color: isSelected ? _cardNavy : Colors.white,
@@ -513,7 +504,7 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
                 ],
               ),
             ),
-          );
+          ).animate().fadeIn(delay: (index * 30).ms, duration: 400.ms).slideX(begin: 0.2, curve: Curves.easeOut);
         },
       ),
     );
@@ -525,6 +516,135 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
     Color statusColor = _cardNavy;
     if (isStarted) statusColor = Colors.blue;
     if (task.status.toLowerCase() == 'assigned') statusColor = _pendingOrange;
+
+    Widget cardContent = Container(
+      decoration: BoxDecoration(
+        color: _surfaceWhite,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 4,
+              height: 50,
+              decoration: BoxDecoration(
+                color: statusColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          task.status.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: statusColor,
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      if (task.visitType != null &&
+                          task.visitType!.isNotEmpty)
+                        Text(
+                          task.visitType!.toUpperCase(),
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: _textGrey,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    task.dealerNameSnapshot ?? "Unnamed Dealer",
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: _textDark,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (task.objective != null && task.objective!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        task.objective!,
+                        style: TextStyle(fontSize: 13, color: _textGrey),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on_outlined,
+                        size: 14,
+                        color: _textGrey,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          task.area != null && task.zone != null
+                              ? "${task.area}, ${task.zone}"
+                              : (task.dealerId != null
+                                    ? "Dealer ID: ${task.dealerId}"
+                                    : "Location pending"),
+                          style: TextStyle(fontSize: 12, color: _textGrey),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: _textGrey.withOpacity(0.3),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    // 🔥 PREMIUM ACTIVE TASK SHIMMER
+    if (isStarted) {
+      cardContent = cardContent
+          .animate(onPlay: (controller) => controller.repeat(reverse: true))
+          .shimmer(duration: 2500.ms, color: Colors.blue.withOpacity(0.15));
+    }
 
     return Slidable(
       startActionPane: ActionPane(
@@ -559,127 +679,7 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
       ),
       child: GestureDetector(
         onTap: () => _showTaskDetailsBottomSheet(task),
-        child: Container(
-          decoration: BoxDecoration(
-            color: _surfaceWhite,
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 15,
-                offset: const Offset(0, 5),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 4,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: statusColor,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
-                            decoration: BoxDecoration(
-                              color: statusColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              task.status.toUpperCase(),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: statusColor,
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          if (task.visitType != null &&
-                              task.visitType!.isNotEmpty)
-                            Text(
-                              task.visitType!.toUpperCase(),
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                color: _textGrey,
-                              ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        task.dealerNameSnapshot ?? "Unnamed Dealer",
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: _textDark,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (task.objective != null && task.objective!.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            task.objective!,
-                            style: TextStyle(fontSize: 13, color: _textGrey),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.location_on_outlined,
-                            size: 14,
-                            color: _textGrey,
-                          ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              task.area != null && task.zone != null
-                                  ? "${task.area}, ${task.zone}"
-                                  : (task.dealerId != null
-                                        ? "Dealer ID: ${task.dealerId}"
-                                        : "Location pending"),
-                              style: TextStyle(fontSize: 12, color: _textGrey),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: Icon(
-                    Icons.arrow_forward_ios_rounded,
-                    size: 16,
-                    color: _textGrey.withOpacity(0.3),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+        child: cardContent,
       ),
     );
   }
@@ -719,7 +719,7 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
                   fontWeight: FontWeight.w900,
                   color: _textDark,
                 ),
-              ),
+              ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.2, curve: Curves.easeOutCubic),
               const SizedBox(height: 4),
               Row(
                 children: [
@@ -752,7 +752,7 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
                       ),
                     ),
                 ],
-              ),
+              ).animate().fadeIn(delay: 50.ms, duration: 300.ms).slideX(begin: -0.1, curve: Curves.easeOutCubic),
               const SizedBox(height: 24),
               const Divider(),
               const SizedBox(height: 16),
@@ -764,40 +764,40 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
                   fontSize: 16,
                   color: _textDark,
                 ),
-              ),
+              ).animate().fadeIn(delay: 100.ms),
               const SizedBox(height: 16),
 
               _buildDetailRow(
                 Icons.description_outlined,
                 "Objective",
                 task.objective ?? "No objective set",
-              ),
+              ).animate().fadeIn(delay: 150.ms).slideX(begin: -0.1, curve: Curves.easeOut),
               _buildDetailRow(
                 Icons.phone_outlined,
                 "Phone",
                 task.dealerMobile ?? "Not available",
-              ),
+              ).animate().fadeIn(delay: 200.ms).slideX(begin: -0.1, curve: Curves.easeOut),
               _buildDetailRow(
                 Icons.map_outlined,
                 "Zone",
                 task.zone ?? "Pending",
-              ),
+              ).animate().fadeIn(delay: 250.ms).slideX(begin: -0.1, curve: Curves.easeOut),
               _buildDetailRow(
                 Icons.place_outlined,
                 "Area",
                 task.area ?? "Pending",
-              ),
+              ).animate().fadeIn(delay: 300.ms).slideX(begin: -0.1, curve: Curves.easeOut),
               if (task.route != null && task.route!.isNotEmpty)
                 _buildDetailRow(
                   Icons.directions_outlined,
                   "Route",
                   task.route!,
-                ),
+                ).animate().fadeIn(delay: 350.ms).slideX(begin: -0.1, curve: Curves.easeOut),
 
               const SizedBox(height: 32),
             ],
           ),
-        );
+        ).animate().slideY(begin: 1.0, duration: 400.ms, curve: Curves.easeOutCubic);
       },
     );
   }
@@ -855,7 +855,8 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
               size: 48,
               color: _cardNavy.withOpacity(0.5),
             ),
-          ),
+          ).animate(onPlay: (controller) => controller.repeat(reverse: true))
+           .scaleXY(end: 1.05, duration: 1.5.seconds, curve: Curves.easeInOut),
           const SizedBox(height: 24),
           Text(
             "No Visits Planned",
@@ -872,6 +873,6 @@ Future<void> _executeEndTaskLogic(DailyTask task, String reason, String remarks,
           ),
         ],
       ),
-    );
+    ).animate().fadeIn(duration: 400.ms).scale(begin: const Offset(0.9, 0.9), curve: Curves.easeOutBack);
   }
 }

@@ -9,6 +9,7 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:slide_to_act/slide_to_act.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 // --- Imports ---
 import 'package:salesmanapp/api/api_service.dart';
@@ -24,15 +25,16 @@ import 'package:salesmanapp/screens/forms/create_dvr.dart';
 // --- Technical Map Style & Tools ---
 import 'package:salesmanapp/core/app_kernel.dart';
 import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_controller.dart';
-import 'package:salesmanapp/features/journeylocation/journeylocation_controller.dart'; 
+import 'package:salesmanapp/features/journeylocation/journeylocation_controller.dart';
 import 'package:salesmanapp/services/states/journeyStates/journey_screen_state.dart';
 
 // --- UI OVERLAY ---
 import 'package:salesmanapp/technicalSide/screens/journeyUi/journey_overlay_manager.dart';
+import 'package:salesmanapp/services/journeyFgTaskHandler/journey_foreground_service.dart';
 
 // --- SALES STATE MACHINES ---
 import 'package:salesmanapp/services/states/journeyStates/sales_journey_screen_state.dart';
-import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart'; // 🚀 Added
+import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart';
 
 class EmployeeJourneyScreen extends StatefulWidget {
   final Employee employee;
@@ -83,20 +85,20 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   String _distanceDisplay = "Loading...";
   bool _isJourneyActive = false;
   bool _hasArrived = false;
+  bool _isMapTrackingUser = true; // 🚀 Auto-follow toggle
+
   final _destinationController = TextEditingController();
-  
-  // 🚀 Added Journey Mode Logic
+
   JourneyMode _journeyMode = JourneyMode.planned;
   String? _backupTaskId;
   LatLng? _backupDestination;
   String? _backupDealerId;
-  Dealer? _backupActiveDealer; // 🚀 Backup memory cache
+  Dealer? _backupActiveDealer;
 
-  // ---------- DATA ----------
   String? _taskId;
   String? _dealerId;
   int? _verifiedDealerId;
-  Dealer? _activeDealer; // 🚀 O(1) Memory Cache for instant navigation
+  Dealer? _activeDealer;
 
   // ---------- THEME ----------
   final Color _bgLight = const Color(0xFFF3F4F6);
@@ -104,9 +106,21 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   final Color _dangerRed = const Color(0xFFEF4444);
   final Color _textGrey = const Color(0xFF6B7280);
 
-  // =====================================================
-  // INIT
-  // =====================================================
+  // 🚀 ISOLATE DATA RECEIVER (Time Complexity O(1))
+  void _onForegroundServiceData(Object? data) {
+    if (data is Map && _isJourneyActive) {
+      try {
+        final lat = (data['lat'] as num).toDouble();
+        final lng = (data['lng'] as num).toDouble();
+        final distance = (data['distance'] as num).toDouble();
+
+        _controller.feedNewLocation(LatLng(lat, lng), distance);
+      } catch (e) {
+        dev.log("⚠️ Isolate Data Parsing Error: $e");
+      }
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -115,6 +129,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       caps: SalesJourneyCapabilities.fromFlags(SalesFlags.dev),
     );
 
+    JourneyForegroundService.listen(_onForegroundServiceData);
     _styleFuture = _readStyle();
 
     _journeyStartMachine.addListener(() {
@@ -156,10 +171,114 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
   @override
   void dispose() {
+    JourneyForegroundService.unlisten(_onForegroundServiceData);
     _cancelJourneySubscriptions();
     _controller.dispose();
     _destinationController.dispose();
     super.dispose();
+  }
+
+  // =====================================================
+  // CORE TRACKING & STREAMS (Accuracy & Complexity Handlers)
+  // =====================================================
+  void _cancelJourneySubscriptions() {
+    _distanceSub?.cancel();
+    _posSub?.cancel();
+    _eventSub?.cancel();
+  }
+
+  void _handleJourneyStartSuccess() async {
+    setState(() {
+      _isJourneyActive = true;
+      _distanceDisplay = "0.00 km";
+      _routeTaken.clear();
+      _hasArrived = false;
+      _isMapTrackingUser = true;
+    });
+
+    // 🚀 PREMIUM 3D CAMERA TILT
+    try {
+      final controller = await _controllerCompleter.future;
+      if (_currentUserLocation != null) {
+        await controller.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: _currentUserLocation!, zoom: 16.5, tilt: 45.0),
+          ),
+          duration: const Duration(milliseconds: 1200),
+        );
+      }
+    } catch (_) {}
+
+    _attachStreams();
+  }
+
+  void _attachStreams() {
+    _cancelJourneySubscriptions();
+
+    _distanceSub = _controller.distanceStream.listen((dist) {
+      if (mounted) setState(() => _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km");
+    });
+
+    _posSub = _controller.positionStream.listen((latLng) async {
+      _currentUserLocation = latLng;
+      _routeTaken.add(latLng);
+
+      // 🚀 SPACE & TIME OPTIMIZATION: Only draw polyline every 5 points
+      if (_routeTaken.length % 5 == 0) {
+        _updateTravelledPolyline();
+      }
+    });
+
+    _eventSub = _controller.eventStream.listen((event) {
+      if (event == SalesJourneyEvent.arrived && !_hasArrived) {
+        _hasArrived = true;
+        _showArrivalDialog();
+      }
+    });
+  }
+
+  void _loadTaskData(Map<String, dynamic> data) async {
+    _dealerId = data['dealerId']?.toString();
+    _verifiedDealerId = data['verifiedDealerId'];
+    _taskId = data['taskId']?.toString();
+    _journeyMode = JourneyMode.planned;
+
+    final String displayName = data['displayName'] ?? "Visit";
+
+    setState(() {
+      _destinationController.text = displayName;
+      _distanceDisplay = "Calculating Route...";
+    });
+
+    await _removeRouteLine();
+    await _removeDestinationMarker();
+    _routeTaken.clear();
+
+    if (_currentUserLocation == null) {
+      await _determinePositionAndMoveCamera();
+    }
+
+    if (_dealerId != null) {
+      try {
+        final dealer = await ApiService().fetchDealerById(_dealerId!);
+        _activeDealer = dealer;
+
+        if (dealer.latitude != null && dealer.longitude != null) {
+          _destinationLocation = LatLng(dealer.latitude!, dealer.longitude!);
+          await _addDestinationMarker(_destinationLocation!);
+
+          if (_currentUserLocation != null) {
+            await _getDirectionsAndDrawRoute();
+            await _fitBounds();
+          }
+        }
+      } catch (e) {
+        dev.log("Dealer load error: $e");
+      }
+    }
+
+    if (mounted) setState(() => _distanceDisplay = "Ready to start");
+    widget.onDestinationConsumed?.call();
   }
 
   Future<String> _readStyle() async {
@@ -168,13 +287,10 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     return result.styleJson;
   }
 
-  // =====================================================
-  // 🚀 UNPLANNED MODE TOGGLE
-  // =====================================================
   void _toggleJourneyMode() async {
     setState(() {
-      _journeyMode = _journeyMode == JourneyMode.planned 
-          ? JourneyMode.unplanned 
+      _journeyMode = _journeyMode == JourneyMode.planned
+          ? JourneyMode.unplanned
           : JourneyMode.planned;
     });
 
@@ -188,7 +304,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       setState(() {
         _taskId = null;
         _dealerId = null;
-        _activeDealer = null; // Clear cache
+        _activeDealer = null;
         _destinationLocation = null;
         _destinationController.text = "";
         _distanceDisplay = "Select Destination";
@@ -200,9 +316,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         setState(() {
           _taskId = _backupTaskId;
           _dealerId = _backupDealerId;
-          _activeDealer = _backupActiveDealer; // Restore cache
+          _activeDealer = _backupActiveDealer;
           _destinationLocation = _backupDestination;
-          _destinationController.text = "Planned Task Active"; // Fallback name
+          _destinationController.text = "Planned Task Active";
         });
         if (_destinationLocation != null) {
           _addDestinationMarker(_destinationLocation!);
@@ -221,7 +337,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     if (result != null) {
       setState(() {
         _dealerId = result.id;
-        _activeDealer = result; // 🚀 CACHE IN MEMORY
+        _activeDealer = result;
         _destinationController.text = result.name;
         _distanceDisplay = "Calculating Route...";
       });
@@ -229,11 +345,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       if (result.latitude != null && result.longitude != null) {
         _destinationLocation = LatLng(result.latitude!, result.longitude!);
         await _addDestinationMarker(_destinationLocation!);
-        
+
         if (_currentUserLocation == null) {
           await _determinePositionAndMoveCamera();
         }
-        
+
         if (_currentUserLocation != null) {
           await _getDirectionsAndDrawRoute();
           await _fitBounds();
@@ -245,10 +361,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       setState(() => _distanceDisplay = "Ready to start");
     }
   }
-
-  // =====================================================
-  // RESTORE & START HOOKS
-  // =====================================================
 
   Future<void> _checkActiveSession() async {
     if (_restoreChecked) return;
@@ -276,21 +388,39 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     return await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
-            title: const Text("Resume journey?"),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text(
+              "Resume journey?",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             content: Text(
               "You have an active visit to ${snapshot.displayName}. Continue tracking?",
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text("Discard"),
+                child: const Text(
+                  "Discard",
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
               ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _cardNavy,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text("Resume"),
+                child: const Text(
+                  "Resume",
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ],
-          ),
+          ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms),
         ) ??
         false;
   }
@@ -299,9 +429,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     setState(() {
       _isJourneyActive = true;
       _taskId = snapshot.taskId;
-      _journeyMode = JourneyMode.planned; // Lock UI to active
+      _journeyMode = JourneyMode.planned;
       _destinationController.text = snapshot.displayName ?? "Resumed Journey";
-      _distanceDisplay = "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
+      _distanceDisplay =
+          "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
+      _isMapTrackingUser = true;
 
       _currentUserLocation = snapshot.lastPosition;
       _routeTaken.clear();
@@ -313,12 +445,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     if (snapshot.path.isNotEmpty) {
       await JourneyMapRenderer.updateTravelledPath(controller, snapshot.path);
     }
-    if (snapshot.lastPosition != null) {
-      await JourneyMapRenderer.drawUserLocationPointer(
-        controller,
-        snapshot.lastPosition!,
-      );
-    }
+
     if (snapshot.path.length >= 2) {
       await JourneyMapRenderer.fitBounds(
         controller,
@@ -330,101 +457,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _attachStreams();
   }
 
-  void _handleJourneyStartSuccess() {
-    setState(() {
-      _isJourneyActive = true;
-      _distanceDisplay = "0.00 km";
-      _routeTaken.clear();
-      _hasArrived = false;
-    });
-
-    _attachStreams();
-  }
-
-  void _attachStreams() {
-    _cancelJourneySubscriptions();
-
-    _distanceSub = _controller.distanceStream.listen((dist) {
-      if (mounted) {
-        setState(
-          () => _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km",
-        );
-      }
-    });
-
-    _posSub = _controller.positionStream.listen((latLng) {
-      _currentUserLocation = latLng;
-      _routeTaken.add(latLng);
-
-      _drawUserLocationPointer(latLng);
-      _updateTravelledPolyline();
-    });
-
-    _eventSub = _controller.eventStream.listen((event) {
-      if (event == SalesJourneyEvent.arrived && !_hasArrived) {
-        _hasArrived = true;
-        _showArrivalDialog();
-      }
-    });
-  }
-
-  // =====================================================
-  // LOAD DATA & MAP DRAWING
-  // =====================================================
-
-  void _loadTaskData(Map<String, dynamic> data) async {
-    _dealerId = data['dealerId']?.toString();
-    _verifiedDealerId = data['verifiedDealerId'];
-    _taskId = data['taskId']?.toString();
-    _journeyMode = JourneyMode.planned;
-
-    final String displayName = data['displayName'] ?? "Visit";
-
-    setState(() {
-      _destinationController.text = displayName;
-      _distanceDisplay = "Calculating Route...";
-    });
-
-    await _removeRouteLine();
-    await _removeDestinationMarker();
-    _routeTaken.clear();
-
-    if (_currentUserLocation == null) {
-      await _determinePositionAndMoveCamera();
-    }
-
-    if (_dealerId != null) {
-      try {
-        final dealer = await ApiService().fetchDealerById(_dealerId!);
-        _activeDealer = dealer; // 🚀 CACHE IN MEMORY
-
-        if (dealer.latitude != null && dealer.longitude != null) {
-          _destinationLocation = LatLng(dealer.latitude!, dealer.longitude!);
-          await _addDestinationMarker(_destinationLocation!);
-
-          if (_currentUserLocation != null) {
-            await _getDirectionsAndDrawRoute();
-            await _fitBounds();
-          }
-        }
-      } catch (e) {
-        dev.log("Dealer load error: $e");
-      }
-    }
-
-    if (mounted) {
-      setState(() => _distanceDisplay = "Ready to start");
-    }
-
-    widget.onDestinationConsumed?.call();
-  }
-
-  // =====================================================
-  // JOURNEY ACTIONS
-  // =====================================================
-
   Future<void> _handleStart() async {
-    // Validation
     if (_journeyMode == JourneyMode.planned && _taskId == null) {
       _showError("Select a planned task first.");
       return;
@@ -445,7 +478,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _journeyStartMachine.dispatch(
       StartSalesJourneyIntent(
         userId: int.parse(widget.employee.id),
-        taskId: _taskId, 
+        taskId: _taskId,
         displayName: _destinationController.text,
         dealerId: _dealerId,
         verifiedDealerId: _verifiedDealerId,
@@ -464,6 +497,10 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       _distanceDisplay = "Stopping...";
     });
 
+    if (_routeTaken.isNotEmpty) {
+      await _updateTravelledPolyline();
+    }
+
     await _journeyStopMachine.dispatch(
       StopSalesJourneyIntent(
         userId: int.parse(widget.employee.id),
@@ -480,55 +517,118 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _cancelJourneySubscriptions();
 
     if (mounted) {
-      // 🚀 1. Capture the CACHED DEALER object before resetting!
       final completedDealer = _activeDealer;
 
       setState(() {
         _isJourneyActive = false;
         _distanceDisplay = "0.00 km";
         _taskId = null;
-        _dealerId = null; 
-        _activeDealer = null; // 👈 Clean cache
+        _dealerId = null;
+        _activeDealer = null;
         _hasArrived = false;
         _routeTaken.clear();
-        _journeyMode = JourneyMode.planned; // Reset mode
+        _journeyMode = JourneyMode.planned;
         _destinationController.clear();
       });
 
       await _removeRouteLine();
       await _removeDestinationMarker();
-      await _determinePositionAndMoveCamera();
+
+      final controller = await _controllerCompleter.future;
+      if (_currentUserLocation != null) {
+        controller.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: _currentUserLocation!, zoom: 14.0, tilt: 0),
+          ),
+          duration: const Duration(seconds: 1),
+        );
+      }
 
       showDialog(
         context: context,
-        builder: (_) => AlertDialog(
-          title: const Text("Journey Completed"),
-          content: const Text("Would you like to fill the Daily Visit Report now?"),
-          actions: [
-            TextButton(
-              child: const Text("Later", style: TextStyle(color: Colors.grey)),
-              onPressed: () => Navigator.pop(context),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: _cardNavy),
-              child: const Text("Open DVR", style: TextStyle(color: Colors.white)),
-              onPressed: () { 
-                // 🚀 2. SYNCHRONOUS NAVIGATION! NO MORE 'async/await' DELAY. (O(1) Time Complexity)
-                Navigator.pop(context); // Close dialog
-                
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CreateDvrScreen(
-                      employee: widget.employee,
-                      dealer: completedDealer, // Pre-filled from memory instantly
+        builder: (_) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.verified_rounded,
+                  color: Color(0xFF10B981),
+                  size: 64,
+                ).animate().scale(delay: 200.ms, curve: Curves.easeOutBack),
+                const SizedBox(height: 16),
+                const Text(
+                  "Journey Completed",
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "Would you like to fill the Daily Visit Report now?",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text(
+                          "Later",
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                );
-              },
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _cardNavy,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CreateDvrScreen(
+                                employee: widget.employee,
+                                dealer: completedDealer,
+                              ),
+                            ),
+                          );
+                        },
+                        child: const Text(
+                          "Open DVR",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
       );
     }
   }
@@ -547,24 +647,33 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('DESTINATION REACHED'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.location_on, color: Color(0xFF10B981)),
+            SizedBox(width: 8),
+            Text('Arrived'),
+          ],
+        ),
         content: const Text('You have arrived at your target location.'),
         actions: [
-          TextButton(
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _cardNavy,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
             onPressed: () {
               Navigator.pop(context);
               _handleStop();
             },
-            child: const Text('OK'),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
           ),
         ],
-      ),
+      ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms),
     );
   }
-
-  // =====================================================
-  // MAP RENDERER DELEGATES
-  // =====================================================
 
   Future<bool> _ensureJourneyPermission() async {
     return await JourneyPermissionGuard.ensurePermissions(
@@ -605,12 +714,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
             CameraUpdate.newCameraPosition(
               CameraPosition(target: _currentUserLocation!, zoom: 15.0),
             ),
+            duration: const Duration(milliseconds: 800),
           );
         }
-        await JourneyMapRenderer.drawUserLocationPointer(
-          controller,
-          _currentUserLocation!,
-        );
       }
     } catch (_) {}
   }
@@ -618,8 +724,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   Future<void> _getDirectionsAndDrawRoute() async {
     if (_currentUserLocation == null ||
         _destinationLocation == null ||
-        _radarApiKey == null){
-      return;}
+        _radarApiKey == null)
+      return;
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.drawRoute(
       controller: controller,
@@ -633,11 +739,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   Future<void> _addDestinationMarker(LatLng point) async {
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.addDestinationMarker(controller, point);
-  }
-
-  Future<void> _drawUserLocationPointer(LatLng point) async {
-    final controller = await _controllerCompleter.future;
-    await JourneyMapRenderer.drawUserLocationPointer(controller, point);
   }
 
   Future<void> _updateTravelledPolyline() async {
@@ -657,15 +758,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
   Future<void> _removeRouteLine() async {
     if (!_isRouteLineLayerAdded) return;
-
     final controller = await _controllerCompleter.future;
     try {
       await controller.removeLayer('route-line');
-    } catch (_) {}
-    try {
       await controller.removeSource('route-source');
     } catch (_) {}
-
     _isRouteLineLayerAdded = false;
   }
 
@@ -673,38 +770,25 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     final controller = await _controllerCompleter.future;
     try {
       await controller.removeLayer('dest-layer-inner');
-    } catch (_) {}
-    try {
       await controller.removeLayer('dest-layer-outer');
-    } catch (_) {}
-    try {
       await controller.removeSource('dest-source');
     } catch (_) {}
   }
 
   void _showError(String message) {
-    if (mounted){
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-  }}
-
-  void _cancelJourneySubscriptions() {
-    _distanceSub?.cancel();
-    _posSub?.cancel();
-    _eventSub?.cancel();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: _dangerRed),
+      );
+    }
   }
-
-  // =====================================================
-  // BUILD
-  // =====================================================
 
   @override
   Widget build(BuildContext context) {
     final salesFlags = context.watch<SalesFlags>();
     final bool isPlanned = _journeyMode == JourneyMode.planned;
-    final bool canStartJourney = _isJourneyActive || 
-        (isPlanned ? _taskId != null : _dealerId != null);
+    final bool canStartJourney =
+        _isJourneyActive || (isPlanned ? _taskId != null : _dealerId != null);
 
     if (!salesFlags.journey) {
       return Scaffold(
@@ -716,7 +800,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
               Icon(Icons.location_off_rounded, size: 64, color: Colors.grey),
               SizedBox(height: 16),
               Text(
-                "Journey Tracking Unavailabe Right Now",
+                "Journey Tracking Unavailable",
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -739,37 +823,65 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
               return MapLibreMap(
                 styleString: snap.data!,
                 initialCameraPosition: _initialCameraPosition,
+
+                // 🚀 HARDWARE ACCELERATED TRACKING
+                myLocationEnabled: true,
+                myLocationTrackingMode: _isMapTrackingUser
+                    ? MyLocationTrackingMode.tracking
+                    : MyLocationTrackingMode.none,
+                myLocationRenderMode: MyLocationRenderMode.compass,
+
+                // 🚀 SMART UX: Detects if the user drags the map physically
+                onCameraTrackingDismissed: () {
+                  if (_isMapTrackingUser && mounted) {
+                    setState(() => _isMapTrackingUser = false);
+                  }
+                },
+
                 onMapCreated: (c) {
-                  if (!_controllerCompleter.isCompleted){
-                    _controllerCompleter.complete(c);}
+                  if (!_controllerCompleter.isCompleted) {
+                    _controllerCompleter.complete(c);
+                  }
                   if (_isJourneyActive) {
-                    if (_currentUserLocation != null){
-                      _drawUserLocationPointer(_currentUserLocation!);}
-                    if (_destinationLocation != null){
-                      _addDestinationMarker(_destinationLocation!);}
+                    if (_destinationLocation != null)
+                      _addDestinationMarker(_destinationLocation!);
                     if (_routeTaken.isNotEmpty) _updateTravelledPolyline();
                   }
                 },
-                trackCameraPosition: true,
-                myLocationEnabled: false,
+              ).animate().fadeIn(
+                duration: 800.ms,
               );
             },
           ),
         ),
 
+        // 🚀 SMART RECENTER BUTTON
         Positioned(
           top: 50,
           right: 16,
           child: Container(
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10)],
             ),
             child: IconButton(
-              icon: Icon(Icons.my_location, color: _cardNavy),
-              onPressed: _determinePositionAndMoveCamera,
+              icon: Icon(
+                _isMapTrackingUser ? Icons.my_location : Icons.location_searching,
+                color: _isMapTrackingUser ? Colors.blueAccent : const Color(0xFF6B7280),
+              ),
+              onPressed: () async {
+                setState(() => _isMapTrackingUser = true);
+                if (_currentUserLocation != null) {
+                  final controller = await _controllerCompleter.future;
+                  controller.animateCamera(
+                    CameraUpdate.newCameraPosition(CameraPosition(target: _currentUserLocation!, zoom: 16.5, tilt: _isJourneyActive ? 45 : 0)),
+                    duration: const Duration(milliseconds: 600),
+                  );
+                }
+              },
             ),
-          ),
+          ).animate().scale(delay: 500.ms, duration: 400.ms, curve: Curves.easeOutBack),
         ),
 
         Positioned.fill(
@@ -784,21 +896,29 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                 distance: _distanceDisplay,
                 onStop: _handleStop,
                 onNavigate: _launchNavigation,
-                idlePanel: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildIdleJourneyPanel(context, isPlanned),
-                    const SizedBox(height: 24),
-                    _StartJourneySlider(
-                      key: ValueKey(_isJourneyActive),
-                      isJourneyActive: false,
-                      onSlideAction: _handleStart,
-                      canStart: canStartJourney,
-                      cardNavy: _cardNavy,
-                      dangerRed: _dangerRed,
-                    ),
-                  ],
-                ),
+                idlePanel:
+                    Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildIdleJourneyPanel(context, isPlanned),
+                            const SizedBox(height: 24),
+                            _StartJourneySlider(
+                              key: ValueKey(_isJourneyActive),
+                              isJourneyActive: false,
+                              onSlideAction: _handleStart,
+                              canStart: canStartJourney,
+                              cardNavy: _cardNavy,
+                              dangerRed: _dangerRed,
+                            ),
+                          ],
+                        )
+                        .animate()
+                        .slideY(
+                          begin: 0.2,
+                          duration: 500.ms,
+                          curve: Curves.easeOutCubic,
+                        )
+                        .fadeIn(),
               ),
             ),
           ),
@@ -807,6 +927,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     );
   }
 
+  // 🚀 PREMIUM DESIGN UPGRADE: Interactive Material Card
   Widget _buildIdleJourneyPanel(BuildContext context, bool isPlanned) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -814,112 +935,86 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              isPlanned ? Icons.assignment_outlined : Icons.storefront_outlined,
-              color: _textGrey,
-              size: 20,
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(color: _cardNavy.withOpacity(0.05), borderRadius: BorderRadius.circular(8)),
+              child: Icon(isPlanned ? Icons.assignment_outlined : Icons.storefront_outlined, color: _cardNavy, size: 18),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     isPlanned ? "PLANNED TASK" : "UNPLANNED VISIT",
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF1E293B),
-                      fontSize: 12,
-                      letterSpacing: 1.1,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w900, color: _cardNavy, fontSize: 13, letterSpacing: 1.2),
                   ),
                   Text(
-                    isPlanned
-                        ? "Assigned via Sales Plan"
-                        : "Ad-hoc Dealer Visit",
-                    style: TextStyle(
-                      color: _textGrey.withOpacity(0.7),
-                      fontSize: 11,
-                    ),
+                    isPlanned ? "Assigned via Sales Plan" : "Ad-hoc Dealer Visit",
+                    style: TextStyle(color: _textGrey, fontSize: 11, fontWeight: FontWeight.w500),
                   ),
                 ],
               ),
             ),
             TextButton.icon(
               onPressed: _toggleJourneyMode,
-              icon: const Icon(Icons.swap_horiz, size: 16),
+              icon: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                transitionBuilder: (child, anim) => RotationTransition(turns: anim, child: child),
+                child: Icon(Icons.swap_horiz, size: 18, key: ValueKey(isPlanned)),
+              ),
               label: Text(isPlanned ? "UNPLANNED" : "PLANNED"),
               style: TextButton.styleFrom(
-                foregroundColor: _cardNavy,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                textStyle: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                ),
+                foregroundColor: Colors.blueAccent,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                backgroundColor: Colors.blueAccent.withOpacity(0.1),
+                textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5),
               ),
             ),
           ],
         ),
         const SizedBox(height: 16),
-        Container(
-          height: 60,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          decoration: BoxDecoration(
-            color: Colors.white, 
+        
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: isPlanned ? null : _openDealerSearch, 
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFE2E8F0)), 
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+            child: Container(
+              height: 64,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: isPlanned ? Colors.transparent : Colors.blueAccent.withOpacity(0.3), width: 1.5),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 8))],
               ),
-            ],
-          ),
-          child: Center(
-            child: TextField(
-              controller: _destinationController,
-              readOnly: true,
-              style: const TextStyle(
-                color: Color(0xFF0F172A),
-                fontWeight: FontWeight.w700,
-                fontSize: 15,
-              ),
-              decoration: InputDecoration(
-                prefixIcon: Icon(
-                  isPlanned ? Icons.explore : Icons.location_on_outlined,
-                  color: const Color(0xFF0F172A),
-                ),
-                hintText: isPlanned
-                    ? "Select a Task to Begin"
-                    : "Waiting for Dealer selection...",
-                hintStyle: const TextStyle(color: Color(0xFF64748B)),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
+              child: Row(
+                children: [
+                  Icon(isPlanned ? Icons.explore_rounded : Icons.search_rounded, color: _cardNavy, size: 24),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Text(
+                      _destinationController.text.isEmpty 
+                        ? (isPlanned ? "Select a Task to Begin" : "Search for a Dealer...") 
+                        : _destinationController.text,
+                      style: TextStyle(
+                        color: _destinationController.text.isEmpty ? _textGrey : _cardNavy,
+                        fontWeight: _destinationController.text.isEmpty ? FontWeight.w500 : FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (!isPlanned && _destinationController.text.isEmpty)
+                    const Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey, size: 16),
+                ],
               ),
             ),
           ),
         ),
-        if (!isPlanned)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.search),
-              label: const Text("SEARCH DEALERS"),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _cardNavy,
-                side: BorderSide(color: _cardNavy),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
-              onPressed: _openDealerSearch,
-            ),
-          ),
       ],
     );
   }
@@ -928,7 +1023,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 // =====================================================
 // SLIDER
 // =====================================================
-
 class _StartJourneySlider extends StatelessWidget {
   final bool isJourneyActive;
   final Future<void> Function() onSlideAction;
@@ -949,6 +1043,40 @@ class _StartJourneySlider extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool isEnabled = canStart || isJourneyActive;
 
+    Widget sliderWidget = SlideAction(
+      onSubmit: isEnabled
+          ? () async {
+              await onSlideAction();
+              return null;
+            }
+          : null,
+      innerColor: Colors.white,
+      outerColor: isEnabled ? cardNavy : const Color(0xFFF1F5F9),
+      sliderButtonIcon: const Icon(
+        Icons.arrow_forward_rounded,
+        color: Color(0xFF0F172A),
+        size: 26,
+      ),
+      text: isEnabled ? 'SLIDE TO START VISIT' : 'SELECT DESTINATION FIRST',
+      enabled: isEnabled,
+      textStyle: TextStyle(
+        color: isEnabled ? Colors.white : const Color(0xFF94A3B8),
+        fontSize: 15,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.5,
+      ),
+      borderRadius: 24,
+      elevation: 0,
+      height: 76,
+      sliderRotate: false,
+    );
+
+    if (isEnabled && !isJourneyActive) {
+      sliderWidget = sliderWidget
+          .animate(onPlay: (c) => c.repeat(reverse: true))
+          .shimmer(duration: 2500.ms, color: Colors.blue.withOpacity(0.4));
+    }
+
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
@@ -961,52 +1089,23 @@ class _StartJourneySlider extends StatelessWidget {
           ),
         ],
       ),
-      child: SlideAction(
-        onSubmit: isEnabled
-            ? () async {
-                await onSlideAction();
-                return null;
-              }
-            : null,
-        innerColor: Colors.white,
-        outerColor: isEnabled ? cardNavy : const Color(0xFFF1F5F9),
-        sliderButtonIcon: const Icon(
-          Icons.arrow_forward_rounded,
-          color: Color(0xFF0F172A),
-          size: 26,
-        ),
-        text: isEnabled ? 'SLIDE TO START VISIT' : 'SELECT DESTINATION FIRST',
-        enabled: isEnabled,
-        textStyle: TextStyle(
-          color: isEnabled ? Colors.white : const Color(0xFF94A3B8),
-          fontSize: 15,
-          fontWeight: FontWeight.w900,
-          letterSpacing: 1.5,
-        ),
-        borderRadius: 24,
-        elevation: 0,
-        height: 76,
-        sliderRotate: false,
-      ),
+      child: sliderWidget,
     );
   }
 }
 
 // ============================================================
-// 🔎 DEALER SEARCH DIALOG (Reusable from DVR)
+// 🔎 UPGRADED DEALER SEARCH DIALOG
 // ============================================================
 class _ServerDealerSearchDialog extends StatefulWidget {
   final ApiService api;
-
   const _ServerDealerSearchDialog({required this.api});
-
   @override
   State<_ServerDealerSearchDialog> createState() =>
       _ServerDealerSearchDialogState();
 }
 
-class _ServerDealerSearchDialogState
-    extends State<_ServerDealerSearchDialog> {
+class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   List<Dealer> _dealers = [];
   bool _isLoading = false;
   Timer? _debounce;
@@ -1026,38 +1125,137 @@ class _ServerDealerSearchDialogState
 
   Future<void> _performSearch(String query) async {
     setState(() => _isLoading = true);
-
-    final results = await widget.api.fetchDealers(search: query, limit: 20);
-
-    if (mounted) {
-      setState(() {
-        _dealers = results;
-        _isLoading = false;
-      });
+    try {
+      final results = await widget.api.fetchDealers(search: query, limit: 20);
+      if (mounted) {
+        setState(() {
+          _dealers = results;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text("Select Dealer"),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text(
+        "Select Dealer",
+        style: TextStyle(fontWeight: FontWeight.w900),
+      ),
+      contentPadding: const EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 10,
+        bottom: 0,
+      ),
       content: SizedBox(
         width: double.maxFinite,
-        height: 420,
+        height: MediaQuery.of(context).size.height * 0.5,
         child: Column(
           children: [
-            TextField(onChanged: _onSearchChanged, decoration: const InputDecoration(hintText: "Search name...")),
-            const SizedBox(height: 12),
+            TextField(
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: "Search by name or zone...",
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
+                filled: true,
+                fillColor: const Color(0xFFF9FAFB),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+              ),
+            ),
+            const SizedBox(height: 16),
             Expanded(
               child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ListView.builder(
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF0F172A),
+                      ),
+                    )
+                  : _dealers.isEmpty
+                  ? const Center(
+                      child: Text(
+                        "No dealers found.",
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    )
+                  : ListView.separated(
                       itemCount: _dealers.length,
+                      separatorBuilder: (context, index) =>
+                          Divider(color: Colors.grey.shade200, height: 1),
                       itemBuilder: (context, index) {
                         final dealer = _dealers[index];
+                        final String displayZone = dealer.region.isNotEmpty
+                            ? dealer.region
+                            : "Unknown Zone";
                         return ListTile(
-                          title: Text(dealer.name),
-                          subtitle: Text(dealer.address),
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 0,
+                          ),
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFFEFF6FF),
+                            child: Icon(
+                              Icons.storefront,
+                              color: Colors.blueAccent,
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            dealer.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4.0),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: Colors.orange.shade200,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    "Zone: $displayZone",
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.orange.shade800,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    dealer.address,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF6B7280),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                           onTap: () => Navigator.pop(context, dealer),
                         );
                       },
@@ -1066,6 +1264,15 @@ class _ServerDealerSearchDialogState
           ],
         ),
       ),
-    );
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text(
+            "CANCEL",
+            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
+    ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms);
   }
 }
