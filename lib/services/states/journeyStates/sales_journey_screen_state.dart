@@ -150,6 +150,7 @@ class StopSalesJourneyIntent {
   final String currentJourneyId;
   final double totalDistance;
   final VoidCallback onCleanup;
+  final List<LatLng> path;
   final SalesJourneyController trackingController;
 
   StopSalesJourneyIntent({
@@ -158,6 +159,7 @@ class StopSalesJourneyIntent {
     required this.currentJourneyId,
     required this.totalDistance,
     required this.onCleanup,
+    required this.path,
     required this.trackingController,
   });
 }
@@ -174,6 +176,9 @@ class SalesJourneyStopStateMachine {
         'status': 'COMPLETED',
         'totalDistance': distanceInKm,
         'endedAt': DateTime.now().toIso8601String(),
+        'path': intent.path
+            .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+            .toList(),
       };
 
       await db.enqueueOp(
@@ -182,7 +187,7 @@ class SalesJourneyStopStateMachine {
           journeyId: intent.currentJourneyId,
           userId: intent.userId,
           type: 'STOP',
-          payload: jsonEncode(stopPayload),
+          payload: jsonEncode(stopPayload), // Sent to local DB!
           createdAt: DateTime.now(),
         ),
       );

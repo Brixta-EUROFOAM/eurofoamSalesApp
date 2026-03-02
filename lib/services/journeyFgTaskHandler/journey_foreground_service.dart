@@ -70,11 +70,6 @@ class JourneyForegroundService {
     }
   }
 
-  static void listen(void Function(Object?) onData) {
-    FlutterForegroundTask.addTaskDataCallback(onData);
-  }
-
-  static void unlisten(void Function(Object?) onData) {
-    FlutterForegroundTask.removeTaskDataCallback(onData);
-  }
+  // 🚀 listen() and unlisten() wrappers DELETED.
+  // The UI (employee_journey_screen.dart) now connects directly to FlutterForegroundTask.receivePort!
 }

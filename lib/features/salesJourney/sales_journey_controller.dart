@@ -4,19 +4,13 @@ import 'dart:async';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:salesmanapp/features/salesJourney/sales_journey_capabilities.dart';
 
-enum SalesJourneyEvent {
-  started,
-  stopped,
-  arrived,
-  error,
-}
+enum SalesJourneyEvent { started, stopped, arrived, error }
 
 class SalesJourneyController {
   final SalesJourneyCapabilities _caps;
 
-  SalesJourneyController({
-    required SalesJourneyCapabilities caps,
-  }) : _caps = caps;
+  SalesJourneyController({required SalesJourneyCapabilities caps})
+    : _caps = caps;
 
   SalesJourneyCapabilities get caps => _caps;
 
@@ -26,9 +20,12 @@ class SalesJourneyController {
   double totalDistance = 0.0;
 
   // Streams for UI (Distance, Path Drawing, Arrival Events)
-  final StreamController<double> _distanceController = StreamController<double>.broadcast();
-  final StreamController<LatLng> _positionController = StreamController<LatLng>.broadcast();
-  final StreamController<SalesJourneyEvent> _eventController = StreamController<SalesJourneyEvent>.broadcast();
+  final StreamController<double> _distanceController =
+      StreamController<double>.broadcast();
+  final StreamController<LatLng> _positionController =
+      StreamController<LatLng>.broadcast();
+  final StreamController<SalesJourneyEvent> _eventController =
+      StreamController<SalesJourneyEvent>.broadcast();
 
   Stream<double> get distanceStream => _distanceController.stream;
   Stream<LatLng> get positionStream => _positionController.stream;
@@ -58,7 +55,14 @@ class SalesJourneyController {
 
   // Used by Background Service or Location Stream to push new points
   void feedNewLocation(LatLng position, double updatedDistance) {
-    if (!isJourneyActive) return;
+    // 🚀 LOG 3: Is the controller actually updating its internal state?
+    print("🎯 [CONTROLLER] Total Distance updated to: $updatedDistance meters");
+
+    if (!isJourneyActive) {
+      totalDistance = updatedDistance;
+      _positionController.add(position);
+      return;
+    }
     totalDistance = updatedDistance;
     _distanceController.add(totalDistance);
     _positionController.add(position);

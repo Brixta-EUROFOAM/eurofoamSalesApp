@@ -3,6 +3,7 @@
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:geolocator/geolocator.dart';
 import 'dart:async';
+import 'dart:convert';
 
 class JourneyTaskHandler extends TaskHandler {
   StreamSubscription<Position>? _posSub;
@@ -18,7 +19,9 @@ class JourneyTaskHandler extends TaskHandler {
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     // 1️⃣ RECOVERY FIX: Read initial distance using getData
-    final initialVal = await FlutterForegroundTask.getData(key: 'initialDistance');
+    final initialVal = await FlutterForegroundTask.getData(
+      key: 'initialDistance',
+    );
     if (initialVal != null && initialVal is num) {
       _totalDistance = initialVal.toDouble();
     }
@@ -34,67 +37,73 @@ class JourneyTaskHandler extends TaskHandler {
     }
 
     // 3️⃣ START TRACKING (Battery & Accuracy Optimized)
-    _posSub = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.best, // 🚀 UPGRADED to BEST
-        distanceFilter: 5, // Only trigger if moved 5 meters
-      ),
-    ).listen(
-      (pos) {
-        // ==========================================
-        // 🛡️ THE ENTERPRISE ACCURACY SHIELD 🛡️
-        // ==========================================
-        
-        // 1. Anti-Cheat: Reject Fake GPS apps
-        if (pos.isMocked) {
-          print("🚨 FAKE GPS DETECTED: Ignoring mocked coordinate.");
-          return; 
-        }
+    _posSub =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.best, // 🚀 UPGRADED to BEST
+            distanceFilter: 5, // Only trigger if moved 5 meters
+          ),
+        ).listen((pos) {
+          // ==========================================
+          // 🛡️ THE ENTERPRISE ACCURACY SHIELD 🛡️
+          // ==========================================
 
-        //2. Anti-Jitter: Reject bad satellite signals
-        //If the GPS is only "guessing" within a 25m radius (like indoors), 
-        //DO NOT add it to the distance. Wait for a clear signal.
-        if (pos.accuracy > 25.0) {
-          print("⚠️ POOR GPS SIGNAL (${pos.accuracy}m): Ignoring coordinate to prevent ghost distance.");
-          return;
-        }
-
-        // ==========================================
-
-        if (_lastPos != null) {
-          final dist = Geolocator.distanceBetween(
-            _lastPos!.latitude,
-            _lastPos!.longitude,
-            pos.latitude,
-            pos.longitude,
-          );
-          
-          // Final sanity check: if the distance jump is insanely large (e.g. > 1000m in a few seconds), 
-          // it's a device glitch. Cap it.
-          if (dist < 1000) {
-            _totalDistance += dist;
+          // 1. Anti-Cheat: Reject Fake GPS apps
+          if (pos.isMocked) {
+            print("🚨 FAKE GPS DETECTED: Ignoring mocked coordinate.");
+            return;
           }
-        }
 
-        _lastPos = pos;
-        _emitToMain(pos);
-      },
-      onError: (e) => print("⚠️ GPS Error in Background: $e"),
-    );
+          //2. Anti-Jitter: Reject bad satellite signals
+          //If the GPS is only "guessing" within a 25m radius (like indoors),
+          //DO NOT add it to the distance. Wait for a clear signal.
+          if (pos.accuracy > 25.0) {
+            print(
+              "⚠️ POOR GPS SIGNAL (${pos.accuracy}m): Ignoring coordinate to prevent ghost distance.",
+            );
+            return;
+          }
+
+          // ==========================================
+
+          if (_lastPos != null) {
+            final dist = Geolocator.distanceBetween(
+              _lastPos!.latitude,
+              _lastPos!.longitude,
+              pos.latitude,
+              pos.longitude,
+            );
+
+            // Final sanity check: if the distance jump is insanely large (e.g. > 1000m in a few seconds),
+            // it's a device glitch. Cap it.
+            if (dist < 1000) {
+              _totalDistance += dist;
+            }
+          }
+
+          _lastPos = pos;
+          _emitToMain(pos);
+        }, onError: (e) => print("⚠️ GPS Error in Background: $e"));
   }
 
   // 🔥 Helper to safely structure data for Isolate boundary
   void _emitToMain(Position pos) {
     FlutterForegroundTask.updateService(
       notificationTitle: "Journey Active",
-      notificationText: "Distance: ${(_totalDistance / 1000).toStringAsFixed(2)} km",
+      notificationText:
+          "Distance: ${(_totalDistance / 1000).toStringAsFixed(2)} km",
     );
 
-    FlutterForegroundTask.sendDataToMain({
+    final String payloadString = jsonEncode({
       'lat': pos.latitude,
       'lng': pos.longitude,
-      'distance': _totalDistance, 
+      'distance': _totalDistance,
     });
+
+    // 🚀 LOG 1: What is the background thread actually sending?
+    print("🛰️ [ISOLATE SENDER] Emitting raw distance: $_totalDistance meters");
+
+    FlutterForegroundTask.sendDataToMain(payloadString);
   }
 
   // Listen for the manual kill signal from the Main UI
