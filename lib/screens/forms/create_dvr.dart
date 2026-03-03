@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // 🔥 ADDED FOR HAPTICS
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
-import 'package:url_launcher/url_launcher.dart';
 
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/daily_visit_report_model.dart';
@@ -18,6 +17,10 @@ import 'package:salesmanapp/screens/dvrwidgets/dvr_dealer_form.dart';
 import 'package:salesmanapp/screens/dvrwidgets/dvr_nontrade_form.dart';
 //import 'package:salesmanapp/screens/dvrwidgets/dvr_mis_form.dart'; //MIS form on hold
 import 'package:salesmanapp/screens/dvrwidgets/dvr_camera.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:ui' as ui;
 
 class CreateDvrScreen extends StatefulWidget {
   final Employee employee;
@@ -44,6 +47,11 @@ class CreateDvrScreen extends StatefulWidget {
 class _CreateDvrScreenState extends State<CreateDvrScreen> {
   final _formKey = GlobalKey<FormState>();
   final _dynamicFormKey = GlobalKey<FormState>();
+  // 🚀 Added for UI Screenshot Sharing
+  final GlobalKey _summaryCardKey = GlobalKey();
+
+  // 🚀 Feature Toggle for Dealer Updates
+  final bool _enableDealerUpdateOnSubmit = true;
 
   final ApiService _apiService = ApiService();
 
@@ -295,7 +303,22 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
         pjpId: widget.pjp?.id,
       );
 
-      await _apiService.createDvr(dvr);
+      // 🚀 TIME COMPLEXITY O(1): Parallel Execution Pipeline
+      // We use <Future<dynamic>> so it accepts both createDvr and updateDealer methods!
+      final List<Future<dynamic>> networkTasks = [_apiService.createDvr(dvr)];
+
+      // Automatically update the dealer's verified GPS coordinates in the background
+      if (_enableDealerUpdateOnSubmit && finalDealerId != null) {
+        networkTasks.add(
+          _apiService.updateDealer(finalDealerId, {
+            'latitude': _checkInLocation!.latitude,
+            'longitude': _checkInLocation!.longitude,
+          }),
+        );
+      }
+
+      // Execute both server hits at the exact same time
+      await Future.wait(networkTasks);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -722,148 +745,154 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       key: key,
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
-        child: Card(
-          elevation: 8,
-          shadowColor: Colors.black.withOpacity(0.1),
-          color: _surfaceWhite,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Icon(
-                  Icons.check_circle_rounded,
-                  color: _accentGreen,
-                  size: 80,
-                ).animate().scale(curve: Curves.easeOutBack, duration: 600.ms),
-                const SizedBox(height: 16),
-                const Text(
-                      "Visit Completed!",
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        color: _cardNavy,
-                        letterSpacing: -0.5,
-                      ),
-                    )
-                    .animate()
-                    .fadeIn(delay: 200.ms)
-                    .slideY(begin: 0.2, curve: Curves.easeOut),
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: Divider(height: 1),
-                ),
-
-                _buildSummaryRow(
-                  "Type",
-                  _selectedCustomerType ?? "N/A",
-                ).animate().fadeIn(delay: 300.ms).slideX(begin: -0.05),
-                _buildSummaryRow(
-                  "Dealer/Party",
-                  _selectedCustomerType == 'Dealer'
-                      ? (_selectedDealer?.name ?? "N/A")
-                      : (_formData['nameOfParty'] ?? "N/A"),
-                ).animate().fadeIn(delay: 350.ms).slideX(begin: -0.05),
-                if (_selectedCustomerType == 'Dealer') ...[
-                  _buildSummaryRow(
-                    "Order Given",
-                    "${_formData['todayOrderMt'] ?? 0} MT",
-                  ).animate().fadeIn(delay: 400.ms).slideX(begin: -0.05),
-                  _buildSummaryRow(
-                    "Collection",
-                    "₹${_formData['todayCollectionRupees'] ?? 0}",
-                  ).animate().fadeIn(delay: 450.ms).slideX(begin: -0.05),
-                ],
-
-                const SizedBox(height: 32),
-                const Text(
-                  "Photos Captured",
-                  style: TextStyle(
-                    fontWeight: FontWeight.w900,
-                    color: _textDark,
-                    fontSize: 16,
+        child: RepaintBoundary(
+          key: _summaryCardKey,
+          child: Card(
+            elevation: 8,
+            shadowColor: Colors.black.withOpacity(0.1),
+            color: _surfaceWhite,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: _accentGreen,
+                    size: 80,
+                  ).animate().scale(
+                    curve: Curves.easeOutBack,
+                    duration: 600.ms,
                   ),
-                ).animate().fadeIn(delay: 500.ms),
-                const SizedBox(height: 12),
-
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildImageTile("Check-In", _inTimeImageUrl)
-                          .animate()
-                          .scale(delay: 550.ms, curve: Curves.easeOutBack),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child:
-                          _buildImageTile(
-                            "Check-Out",
-                            _outImagePathLocal,
-                            isLocal: true,
-                          ).animate().scale(
-                            delay: 600.ms,
-                            curve: Curves.easeOutBack,
-                          ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 40),
-                ElevatedButton.icon(
-                      onPressed: _shareToWhatsApp,
-                      icon: const Icon(
-                        Icons.share_rounded,
-                        color: Colors.white,
-                      ),
-                      label: const Text(
-                        "SHARE TO WHATSAPP",
+                  const SizedBox(height: 16),
+                  const Text(
+                        "Visit Completed!",
+                        textAlign: TextAlign.center,
                         style: TextStyle(
+                          fontSize: 26,
                           fontWeight: FontWeight.w900,
-                          letterSpacing: 1.0,
+                          color: _cardNavy,
+                          letterSpacing: -0.5,
                         ),
-                      ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF25D366),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 18),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        elevation: 4,
-                      ),
-                    )
-                    .animate()
-                    .fadeIn(delay: 700.ms)
-                    .scaleXY(begin: 0.9)
-                    .then()
-                    .shimmer(duration: 2500.ms, color: Colors.white24)
-                    .animate(onPlay: (c) => c.repeat()),
-
-                const SizedBox(height: 16),
-
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    if (widget.onReturnToDashboard != null) {
-                      widget.onReturnToDashboard!();
-                    }
-                  },
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
+                      )
+                      .animate()
+                      .fadeIn(delay: 200.ms)
+                      .slideY(begin: 0.2, curve: Curves.easeOut),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Divider(height: 1),
                   ),
-                  child: const Text(
-                    "RETURN TO DASHBOARD",
+
+                  _buildSummaryRow(
+                    "Type",
+                    _selectedCustomerType ?? "N/A",
+                  ).animate().fadeIn(delay: 300.ms).slideX(begin: -0.05),
+                  _buildSummaryRow(
+                    "Dealer/Party",
+                    _selectedCustomerType == 'Dealer'
+                        ? (_selectedDealer?.name ?? "N/A")
+                        : (_formData['nameOfParty'] ?? "N/A"),
+                  ).animate().fadeIn(delay: 350.ms).slideX(begin: -0.05),
+                  if (_selectedCustomerType == 'Dealer') ...[
+                    _buildSummaryRow(
+                      "Order Given",
+                      "${_formData['todayOrderMt'] ?? 0} MT",
+                    ).animate().fadeIn(delay: 400.ms).slideX(begin: -0.05),
+                    _buildSummaryRow(
+                      "Collection",
+                      "₹${_formData['todayCollectionRupees'] ?? 0}",
+                    ).animate().fadeIn(delay: 450.ms).slideX(begin: -0.05),
+                  ],
+
+                  const SizedBox(height: 32),
+                  const Text(
+                    "Photos Captured",
                     style: TextStyle(
-                      color: _textGrey,
-                      fontWeight: FontWeight.w800,
+                      fontWeight: FontWeight.w900,
+                      color: _textDark,
+                      fontSize: 16,
                     ),
+                  ).animate().fadeIn(delay: 500.ms),
+                  const SizedBox(height: 12),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildImageTile("Check-In", _inTimeImageUrl)
+                            .animate()
+                            .scale(delay: 550.ms, curve: Curves.easeOutBack),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child:
+                            _buildImageTile(
+                              "Check-Out",
+                              _outImagePathLocal,
+                              isLocal: true,
+                            ).animate().scale(
+                              delay: 600.ms,
+                              curve: Curves.easeOutBack,
+                            ),
+                      ),
+                    ],
                   ),
-                ).animate().fadeIn(delay: 800.ms),
-              ],
+
+                  const SizedBox(height: 40),
+                  ElevatedButton.icon(
+                        onPressed: _shareToWhatsApp,
+                        icon: const Icon(
+                          Icons.share_rounded,
+                          color: Colors.white,
+                        ),
+                        label: const Text(
+                          "SHARE TO WHATSAPP",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF25D366),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 4,
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(delay: 700.ms)
+                      .scaleXY(begin: 0.9)
+                      .then()
+                      .shimmer(duration: 2500.ms, color: Colors.white24)
+                      .animate(onPlay: (c) => c.repeat()),
+
+                  const SizedBox(height: 16),
+
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      if (widget.onReturnToDashboard != null) {
+                        widget.onReturnToDashboard!();
+                      }
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                    ),
+                    child: const Text(
+                      "RETURN TO DASHBOARD",
+                      style: TextStyle(
+                        color: _textGrey,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ).animate().fadeIn(delay: 800.ms),
+                ],
+              ),
             ),
           ),
         ),
@@ -963,6 +992,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
 
   Future<void> _shareToWhatsApp() async {
     HapticFeedback.heavyImpact();
+
     final isDealer = _selectedCustomerType == 'Dealer';
     final name = isDealer
         ? (_selectedDealer?.name ?? 'N/A')
@@ -973,26 +1003,40 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
     text += '*Type:* $_selectedCustomerType Visit\n';
     text += '*Name:* $name\n';
     text += '*Visit Objective:* $type\n';
-
     if (isDealer) {
       text += '*Order:* ${_formData['todayOrderMt'] ?? '0'} MT\n';
       text += '*Collection:* ₹${_formData['todayCollectionRupees'] ?? '0'}\n';
     }
+    text +=
+        '*Feedback:* ${_formData['feedbacks'] ?? 'None'}\n\n_Generated via Sales App_';
 
-    text += '*Feedback:* ${_formData['feedbacks'] ?? 'None'}\n\n';
-    text += '_Generated via Sales App_';
+    try {
+      // 🚀 GPU-LEVEL SCREENSHOT: Grab the pixels directly from the RepaintBoundary
+      RenderRepaintBoundary boundary =
+          _summaryCardKey.currentContext!.findRenderObject()
+              as RenderRepaintBoundary;
+      ui.Image image = await boundary.toImage(
+        pixelRatio: 3.0,
+      ); // 3.0 makes it super crisp and HD
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      final Uint8List pngBytes = byteData!.buffer.asUint8List();
 
-    final url = Uri.parse("whatsapp://send?text=${Uri.encodeComponent(text)}");
+      // 💾 O(1) SPACE: Save to OS Temp Directory (Auto-deletes later)
+      final directory = await getTemporaryDirectory();
+      final imagePath =
+          '${directory.path}/dvr_summary_${DateTime.now().millisecondsSinceEpoch}.png';
+      final imageFile = File(imagePath);
+      await imageFile.writeAsBytes(pngBytes);
 
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url);
-    } else {
-      if (mounted)
+      // 📤 SHARE: Image and text instantly
+      await Share.shareXFiles([XFile(imagePath)], text: text);
+    } catch (e) {
+      debugPrint("Share error: $e");
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("WhatsApp not installed or cannot be opened."),
-          ),
+          const SnackBar(content: Text("Failed to capture and share summary.")),
         );
+      }
     }
   }
 }
