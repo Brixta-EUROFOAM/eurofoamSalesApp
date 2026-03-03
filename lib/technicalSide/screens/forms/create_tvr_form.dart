@@ -73,11 +73,11 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
     _initControllers();
 
     if (widget.site != null) _onSiteSelected(widget.site!);
-    if (widget.initialCheckInTime != null) {
-      _values['checkInTime'] = widget.initialCheckInTime;
-      _values['isCheckInProcessing'] = false;
-      _values['checkInFailed'] = false;
-    }
+    // if (widget.initialCheckInTime != null) {
+    //   _values['checkInTime'] = widget.initialCheckInTime;
+    //   _values['isCheckInProcessing'] = false;
+    //   _values['checkInFailed'] = false;
+    // }
     if (widget.employee.region != null &&
         TvrConstants.regionOptions.contains(widget.employee.region)) {
       _values['selectedRegion'] = widget.employee.region;

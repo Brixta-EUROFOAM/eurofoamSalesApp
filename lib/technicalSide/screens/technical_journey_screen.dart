@@ -1,3 +1,5 @@
+// lib/screens/technical_journey/technical_journey_screen.dart
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -7,15 +9,18 @@ import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:slide_to_act/slide_to_act.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+
 // Core & Models
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 import 'package:salesmanapp/core/app_kernel.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
+
 // Features
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
-import 'package:salesmanapp/features/mapselectionpjp/map_selection_result.dart';
+// import 'package:salesmanapp/features/mapselectionpjp/map_selection_result.dart';
 import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_result.dart';
 import 'package:salesmanapp/features/journeytracking/journey_tracking_controller.dart';
 import 'package:salesmanapp/features/journeytracking/journey_tracking_result.dart';
@@ -27,8 +32,7 @@ import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_controller.
 import 'package:salesmanapp/services/states/journeyStates/journey_screen_state.dart';
 import 'package:salesmanapp/database/app_database.dart';
 
-
-// --- 🚀 NEW UI IMPORTS ---
+// --- UI OVERLAY ---
 import 'package:salesmanapp/technicalSide/screens/journeyUi/journey_overlay_manager.dart';
 
 class TechnicalJourneyScreen extends StatefulWidget {
@@ -62,14 +66,19 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   late final MapSelectionController _mapSelectionController = AppKernel.instance
       .feature<MapSelectionController>();
   final _searchController = TextEditingController();
+
   bool _isSearching = false;
   String? _currentGeoTrackingDbId;
   double _totalDistanceTravelled = 0.0;
   LatLng? _lastRecordedLocation;
 
   final _journeyStartMachine = JourneyStartStateMachine();
-  // UI State
-  String _distanceDisplay = "Initializing...";
+
+  // 🚀 O(1) REBUILDS
+  final ValueNotifier<String> _distanceDisplay = ValueNotifier<String>(
+    "Initializing...",
+  );
+
   final _destinationController = TextEditingController();
   late JourneyMode _journeyMode;
   bool _isSelectionMode = false;
@@ -78,9 +87,14 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   final String? _radarApiKey = dotenv.env['RADAR_API_KEY'];
   Pjp? _backupPlannedPjp;
   LatLng? _backupDestination;
+
   // Journey State
   bool _isJourneyActive = false;
   bool _hasArrived = false;
+
+  // 🚀 NATIVE TRACKING STATE (From File 1)
+  bool _isMapTrackingUser = true;
+
   StreamSubscription? _distanceSub;
   StreamSubscription? _posSub;
   StreamSubscription? _eventSub;
@@ -92,6 +106,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   final _journeyStopMachine = JourneyStopStateMachine();
   bool _isRouteLineLayerAdded = false;
   DateTime _lastPolylineUpdate = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // 🚀 BATTERY SAVER: Throttle Polyline Renders
   bool _canUpdatePolyline() {
     final now = DateTime.now();
     if (now.difference(_lastPolylineUpdate).inMilliseconds < 500) {
@@ -107,6 +123,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     target: LatLng(26.1445, 91.7362),
     zoom: 12,
   );
+
   // Theme
   final Color _bgLight = const Color(0xFFF3F4F6);
   final Color _cardNavy = const Color(0xFF0F172A);
@@ -116,28 +133,30 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   @override
   void initState() {
     super.initState();
-    debugPrint("🚀 [TechnicalJourneyScreen] initState called");
     flags = context.read<TechnicalFlags>();
+
     _mapInitMachine.addListener(() {
       if (!mounted) return;
       if (_isJourneyActive) return;
       final state = _mapInitMachine.value;
-      setState(() {
-        if (state is MapInitProcessing) {
-          _distanceDisplay = state.statusMessage;
-        } else if (state is MapInitReady) {
-          _distanceDisplay = state.displayMessage;
-          if (state.finalUserLocation != null) {
+
+      if (state is MapInitProcessing) {
+        _distanceDisplay.value = state.statusMessage;
+      } else if (state is MapInitReady) {
+        _distanceDisplay.value = state.displayMessage;
+        if (state.finalUserLocation != null) {
+          setState(() {
             _currentUserLocation = state.finalUserLocation;
-          }
+          });
         }
-      });
+      }
     });
+
     _journeyStartMachine.addListener(() {
       final state = _journeyStartMachine.value;
       if (!mounted) return;
       if (state is JourneyStartProcessing) {
-        setState(() => _distanceDisplay = state.message);
+        _distanceDisplay.value = state.message;
       } else if (state is JourneyStartFailure) {
         _showError(state.error);
         setState(() => _isJourneyActive = false);
@@ -145,12 +164,14 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         _handleJourneyStartSuccess(state);
       }
     });
+
     final modeController = AppKernel.instance.feature<JourneyModeController>();
     if (widget.initialJourneyData != null) {
       _processInitialDataSynchronously(widget.initialJourneyData!);
     } else {
       _journeyMode = modeController.defaultMode(hasPjp: false).mode;
     }
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       Radar.setUserId(widget.employee.id);
       Radar.setDescription(widget.employee.displayName);
@@ -163,6 +184,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       }
       _checkActiveSession();
     });
+
     if (flags.journeyMap) {
       _styleFuture = _readStyle();
     }
@@ -170,12 +192,11 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
   void _onDistanceUpdate(double dist) {
     if (mounted) {
-      setState(() {
-        _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km";
-      });
+      _distanceDisplay.value = "${(dist / 1000.0).toStringAsFixed(2)} km";
     }
   }
 
+  // 🚀 HARDWARE ACCELERATED & FILTERED DISTANCE
   void _onLocationUpdate(LatLng latLng) {
     if (_lastRecordedLocation != null) {
       final dist = Geolocator.distanceBetween(
@@ -184,13 +205,19 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         latLng.latitude,
         latLng.longitude,
       );
-      _totalDistanceTravelled += dist;
+
+      // 🚀 GPS JITTER FILTER: Ignore tiny jumps < 0.5 meters to save cycles
+      if (dist > 0.5) {
+        _totalDistanceTravelled += dist;
+      }
     }
+
     _lastRecordedLocation = latLng;
     _currentUserLocation = latLng;
-
     _routeTaken.add(latLng);
-    _drawUserLocationPointer(latLng);
+
+    // 🚀 BYPASSED: Manual Dart rendering removed! The map draws the blue dot natively at 60fps!
+    // _drawUserLocationPointer(latLng);
 
     if (_canUpdatePolyline()) {
       _updateTravelledPolyline();
@@ -203,7 +230,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
     final restoreMachine = RestoreJourneyStateMachine();
 
-    // 1. Listen for the Result
     restoreMachine.addListener(() {
       final state = restoreMachine.value;
       if (state is RestoreResumed) {
@@ -211,7 +237,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       }
     });
 
-    // 2. Dispatch Intent with Tools
     await restoreMachine.dispatch(
       RestoreJourneyIntent(
         askUser: _askUserToResume,
@@ -223,40 +248,26 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   void _handleRestoreSuccess(JourneyRestoreSnapshot snapshot) async {
-    // 1. Restore UI State
     setState(() {
       _isJourneyActive = true;
       _currentGeoTrackingDbId = snapshot.journeyId;
       _destinationController.text = snapshot.displayName ?? "Resumed Journey";
-
-      // 🔥 FIX: Overwrite "Location Found" immediately
-      _distanceDisplay =
-          "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
-
       _totalDistanceTravelled = snapshot.distance;
       _currentUserLocation = snapshot.lastPosition;
-
-      // 🔥 FIX: Restore path history
       _routeTaken.clear();
       _routeTaken.addAll(snapshot.path);
       _lastRecordedLocation = snapshot.lastPosition;
-
-      // 🔥 FIX: Ensure UI shows active panel
       _journeyMode = JourneyMode.planned;
+      _isMapTrackingUser = true; // 🚀 Restore tracking
     });
 
-    // 2. Restore Map Visuals
+    _distanceDisplay.value =
+        "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
+
     final controller = await _controllerCompleter.future;
 
     if (snapshot.path.isNotEmpty) {
       await JourneyMapRenderer.updateTravelledPath(controller, snapshot.path);
-    }
-
-    if (snapshot.lastPosition != null) {
-      await JourneyMapRenderer.drawUserLocationPointer(
-        controller,
-        snapshot.lastPosition!,
-      );
     }
 
     if (snapshot.path.length >= 2) {
@@ -267,7 +278,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       );
     }
 
-    // 3. Re-attach Streams (USING THE DEFINED HELPERS)
     final tracking = AppKernel.instance.feature<JourneyTrackingController>();
 
     _distanceSub = tracking.distanceStream.listen(_onDistanceUpdate);
@@ -285,21 +295,39 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     return await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
-            title: const Text("Resume journey?"),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text(
+              "Resume journey?",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             content: Text(
               "You were travelling to ${snapshot.displayName}. Continue?",
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text("Discard"),
+                child: const Text(
+                  "Discard",
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
               ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _cardNavy,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text("Resume"),
+                child: const Text(
+                  "Resume",
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ],
-          ),
+          ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms),
         ) ??
         false;
   }
@@ -309,43 +337,19 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       _currentPjp = state.pjp;
       _currentGeoTrackingDbId = state.geoTrackingDbId;
       _isJourneyActive = true;
-      _distanceDisplay = "0.00 km";
       _routeTaken.clear();
       _hasArrived = false;
       _totalDistanceTravelled = 0.0;
       _lastRecordedLocation = null;
+      _isMapTrackingUser = true; // 🚀 Start tracking instantly
     });
 
-    // 👇 START STREAMS (Moved from the old method)
+    _distanceDisplay.value = "0.00 km";
+
     final tracking = AppKernel.instance.feature<JourneyTrackingController>();
 
-    _distanceSub = tracking.distanceStream.listen((dist) {
-      if (mounted) {
-        setState(
-          () => _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km",
-        );
-      }
-    });
-
-    _posSub = tracking.positionStream.listen((latLng) {
-      if (_lastRecordedLocation != null) {
-        final dist = Geolocator.distanceBetween(
-          _lastRecordedLocation!.latitude,
-          _lastRecordedLocation!.longitude,
-          latLng.latitude,
-          latLng.longitude,
-        );
-        _totalDistanceTravelled += dist;
-      }
-      _lastRecordedLocation = latLng;
-      _currentUserLocation = latLng;
-
-      _routeTaken.add(latLng);
-      _drawUserLocationPointer(latLng);
-      if (_canUpdatePolyline()) {
-        _updateTravelledPolyline();
-      }
-    });
+    _distanceSub = tracking.distanceStream.listen(_onDistanceUpdate);
+    _posSub = tracking.positionStream.listen(_onLocationUpdate);
 
     _eventSub = tracking.eventStream.listen((event) {
       if (event == JourneyTrackingEvent.arrived && !_hasArrived) {
@@ -366,9 +370,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       _totalDistanceTravelled = 0.0;
       _lastRecordedLocation = null;
       _hasArrived = false;
+      _isMapTrackingUser = true;
 
       _destinationController.clear();
-      _distanceDisplay = "Select Destination";
 
       final modeController = AppKernel.instance
           .feature<JourneyModeController>();
@@ -377,6 +381,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
       _routeTaken.clear();
     });
+
+    _distanceDisplay.value = "Select Destination";
 
     await _removeRouteLine();
     await _removeDestinationMarker();
@@ -399,7 +405,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     _destinationLocation = data['destination'];
     _destinationController.text = data['displayName'] ?? "";
     _isSiteVisit = data['isSite'] ?? true;
-    _distanceDisplay = "Loading Map...";
+    _distanceDisplay.value = "Loading Map...";
   }
 
   @override
@@ -407,6 +413,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     _cancelJourneySubscriptions();
     _destinationController.dispose();
     _searchController.dispose();
+    _distanceDisplay.dispose();
     super.dispose();
   }
 
@@ -440,8 +447,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         _isSiteVisit = isSite;
         _destinationLocation = destination;
         _destinationController.text = displayName ?? "";
-        _distanceDisplay = "Calculating Route...";
       });
+      _distanceDisplay.value = "Calculating Route...";
     }
 
     _routeTaken.clear();
@@ -457,7 +464,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       _fitBounds();
     }
     if (mounted) {
-      setState(() => _distanceDisplay = "Ready to start");
+      _distanceDisplay.value = "Ready to start";
     }
   }
 
@@ -477,10 +484,10 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         _currentPjp = null;
         _destinationLocation = null;
         _destinationController.text = "";
-        _distanceDisplay = "Select Destination";
       });
+      _distanceDisplay.value = "Select Destination";
       await _removeRouteLine();
-      await _removeDestinationMarker(); // Remove pointer in unplanned mode initially
+      await _removeDestinationMarker();
     } else {
       if (_backupPlannedPjp != null) {
         setState(() {
@@ -489,7 +496,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
           _destinationController.text = _resolveName(_currentPjp!);
         });
         if (_destinationLocation != null) {
-          _addDestinationMarker(_destinationLocation!); // Restore pointer
+          _addDestinationMarker(_destinationLocation!);
           _getDirectionsAndDrawRoute();
         }
       }
@@ -503,10 +510,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       _destinationController.text = result.displayName;
       _isSiteVisit = result.type == UnplannedEntityType.site;
       _currentPjp = null;
-      _distanceDisplay = "Calculating Route...";
     });
 
-    // 🔥 Add pointer for unplanned destination
+    _distanceDisplay.value = "Calculating Route...";
     await _addDestinationMarker(result.destination);
 
     try {
@@ -523,9 +529,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     } catch (_) {
     } finally {
       if (mounted) {
-        setState(() {
-          _distanceDisplay = "Ready to start";
-        });
+        _distanceDisplay.value = "Ready to start";
       }
     }
   }
@@ -544,24 +548,19 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _startJourney() async {
-    // 1. Guard Layer (Permissions)
     final hasPermission = await _ensureJourneyPermission();
     if (!hasPermission) return;
 
-    // 2. Validation
     if (_isJourneyActive || _destinationLocation == null) {
       _showError("Cannot start: No destination selected.");
       return;
     }
 
-    // OPTIMISTIC UPDATE: Move UI to Active State Immediately
-    // This destroys the green slider and builds the active panel instantly.
     setState(() {
       _isJourneyActive = true;
-      _distanceDisplay = "Starting...";
     });
+    _distanceDisplay.value = "Starting...";
 
-    // 3. Dispatch Intent to the Brain
     _journeyStartMachine.dispatch(
       StartJourneyIntent(
         employee: widget.employee,
@@ -571,7 +570,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         journeyMode: _journeyMode,
         currentPjp: _currentPjp,
         currentUserLocation: _currentUserLocation,
-        // Inject dependencies
         trackingController: AppKernel.instance
             .feature<JourneyTrackingController>(),
         apiService: ApiService(),
@@ -582,21 +580,15 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   Future<void> _stopJourney() async {
     if (!_isJourneyActive) return;
 
-    // OPTIMISTIC UPDATE: Show feedback immediately
-    setState(() {
-      _distanceDisplay = "Stopping...";
-    });
+    _distanceDisplay.value = "Stopping...";
 
-    // Dispatch the Stop Intent to the Brain
     await _journeyStopMachine.dispatch(
       StopJourneyIntent(
         userId: int.parse(widget.employee.id),
         geoTrackingDbId: _currentGeoTrackingDbId,
         currentUserLocation: _currentUserLocation,
         totalDistanceTravelled: _totalDistanceTravelled,
-        // What to do when the logic finishes (Success or Fail)
         onCleanup: () => _handleJourneyCleanup(),
-        // Inject Dependencies
         apiService: ApiService(),
         trackingController: AppKernel.instance
             .feature<JourneyTrackingController>(),
@@ -604,60 +596,41 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     );
   }
 
-  // ✅ CRASH PROOF FIX: Separate Try/Catch blocks
   Future<void> _removeRouteLine() async {
     if (!_isRouteLineLayerAdded) return;
     final controller = await _controllerCompleter.future;
-
-    // 1. Try remove layer
     try {
       await controller.removeLayer('route-line');
     } catch (_) {}
-
-    // 2. Try remove source INDEPENDENTLY
     try {
       await controller.removeSource('route-source');
     } catch (_) {}
-
     _isRouteLineLayerAdded = false;
   }
 
-  // ✅ CRASH PROOF FIX: Safe Update Logic
   Future<void> _getDirectionsAndDrawRoute() async {
-    // 1. Validate Data
     if (_currentUserLocation == null || _destinationLocation == null) return;
     if (_radarApiKey == null) return;
 
-    // 2. Get Controller
     final controller = await _controllerCompleter.future;
 
-    // 3. Delegate the work to the Renderer (The Hands)
     await JourneyMapRenderer.drawRoute(
       controller: controller,
       start: _currentUserLocation!,
       end: _destinationLocation!,
       apiKey: _radarApiKey,
     );
-
-    // 4. Update UI (Only if you need to trigger a rebuild for other widgets)
-    if (mounted) setState(() {});
   }
 
   Future<bool> _ensureJourneyPermission() async {
-    // Delegate to the Guard Layer
     return await JourneyPermissionGuard.ensurePermissions(
-      // Callback 1: How do we ask the user for consent?
       onShowDisclosure: () async {
         if (!mounted) return false;
         return await _showJourneyDisclosureDialog();
       },
-
-      // Callback 2: How do we direct them to settings?
       onShowSettings: () {
         if (mounted) _showSettingsDialog();
       },
-
-      // Callback 3: How do we show errors?
       onError: (message) {
         _showError(message);
       },
@@ -667,7 +640,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   Future<bool> _showJourneyDisclosureDialog() async {
     return await JourneyDialogs.showDisclosure(
       context: context,
-      primaryColor: _cardNavy, // Or whatever color variable you use
+      primaryColor: _cardNavy,
     );
   }
 
@@ -677,13 +650,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
   Future<void> _determinePositionAndMoveCamera() async {
     try {
-      // 1. Ask LOGIC LAYER to get the location
-      //    (It internally handles Permissions, Guard checks, and AppKernel fetching)
       final location = await JourneyLocationLogic.resolveCurrentLocation(
-        // Pass your permission wrapper
         onEnsurePermissions: _ensureJourneyPermission,
-
-        // Pass the AppKernel fetcher
         onFetchLocationFromController: () async {
           return await AppKernel.instance
               .feature<JourneyLocationController>()
@@ -691,21 +659,18 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         },
       );
 
-      // 2. If valid location returned, update UI and Map
       if (location != null) {
         _currentUserLocation = location;
 
-        // Update UI Text
         if (mounted && !_isJourneyActive) {
-          if (_distanceDisplay.contains("Waiting") ||
-              _distanceDisplay.contains("Map")) {
-            setState(() => _distanceDisplay = "My Location");
+          if (_distanceDisplay.value.contains("Waiting") ||
+              _distanceDisplay.value.contains("Map")) {
+            _distanceDisplay.value = "My Location";
           }
         }
 
         final controller = await _controllerCompleter.future;
 
-        // Move Camera (only if destination isn't set yet)
         if (_destinationLocation == null) {
           await controller.animateCamera(
             CameraUpdate.newCameraPosition(
@@ -713,12 +678,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
             ),
           );
         }
-
-        // 3. Ask RENDERER LAYER to draw the Blue Dot
-        await JourneyMapRenderer.drawUserLocationPointer(
-          controller,
-          _currentUserLocation!,
-        );
       }
     } catch (e) {
       debugPrint("❌ _determinePositionAndMoveCamera Exception: $e");
@@ -727,11 +686,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
   Future<void> _fitBounds() async {
     if (_currentUserLocation == null || _destinationLocation == null) return;
-
-    // 1. Get Controller
     final controller = await _controllerCompleter.future;
-
-    // 2. Delegate to Renderer
     await JourneyMapRenderer.fitBounds(
       controller,
       _currentUserLocation!,
@@ -740,28 +695,18 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _addDestinationMarker(LatLng point) async {
-    // 1. Get the controller
     final controller = await _controllerCompleter.future;
-
-    // 2. Let the Renderer handle the dirty work
     await JourneyMapRenderer.addDestinationMarker(controller, point);
   }
 
-  // ✅ CRASH PROOF FIX: Separate Try/Catch blocks to prevent Zombie Sources
   Future<void> _removeDestinationMarker() async {
     final controller = await _controllerCompleter.future;
-
-    // 1. Try Remove Inner Layer
     try {
       await controller.removeLayer('dest-layer-inner');
     } catch (_) {}
-
-    // 2. Try Remove Outer Layer
     try {
       await controller.removeLayer('dest-layer-outer');
     } catch (_) {}
-
-    // 3. Try Remove Source INDEPENDENTLY
     try {
       await controller.removeSource('dest-source');
     } catch (_) {}
@@ -797,12 +742,13 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         _hasArrived = false;
 
         _destinationController.clear();
-        _distanceDisplay = "Select Destination";
         _journeyMode = defaultMode;
         _isSelectionMode = false;
 
         _routeTaken.clear();
       });
+
+      _distanceDisplay.value = "Select Destination";
 
       await _removeRouteLine();
       await _removeDestinationMarker();
@@ -826,34 +772,36 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('SITE REACHED'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.location_on, color: Color(0xFF10B981)),
+            SizedBox(width: 8),
+            Text('SITE REACHED'),
+          ],
+        ),
         content: const Text('You have arrived at your destination.'),
         actions: [
-          TextButton(
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _cardNavy,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
             onPressed: () {
               Navigator.pop(context);
               _handleJourneyCleanup();
             },
-            child: const Text('OK'),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
           ),
         ],
-      ),
+      ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms),
     );
   }
 
-  Future<void> _drawUserLocationPointer(LatLng point) async {
-    // 1. Get Controller
-    final controller = await _controllerCompleter.future;
-
-    // 2. Delegate to Renderer
-    await JourneyMapRenderer.drawUserLocationPointer(controller, point);
-  }
-
   Future<void> _updateTravelledPolyline() async {
-    // 1. Get Controller
     final controller = await _controllerCompleter.future;
-
-    // 2. Delegate to Renderer
     await JourneyMapRenderer.updateTravelledPath(controller, _routeTaken);
   }
 
@@ -869,33 +817,52 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _confirmSelection() async {
-    setState(() => _distanceDisplay = "Processing...");
+    // 1. Instant feedback
+    _distanceDisplay.value = "Processing...";
+
     try {
       final controller = await _controllerCompleter.future;
-      final target = controller.cameraPosition?.target;
-      if (target == null) return;
-      final address = await _resolveAddress(target);
-      final selection = MapSelectionResult(
-        position: target,
-        address: address,
-        isCancelled: false,
-      );
+      final LatLng? target = controller.cameraPosition?.target;
+
+      // 2. Prevent the silent failure!
+      if (target == null) {
+        _distanceDisplay.value = "Select Destination";
+        _showError(
+          "Map center not detected. Please move the map slightly and try again.",
+        );
+        return;
+      }
+
+      // 3. 🚀 PERCEIVED PERFORMANCE: Close the search UI immediately
+      // BEFORE making the network call to reverse-geocode. Makes the app feel 10x faster.
       setState(() {
         _isSelectionMode = false;
         _searchController.clear();
       });
+
+      // 4. 🚀 BATTERY/TIME EFFICIENCY: Wrap the geocoder in a timeout.
+      // If the user has a spotty 4G connection, we don't want the app hanging forever.
+      final String address = await _resolveAddress(target).timeout(
+        const Duration(seconds: 4),
+        onTimeout: () => "Selected Location", // Fallback if API takes too long
+      );
+
+      // 5. Load the journey
       await _loadUnplannedJourney(
         UnplannedJourneyResult(
-          destination: selection.position,
-          displayName: selection.address,
+          destination: target,
+          displayName: address,
           type: UnplannedEntityType.site,
         ),
       );
     } catch (e) {
-      setState(() {
-        _isSelectionMode = false;
-        _distanceDisplay = "Selection Failed";
-      });
+      debugPrint("Confirm Selection Error: $e");
+      // Safety net: Revert UI if the entire process crashes
+      if (mounted) {
+        setState(() => _isSelectionMode = true);
+      }
+      _distanceDisplay.value = "Selection Failed";
+      _showError("Failed to confirm location. Please try again.");
     }
   }
 
@@ -918,9 +885,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
   void _showError(String message) {
     if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: _dangerRed),
+      );
     }
   }
 
@@ -940,7 +907,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
     return Stack(
       children: [
-        // 1. MAP BACKGROUND (Unchanged)
+        // 1. MAP BACKGROUND
         SizedBox.expand(
           child: FutureBuilder<String>(
             future: _styleFuture,
@@ -949,103 +916,132 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
               return MapLibreMap(
                 styleString: snap.data!,
                 initialCameraPosition: _initialCameraPosition,
+                trackCameraPosition: true,
+
+                // 🚀 HARDWARE ACCELERATED 60FPS POINTER ANIMATION (Restored from File 1)
+                myLocationEnabled: true,
+                myLocationTrackingMode: _isMapTrackingUser
+                    ? MyLocationTrackingMode.tracking
+                    : MyLocationTrackingMode.none,
+                myLocationRenderMode: MyLocationRenderMode.compass,
+                onCameraTrackingDismissed: () {
+                  if (_isMapTrackingUser && mounted) {
+                    setState(() => _isMapTrackingUser = false);
+                  }
+                },
+
                 onMapCreated: (c) {
-                  if (!_controllerCompleter.isCompleted)
+                  if (!_controllerCompleter.isCompleted) {
                     _controllerCompleter.complete(c);
+                  }
                 },
                 onStyleLoadedCallback: _onMapStyleLoaded,
-                trackCameraPosition: true,
-                myLocationEnabled: false,
-              );
+              ).animate().fadeIn(duration: 800.ms);
             },
           ),
         ),
 
-        // 2. SEARCH MODE UI (Unchanged)
+        // 2. SEARCH MODE UI
         if (_isSelectionMode) ...[
           Positioned(
-            top: 50,
-            left: 16,
-            right: 16,
-            child: Card(
-              elevation: 4,
-              shadowColor: Colors.black.withOpacity(0.2),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: TextField(
-                controller: _searchController,
-                textInputAction: TextInputAction.search,
-                onSubmitted: _performSearch,
-                decoration: InputDecoration(
-                  hintText: "Search area (e.g., Guwahati)",
-                  hintStyle: const TextStyle(color: Color(0xFF64748B)),
-                  filled: true,
-                  fillColor: Colors.white,
-                  prefixIcon: IconButton(
-                    icon: const Icon(
-                      Icons.arrow_back,
-                      color: Color(0xFF0F172A),
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _isSelectionMode = false;
-                        _searchController.clear();
-                      });
-                    },
+                top: 50,
+                left: 16,
+                right: 16,
+                child: Card(
+                  elevation: 4,
+                  shadowColor: Colors.black.withOpacity(0.2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  suffixIcon: _isSearching
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : IconButton(
-                          icon: const Icon(
-                            Icons.search,
-                            color: Color(0xFF0F172A),
-                          ),
-                          onPressed: () =>
-                              _performSearch(_searchController.text),
+                  child: TextField(
+                    controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: _performSearch,
+                    decoration: InputDecoration(
+                      hintText: "Search area (e.g., Guwahati)",
+                      hintStyle: const TextStyle(color: Color(0xFF64748B)),
+                      filled: true,
+                      fillColor: Colors.white,
+                      prefixIcon: IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back,
+                          color: Color(0xFF0F172A),
                         ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
+                        onPressed: () {
+                          setState(() {
+                            _isSelectionMode = false;
+                            _searchController.clear();
+                          });
+                        },
+                      ),
+                      suffixIcon: _isSearching
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : IconButton(
+                              icon: const Icon(
+                                Icons.search,
+                                color: Color(0xFF0F172A),
+                              ),
+                              onPressed: () =>
+                                  _performSearch(_searchController.text),
+                            ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-          ),
+              )
+              .animate()
+              .slideY(begin: -0.2, duration: 400.ms, curve: Curves.easeOutCubic)
+              .fadeIn(),
+
           Center(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 35),
-              child: Icon(Icons.location_on, size: 50, color: _cardNavy),
-            ),
-          ),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 35),
+                  child: Icon(Icons.location_on, size: 50, color: _cardNavy),
+                ),
+              )
+              .animate()
+              .moveY(
+                begin: -40,
+                end: 0,
+                duration: 800.ms,
+                curve: Curves.bounceOut,
+              )
+              .fadeIn(duration: 400.ms),
+
           Positioned(
-            bottom: 40,
-            left: 20,
-            right: 20,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _cardNavy,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(30),
+                bottom: 120,
+                left: 20,
+                right: 20,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _cardNavy,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    elevation: 4,
+                  ),
+                  onPressed: _confirmSelection,
+                  child: const Text(
+                    "CONFIRM THIS LOCATION",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
                 ),
-                elevation: 4,
-              ),
-              onPressed: _confirmSelection,
-              child: const Text(
-                "CONFIRM THIS LOCATION",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.1,
-                ),
-              ),
-            ),
-          ),
+              )
+              .animate()
+              .slideY(begin: 0.2, duration: 400.ms, curve: Curves.easeOutCubic)
+              .fadeIn(),
         ],
 
         // 3. 🚀 THE ZOMATO-STYLE OVERLAY MANAGER
@@ -1054,47 +1050,90 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
           Positioned(
             top: 50,
             right: 16,
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                icon: Icon(Icons.my_location, color: _cardNavy),
-                onPressed: _determinePositionAndMoveCamera,
-              ),
-            ),
+            child:
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    // 🚀 Restored Toggle State
+                    icon: Icon(
+                      _isMapTrackingUser
+                          ? Icons.my_location
+                          : Icons.location_searching,
+                      color: _isMapTrackingUser
+                          ? Colors.blueAccent
+                          : const Color(0xFF6B7280),
+                    ),
+                    onPressed: () async {
+                      setState(() => _isMapTrackingUser = true);
+                      if (_currentUserLocation != null) {
+                        final controller = await _controllerCompleter.future;
+                        controller.animateCamera(
+                          CameraUpdate.newCameraPosition(
+                            CameraPosition(
+                              target: _currentUserLocation!,
+                              zoom: 16.5,
+                              tilt: _isJourneyActive ? 45 : 0,
+                            ),
+                          ),
+                          duration: const Duration(milliseconds: 600),
+                        );
+                      } else {
+                        await _determinePositionAndMoveCamera();
+                      }
+                    },
+                  ),
+                ).animate().scale(
+                  delay: 500.ms,
+                  duration: 400.ms,
+                  curve: Curves.easeOutBack,
+                ),
           ),
 
-          // The Manager
           Positioned.fill(
             child: SafeArea(
-              child: JourneyOverlayManager(
-                isJourneyActive: _isJourneyActive,
-                distance: _distanceDisplay,
-                
-                // INTENT: STOP
-                onStop: () async => await _stopJourney(),
-
-                // INTENT: NAVIGATE
-                onNavigate: _launchGoogleMapsNavigation,
-
-                // IDLE UI
-                idlePanel: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildIdleJourneyPanel(context),
-                    const SizedBox(height: 24),
-                    _StartJourneySlider(
-                      key: ValueKey(_isJourneyActive),
-                      isJourneyActive: false, // Always false here (idle mode)
-                      onSlideAction: _startJourney,
-                      canStart: canStartJourney,
-                      cardNavy: _cardNavy,
-                      dangerRed: _dangerRed,
-                    ),
-                  ],
-                ),
+              child: ValueListenableBuilder<String>(
+                valueListenable: _distanceDisplay,
+                builder: (context, distanceText, child) {
+                  return JourneyOverlayManager(
+                    isJourneyActive: _isJourneyActive,
+                    distance: distanceText,
+                    onStop: () async => await _stopJourney(),
+                    onNavigate: _launchGoogleMapsNavigation,
+                    idlePanel:
+                        Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildIdleJourneyPanel(context),
+                                const SizedBox(height: 24),
+                                _StartJourneySlider(
+                                  key: ValueKey(_isJourneyActive),
+                                  isJourneyActive: false,
+                                  onSlideAction: _startJourney,
+                                  canStart: canStartJourney,
+                                  cardNavy: _cardNavy,
+                                  dangerRed: _dangerRed,
+                                ),
+                                const SizedBox(height: 90),
+                              ],
+                            )
+                            .animate()
+                            .slideY(
+                              begin: 0.2,
+                              duration: 500.ms,
+                              curve: Curves.easeOutCubic,
+                            )
+                            .fadeIn(),
+                  );
+                },
               ),
             ),
           ),
@@ -1114,12 +1153,19 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              isPlanned ? Icons.map_outlined : Icons.business,
-              color: _textGrey,
-              size: 20,
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: _cardNavy.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                isPlanned ? Icons.map_outlined : Icons.business,
+                color: _cardNavy,
+                size: 18,
+              ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1128,9 +1174,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
                     isPlanned ? "PLANNED AREA" : "UNPLANNED VISIT",
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
-                      color: const Color(0xFF1E293B),
-                      fontSize: 12,
-                      letterSpacing: 1.1,
+                      color: _cardNavy,
+                      fontSize: 13,
+                      letterSpacing: 1.2,
                     ),
                   ),
                   Text(
@@ -1138,8 +1184,9 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
                         ? "Free roam • Multiple check-ins"
                         : "Flexible destination • Ad-hoc",
                     style: TextStyle(
-                      color: _textGrey.withOpacity(0.7),
+                      color: _textGrey,
                       fontSize: 11,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ],
@@ -1148,33 +1195,54 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
             if (canSwitch)
               TextButton.icon(
                 onPressed: _toggleJourneyMode,
-                icon: const Icon(Icons.swap_horiz, size: 16),
+                icon: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  transitionBuilder: (child, anim) =>
+                      RotationTransition(turns: anim, child: child),
+                  child: Icon(
+                    Icons.swap_horiz,
+                    size: 18,
+                    key: ValueKey(isPlanned),
+                  ),
+                ),
                 label: Text(isPlanned ? "UNPLANNED" : "PLANNED"),
                 style: TextButton.styleFrom(
-                  foregroundColor: _cardNavy,
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  foregroundColor: Colors.blueAccent,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  backgroundColor: Colors.blueAccent.withOpacity(0.1),
                   textStyle: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
                   ),
                 ),
               ),
           ],
         ),
         const SizedBox(height: 16),
-        // ✨ UPGRADED: Crisper Input Box
         Container(
-          height: 60,
+          height: 64,
           padding: const EdgeInsets.symmetric(horizontal: 4),
           decoration: BoxDecoration(
-            color: Colors.white, // Crisp white
+            color: Colors.white,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFFE2E8F0)), // Subtle border
+            border: Border.all(
+              color: isPlanned
+                  ? Colors.transparent
+                  : Colors.blueAccent.withOpacity(0.3),
+              width: 1.5,
+            ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
@@ -1182,71 +1250,112 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
             child: TextField(
               controller: _destinationController,
               readOnly: true,
+              // 🚀 NEW: Make the entire text box clickable in Unplanned mode
+              onTap: !isPlanned && _destinationController.text.isEmpty
+                  ? () async {
+                      setState(() {
+                        _isSelectionMode = true;
+                      });
+                      if (_currentUserLocation != null) {
+                        try {
+                          final controller = await _controllerCompleter.future;
+                          controller.animateCamera(
+                            CameraUpdate.newLatLngZoom(
+                              _currentUserLocation!,
+                              16,
+                            ),
+                          );
+                        } catch (_) {}
+                      }
+                    }
+                  : null,
               style: TextStyle(
-                color: Color(0xFF0F172A),
-                fontWeight: FontWeight.w700,
+                color: _destinationController.text.isEmpty
+                    ? _textGrey
+                    : _cardNavy,
+                fontWeight: _destinationController.text.isEmpty
+                    ? FontWeight.w500
+                    : FontWeight.w800,
                 fontSize: 15,
               ),
               decoration: InputDecoration(
                 prefixIcon: Icon(
-                  isPlanned ? Icons.explore : Icons.location_on_outlined,
-                  color: Color(0xFF0F172A),
+                  isPlanned ? Icons.explore_rounded : Icons.search_rounded,
+                  color: _cardNavy,
+                  size: 24,
                 ),
+                // 🚀 NEW: Updated the hint text to be more actionable
                 hintText: isPlanned
                     ? "Planned Area"
-                    : "Waiting for destination...",
+                    : "Tap to set destination...",
                 hintStyle: const TextStyle(color: Color(0xFF64748B)),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16,
                   vertical: 14,
                 ),
+                // 🚀 NEW: Replaces the old bottom button with an embedded "SET" button
                 suffixIcon: _destinationController.text.isNotEmpty
                     ? IconButton(
                         icon: Icon(Icons.refresh_rounded, color: _dangerRed),
                         tooltip: "Reset Screen",
                         onPressed: _resetScreenState,
                       )
-                    : null,
+                    : (!isPlanned
+                          ? Padding(
+                              padding: const EdgeInsets.only(
+                                right: 8.0,
+                                top: 10.0,
+                                bottom: 10.0,
+                              ),
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: _cardNavy,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                onPressed: () async {
+                                  setState(() {
+                                    _isSelectionMode = true;
+                                  });
+                                  if (_currentUserLocation != null) {
+                                    try {
+                                      final controller =
+                                          await _controllerCompleter.future;
+                                      controller.animateCamera(
+                                        CameraUpdate.newLatLngZoom(
+                                          _currentUserLocation!,
+                                          16,
+                                        ),
+                                      );
+                                    } catch (_) {}
+                                  }
+                                },
+                                child: const Text(
+                                  "SET",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : null),
               ),
             ),
           ),
         ),
-        if (!isPlanned)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: OutlinedButton.icon(
-              icon: const Icon(Icons.add_location_alt_outlined),
-              label: const Text("SET DESTINATION"),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _cardNavy,
-                side: BorderSide(color: _cardNavy),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
-              ),
-              onPressed: () async {
-                setState(() {
-                  _isSelectionMode = true;
-                });
-                if (_currentUserLocation != null) {
-                  try {
-                    final controller = await _controllerCompleter.future;
-                    controller.animateCamera(
-                      CameraUpdate.newLatLngZoom(_currentUserLocation!, 16),
-                    );
-                  } catch (_) {}
-                }
-              },
-            ),
-          ),
       ],
     );
   }
 }
 
-// ✨✨✨ THE UPGRADED 3D START SLIDER ✨✨✨
 class _StartJourneySlider extends StatelessWidget {
   final bool isJourneyActive;
   final Future<void> Function() onSlideAction;
@@ -1267,8 +1376,41 @@ class _StartJourneySlider extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool isEnabled = canStart || isJourneyActive;
 
+    Widget sliderWidget = SlideAction(
+      onSubmit: isEnabled
+          ? () async {
+              await onSlideAction();
+              return null;
+            }
+          : null,
+      innerColor: Colors.white,
+      outerColor: isEnabled ? cardNavy : const Color(0xFFF1F5F9),
+      sliderButtonIcon: const Icon(
+        Icons.arrow_forward_rounded,
+        color: Color(0xFF0F172A),
+        size: 26,
+      ),
+      text: isEnabled ? 'SLIDE TO START VISIT' : 'SELECT DESTINATION FIRST',
+      enabled: isEnabled,
+      textStyle: TextStyle(
+        color: isEnabled ? Colors.white : const Color(0xFF94A3B8),
+        fontSize: 15,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.5,
+      ),
+      borderRadius: 24,
+      elevation: 0,
+      height: 76,
+      sliderRotate: false,
+    );
+
+    if (isEnabled && !isJourneyActive) {
+      sliderWidget = sliderWidget
+          .animate(onPlay: (c) => c.repeat(reverse: true))
+          .shimmer(duration: 2500.ms, color: Colors.blue.withOpacity(0.4));
+    }
+
     return Container(
-      // 🌟 PERFECTIONAL TOUCH: Floating Shadow
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
@@ -1280,31 +1422,7 @@ class _StartJourneySlider extends StatelessWidget {
           ),
         ],
       ),
-      child: SlideAction(
-        onSubmit: isEnabled
-            ? () async {
-                await onSlideAction();
-                return null;
-              }
-            : null,
-        // 🌟 COLORS & STYLE
-        innerColor: Colors.white,
-        outerColor: isEnabled ? cardNavy : const Color(0xFFF1F5F9),
-        sliderButtonIcon: const Icon(Icons.arrow_forward_rounded, color: Color(0xFF0F172A), size: 26),
-        text: isEnabled ? 'SLIDE TO START VISIT' : 'SELECT DESTINATION FIRST',
-        enabled: isEnabled,
-        // 🌟 TYPOGRAPHY
-        textStyle: TextStyle(
-          color: isEnabled ? Colors.white : const Color(0xFF94A3B8),
-          fontSize: 15, // Slightly larger
-          fontWeight: FontWeight.w900, // Maximum bold
-          letterSpacing: 1.5, // Wider spacing
-        ),
-        borderRadius: 24, // Matches container
-        elevation: 0, // We handled shadow manually above
-        height: 76, // Taller and more touch-friendly
-        sliderRotate: false,
-      ),
+      child: sliderWidget,
     );
   }
 }

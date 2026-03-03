@@ -1,5 +1,6 @@
 // lib/technicalSide/screens/bulk_technical_pjp_wizard_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
 import 'package:salesmanapp/core/app_kernel.dart';
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_result.dart';
@@ -34,8 +35,8 @@ class _BulkTechnicalPjpWizardScreenState
   final ApiService _apiService = ApiService();
   bool _isMapEngineReady = false;
   final Map<DateTime, bool> _mapLoadingStates = {};
-  bool _isMapVisible = false; // Controls the overlay visibility
-  DateTime? _activeMapDate;   // Tracks which date we are picking a route for
+  bool _isMapVisible = false;
+  DateTime? _activeMapDate;
 
   // --- KERNEL FEATURE ---
   late final MapSelectionController _mapController = AppKernel.instance
@@ -64,10 +65,8 @@ class _BulkTechnicalPjpWizardScreenState
   }
 
   Future<void> _warmupMapEngine() async {
-    // If your MapSelectionController has an init/warmup method, call it here.
-    // Even just accessing the feature early helps.
     await Future.delayed(Duration.zero);
-    setState(() => _isMapEngineReady = true);
+    if (mounted) setState(() => _isMapEngineReady = true);
   }
 
   @override
@@ -105,25 +104,22 @@ class _BulkTechnicalPjpWizardScreenState
   }
 
   // --- MAP SELECTION HANDLER ---
-  // --- MAP SELECTION HANDLER ---
   Future<void> _handleMapSelection(DateTime date) async {
-  if (!_isMapEngineReady) {
-    _showSnack("Initializing map engine...", _accentBlue);
-    return;
+    if (!_isMapEngineReady) {
+      _showSnack("Initializing map engine...", _accentBlue);
+      return;
+    }
+
+    HapticFeedback.selectionClick();
+
+    setState(() {
+      _activeMapDate = date;
+      _isMapVisible = true;
+    });
   }
 
-  // Instant physical haptic feedback
-  HapticFeedback.selectionClick();
-
-  setState(() {
-    _activeMapDate = date;
-    _isMapVisible = true; // This triggers the build() Stack immediately
-  });
-}
-
-  // --- SUBMISSION LOGIC ---
+  // 🚀 MAX OPTIMIZED: PARALLEL NETWORK EXECUTION (O(1) Bottleneck)
   Future<void> _submitWeeklyPlan() async {
-    // Validation: Ensure all days have a route selected
     for (var date in _sortedDates) {
       if (_dailyConfigs[date]!['locationResult'] == null) {
         _showSnack(
@@ -135,10 +131,10 @@ class _BulkTechnicalPjpWizardScreenState
     }
 
     setState(() => _isSubmitting = true);
-    int successCount = 0;
 
     try {
-      for (var date in _sortedDates) {
+      // Execute all API creations simultaneously rather than sequentially
+      final futures = _sortedDates.map((date) async {
         final config = _dailyConfigs[date]!;
         final visitType = config['type'];
         final MapSelectionResult location = config['locationResult'];
@@ -146,7 +142,6 @@ class _BulkTechnicalPjpWizardScreenState
         String primaryName = visitType == 'Influencer'
             ? config['infName'].text
             : "$visitType Visit";
-
         final formattedArea = _mapController.formatPjpArea(
           primaryName,
           location,
@@ -176,12 +171,13 @@ class _BulkTechnicalPjpWizardScreenState
           updatedAt: DateTime.now(),
         );
 
-        await _apiService.createPjp(pjp);
-        successCount++;
-      }
+        return _apiService.createPjp(pjp);
+      });
+
+      await Future.wait(futures);
 
       _showSnack(
-        'Successfully created $successCount visit plans!',
+        'Successfully created ${_sortedDates.length} visit plans!',
         _accentGreen,
       );
       widget.onPjpCreated();
@@ -203,122 +199,166 @@ class _BulkTechnicalPjpWizardScreenState
           ),
           backgroundColor: color,
           behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
     }
   }
 
   @override
- @override
-Widget build(BuildContext context) {
-  return Scaffold(
-    backgroundColor: _surfaceWhite,
-    appBar: AppBar(
+  Widget build(BuildContext context) {
+    return Scaffold(
       backgroundColor: _surfaceWhite,
-      elevation: 0,
-      centerTitle: true,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _cardNavy, size: 20),
-        onPressed: () => Navigator.pop(context),
-      ),
-      title: const Text(
-        'Weekly Visit Planner',
-        style: TextStyle(color: _cardNavy, fontWeight: FontWeight.bold, fontSize: 16),
-      ),
-    ),
-    // --- WRAP THE BODY IN A STACK ---
-    body: Stack(
-      children: [
-        Theme(
-          data: Theme.of(context).copyWith(
-            canvasColor: _surfaceWhite,
-            colorScheme: const ColorScheme.light(
-              primary: Colors.black,
-              onPrimary: Colors.white,
-            ),
+      appBar: AppBar(
+        backgroundColor: _surfaceWhite,
+        elevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: _cardNavy,
+            size: 20,
           ),
-          child: Stepper(
-            type: StepperType.horizontal,
-            elevation: 0,
-            currentStep: _currentStep,
-            onStepContinue: () {
-              if (_currentStep == 0) {
-                if (_selectedDates.isEmpty) return _showSnack("Please select dates", Colors.orange);
-                setState(() {
-                  _initializeDailyConfigs();
-                  _currentStep++;
-                });
-              } else {
-                _submitWeeklyPlan();
-              }
-            },
-            onStepCancel: () => _currentStep > 0
-                ? setState(() => _currentStep--)
-                : Navigator.pop(context),
-            controlsBuilder: (context, details) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                child: _isSubmitting
-                    ? const Center(child: CircularProgressIndicator(color: _cardNavy))
-                    : ElevatedButton(
-                        onPressed: details.onStepContinue,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _cardNavy,
-                          foregroundColor: Colors.white,
-                          minimumSize: const Size(double.infinity, 56),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        child: Text(
-                          _currentStep == 0 ? 'NEXT: PLAN TARGETS' : 'GENERATE WEEKLY PLAN',
-                          style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0),
-                        ),
-                      ),
-              );
-            },
-            steps: [
-              Step(
-                title: const Text('Schedule'),
-                isActive: _currentStep >= 0,
-                state: _currentStep > 0 ? StepState.complete : StepState.indexed,
-                content: _buildCalendarStep(),
-              ),
-              Step(
-                title: const Text('Planner'),
-                isActive: _currentStep >= 1,
-                state: StepState.indexed,
-                content: _buildPlannerStep(),
-              ),
-            ],
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Weekly Visit Planner',
+          style: TextStyle(
+            color: _cardNavy,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
           ),
         ),
-
-        // --- THE INSTANT MAP LAYER ---
-       // --- THE INSTANT MAP LAYER ---
-        if (_isMapVisible)
-          Positioned.fill(
-            child: Material(
-              color: Colors.white,
-              child: _mapController.buildPickerUI(
-                context,
-                // ADD THIS LINE: Default coordinates (Guwahati area)
-                initialPos: const LatLng(26.1445, 91.7362), 
-                onLocationSelected: (result) {
-                  if (_activeMapDate != null) {
-                    setState(() {
-                      _dailyConfigs[_activeMapDate]!['locationResult'] = result;
-                      _dailyConfigs[_activeMapDate]!['route'].text = result.address;
-                      _isMapVisible = false;
-                    });
-                  }
-                },
-                onCancel: () => setState(() => _isMapVisible = false),
+      ),
+      body: Stack(
+        children: [
+          Theme(
+            data: Theme.of(context).copyWith(
+              canvasColor: _surfaceWhite,
+              colorScheme: const ColorScheme.light(
+                primary: _cardNavy,
+                onPrimary: Colors.white,
               ),
             ),
+            child: Stepper(
+              type: StepperType.horizontal,
+              elevation: 0,
+              currentStep: _currentStep,
+              onStepContinue: () {
+                if (_currentStep == 0) {
+                  if (_selectedDates.isEmpty)
+                    return _showSnack("Please select dates", Colors.orange);
+                  setState(() {
+                    _initializeDailyConfigs();
+                    _currentStep++;
+                  });
+                } else {
+                  _submitWeeklyPlan();
+                }
+              },
+              onStepCancel: () => _currentStep > 0
+                  ? setState(() => _currentStep--)
+                  : Navigator.pop(context),
+              controlsBuilder: (context, details) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 24,
+                    horizontal: 16,
+                  ),
+                  child: _isSubmitting
+                      ? const Center(
+                          child: CircularProgressIndicator(color: _cardNavy),
+                        )
+                      : ElevatedButton(
+                              onPressed: details.onStepContinue,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _cardNavy,
+                                foregroundColor: Colors.white,
+                                minimumSize: const Size(double.infinity, 56),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                elevation: 8,
+                                shadowColor: _cardNavy.withOpacity(0.3),
+                              ),
+                              child: Text(
+                                _currentStep == 0
+                                    ? 'NEXT: PLAN TARGETS'
+                                    : 'GENERATE WEEKLY PLAN',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.0,
+                                ),
+                              ),
+                            )
+                            .animate(target: _isSubmitting ? 0 : 1)
+                            .scaleXY(end: 1, duration: 200.ms),
+                );
+              },
+              steps: [
+                Step(
+                  title: const Text(
+                    'Schedule',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  isActive: _currentStep >= 0,
+                  state: _currentStep > 0
+                      ? StepState.complete
+                      : StepState.indexed,
+                  content: _buildCalendarStep()
+                      .animate()
+                      .fadeIn(duration: 400.ms)
+                      .slideY(begin: 0.1, curve: Curves.easeOut),
+                ),
+                Step(
+                  title: const Text(
+                    'Planner',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  isActive: _currentStep >= 1,
+                  state: StepState.indexed,
+                  content: _buildPlannerStep(),
+                ),
+              ],
+            ),
           ),
-      ],
-    ),
-  );
-}
+
+          // ✨ SMOOTH GPU MAP TRANSITION
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: _isMapVisible
+                ? Positioned.fill(
+                    key: const ValueKey("MapLayer"),
+                    child: Material(
+                      color: Colors.white,
+                      child: _mapController.buildPickerUI(
+                        context,
+                        initialPos: const LatLng(26.1445, 91.7362),
+                        onLocationSelected: (result) {
+                          if (_activeMapDate != null) {
+                            setState(() {
+                              _dailyConfigs[_activeMapDate]!['locationResult'] =
+                                  result;
+                              _dailyConfigs[_activeMapDate]!['route'].text =
+                                  result.address;
+                              _isMapVisible = false;
+                            });
+                          }
+                        },
+                        onCancel: () => setState(() => _isMapVisible = false),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey("EmptyMap")),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildCalendarStep() {
     return Container(
@@ -327,6 +367,13 @@ Widget build(BuildContext context) {
         color: _surfaceWhite,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: _bgLight, width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: _cardNavy.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -346,31 +393,37 @@ Widget build(BuildContext context) {
               );
               setState(() {
                 _focusedDay = focusedDay;
-                if (_selectedDates.contains(dayUtc))
+                if (_selectedDates.contains(dayUtc)) {
                   _selectedDates.remove(dayUtc);
-                else
+                } else {
                   _selectedDates.add(dayUtc);
+                  HapticFeedback.lightImpact(); // Premium feel on date select
+                }
               });
             },
             headerStyle: const HeaderStyle(
               formatButtonVisible: false,
               titleCentered: true,
               titleTextStyle: TextStyle(
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w900,
                 color: _textDark,
-                fontSize: 16,
+                fontSize: 18,
               ),
             ),
-            calendarStyle: const CalendarStyle(
-              selectedDecoration: BoxDecoration(
+            calendarStyle: CalendarStyle(
+              selectedDecoration: const BoxDecoration(
                 color: _cardNavy,
                 shape: BoxShape.circle,
               ),
               todayDecoration: BoxDecoration(
                 color: _bgLight,
                 shape: BoxShape.circle,
+                border: Border.all(color: _cardNavy.withOpacity(0.3)),
               ),
-              defaultTextStyle: TextStyle(color: _textDark),
+              defaultTextStyle: const TextStyle(
+                color: _textDark,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
           const Divider(color: _bgLight),
@@ -388,8 +441,8 @@ Widget build(BuildContext context) {
                 Text(
                   '${_selectedDates.length} days selected',
                   style: const TextStyle(
-                    color: _textDark,
-                    fontWeight: FontWeight.bold,
+                    color: _cardNavy,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ],
@@ -410,56 +463,97 @@ Widget build(BuildContext context) {
 
     return Column(
       children: [
-        Container(
-          margin: const EdgeInsets.symmetric(vertical: 4),
-          decoration: BoxDecoration(
-            color: _surfaceWhite,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: _bgLight, width: 2),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(dayStr),
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20),
-                  child: Divider(color: _bgLight, thickness: 1.5),
-                ),
-                _buildVisitTypeSelector(date, visitType),
-                const SizedBox(height: 24),
-
-                // --- ROUTE SELECTOR FIELD ---
-                _buildMapSelectorInput(
-                  date: date, // Pass the current date from the loop/index
-                  label: "Route / Destination",
-                  controller: config['route'],
-                  icon: Icons.map_rounded,
-                  onTap: () => _handleMapSelection(date),
-                ),
-
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20),
-                  child: Divider(color: _bgLight, thickness: 1.5),
-                ),
-                _buildSectionHeader("Planned Visit Targets", Icons.ads_click),
-                _buildDynamicMetricGrid(config, visitType),
-
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20),
-                  child: Divider(color: _bgLight, thickness: 1.5),
-                ),
-                _buildSectionHeader("Business Goals", Icons.analytics),
-                _buildBusinessGoalRow(config),
-
-                const SizedBox(height: 20),
-                _buildSimpleInput(
-                  label: "Remarks / Purpose",
-                  controller: config['description'],
-                  icon: Icons.notes,
+        // 🚀 O(1) REPAINT DIFFING: Smooth crossfade when navigating between days
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 400),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (Widget child, Animation<double> animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
+                child: child,
+              ),
+            );
+          },
+          child: Container(
+            key: ValueKey(
+              date,
+            ), // Crucial for AnimatedSwitcher to detect the change
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            decoration: BoxDecoration(
+              color: _surfaceWhite,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: _bgLight, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: _cardNavy.withOpacity(0.04),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
                 ),
               ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildHeader(dayStr),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Divider(color: _bgLight, thickness: 1.5),
+                  ),
+
+                  _buildVisitTypeSelector(
+                    date,
+                    visitType,
+                  ).animate().fadeIn(delay: 50.ms).slideX(begin: 0.1),
+                  const SizedBox(height: 24),
+
+                  _buildMapSelectorInput(
+                    date: date,
+                    label: "Route / Destination",
+                    controller: config['route'],
+                    icon: Icons.map_rounded,
+                    onTap: () => _handleMapSelection(date),
+                  ).animate().fadeIn(delay: 100.ms).slideX(begin: 0.1),
+
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Divider(color: _bgLight, thickness: 1.5),
+                  ),
+
+                  _buildSectionHeader(
+                    "Planned Visit Targets",
+                    Icons.ads_click,
+                  ).animate().fadeIn(delay: 150.ms),
+                  _buildDynamicMetricGrid(
+                    config,
+                    visitType,
+                  ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1),
+
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Divider(color: _bgLight, thickness: 1.5),
+                  ),
+
+                  _buildSectionHeader(
+                    "Business Goals",
+                    Icons.analytics,
+                  ).animate().fadeIn(delay: 250.ms),
+                  _buildBusinessGoalRow(
+                    config,
+                  ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1),
+
+                  const SizedBox(height: 20),
+                  _buildSimpleInput(
+                    label: "Remarks / Purpose",
+                    controller: config['description'],
+                    icon: Icons.notes,
+                  ).animate().fadeIn(delay: 350.ms).slideY(begin: 0.1),
+                ],
+              ),
             ),
           ),
         ),
@@ -476,7 +570,10 @@ Widget build(BuildContext context) {
         _buildNavButton(
           icon: Icons.arrow_back_ios_new_rounded,
           onTap: _plannerPageIndex > 0
-              ? () => setState(() => _plannerPageIndex--)
+              ? () {
+                  HapticFeedback.lightImpact();
+                  setState(() => _plannerPageIndex--);
+                }
               : null,
         ),
         const SizedBox(width: 40),
@@ -484,7 +581,7 @@ Widget build(BuildContext context) {
           "${_plannerPageIndex + 1} OF ${_sortedDates.length}",
           style: const TextStyle(
             fontWeight: FontWeight.w900,
-            color: _textDark,
+            color: _cardNavy,
             fontSize: 14,
             letterSpacing: 2,
           ),
@@ -493,7 +590,10 @@ Widget build(BuildContext context) {
         _buildNavButton(
           icon: Icons.arrow_forward_ios_rounded,
           onTap: _plannerPageIndex < _sortedDates.length - 1
-              ? () => setState(() => _plannerPageIndex++)
+              ? () {
+                  HapticFeedback.lightImpact();
+                  setState(() => _plannerPageIndex++);
+                }
               : null,
         ),
       ],
@@ -508,7 +608,6 @@ Widget build(BuildContext context) {
     required VoidCallback onTap,
   }) {
     final bool isLocalLoading = _mapLoadingStates[date] ?? false;
-    // Use the flag here to determine the icon color or state
     final Color iconColor = _isMapEngineReady
         ? _accentBlue
         : _textGrey.withOpacity(0.5);
@@ -519,10 +618,14 @@ Widget build(BuildContext context) {
       child: IgnorePointer(
         child: TextFormField(
           controller: controller,
-          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
+          style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold),
           decoration: InputDecoration(
             labelText: label,
-            labelStyle: const TextStyle(color: _textGrey, fontSize: 13),
+            labelStyle: const TextStyle(
+              color: _textGrey,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
             prefixIcon: Icon(icon, color: iconColor, size: 20),
             suffixIcon: isLocalLoading
                 ? const Padding(
@@ -571,7 +674,7 @@ Widget build(BuildContext context) {
           child: Text(
             "${_plannerPageIndex + 1} / ${_sortedDates.length}",
             style: const TextStyle(
-              color: _textGrey,
+              color: _cardNavy,
               fontSize: 11,
               fontWeight: FontWeight.w800,
             ),
@@ -603,7 +706,10 @@ Widget build(BuildContext context) {
     final isSelected = _dailyConfigs[date]!['type'] == value;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _dailyConfigs[date]!['type'] = value),
+        onTap: () {
+          HapticFeedback.selectionClick();
+          setState(() => _dailyConfigs[date]!['type'] = value);
+        },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 12),
@@ -656,7 +762,7 @@ Widget build(BuildContext context) {
       decoration: BoxDecoration(
         color: _inputFill,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withOpacity(0.1)),
+        border: Border.all(color: color.withOpacity(0.15), width: 1.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -666,20 +772,22 @@ Widget build(BuildContext context) {
             style: TextStyle(
               color: color,
               fontSize: 10,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.5,
             ),
           ),
           TextField(
             controller: ctrl,
             keyboardType: TextInputType.number,
             style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
               color: _textDark,
             ),
             decoration: const InputDecoration(
               border: InputBorder.none,
               isDense: true,
+              contentPadding: EdgeInsets.zero,
             ),
           ),
         ],
@@ -717,7 +825,7 @@ Widget build(BuildContext context) {
             style: const TextStyle(
               color: _cardNavy,
               fontSize: 11,
-              fontWeight: FontWeight.bold,
+              fontWeight: FontWeight.w900,
               letterSpacing: 1.2,
             ),
           ),
@@ -733,10 +841,14 @@ Widget build(BuildContext context) {
   }) {
     return TextFormField(
       controller: controller,
-      style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
+      style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(color: _textGrey, fontSize: 13),
+        labelStyle: const TextStyle(
+          color: _textGrey,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
         prefixIcon: Icon(icon, color: _textGrey, size: 20),
         filled: true,
         fillColor: _inputFill,
@@ -752,19 +864,19 @@ Widget build(BuildContext context) {
     final bool isDisabled = onTap == null;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: isDisabled
               ? _bgLight.withOpacity(0.5)
-              : _cardNavy.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(12),
+              : _cardNavy.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(16),
         ),
         child: Icon(
           icon,
           color: isDisabled ? _textGrey.withOpacity(0.3) : _cardNavy,
-          size: 20,
+          size: 22,
         ),
       ),
     );

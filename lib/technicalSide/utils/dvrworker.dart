@@ -9,20 +9,18 @@ import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/daily_visit_report_model.dart';
 
 class DvrBackgroundWorker {
-  
   // --- 🚀 PUBLIC ENTRY POINT (The "Fire & Forget" Trigger) ---
   static Future<void> processAndSubmit({
     required ApiService apiService,
     required DailyVisitReport dvrPayload,
     required File? inTimeFile,
     required File outTimeFile,
-    required List<File> evidenceFiles, 
+    required List<File> evidenceFiles,
     required bool clearDrafts,
   }) async {
-    
     // 1. Generate Unique ID for the Queue
     final String queueId = "dvr_${DateTime.now().millisecondsSinceEpoch}";
-    
+
     // 2. 💾 INSTANT DISK SAVE (The "Safety Box")
     final backupData = {
       'id': queueId,
@@ -35,15 +33,13 @@ class DvrBackgroundWorker {
 
     await _saveToSafetyBox(queueId, backupData);
 
-    // 3. 🧹 Clear UI Drafts
+    // 3. 🧹 Clear UI Drafts (Fire and forget, doesn't block UI thread)
     if (clearDrafts) {
-      _clearUiDrafts(); 
+      _clearUiDrafts();
     }
 
-    // 4. ⚡ START UPLOAD
-    final sanitizedData = jsonDecode(jsonEncode(backupData));
-
-    _executeUploadTask(queueId, sanitizedData, apiService).then((success) {
+    // 4. ⚡ START UPLOAD IN BACKGROUND (O(1) Space Complexity, removed deep copy)
+    _executeUploadTask(queueId, backupData, apiService).then((success) {
       if (success) {
         retryStuckQueue(apiService);
       }
@@ -64,21 +60,29 @@ class DvrBackgroundWorker {
       final File? inTimeFile = data['inTimePath'] != null ? File(data['inTimePath']) : null;
       final File outTimeFile = File(data['outTimePath']);
 
-      // 1. Check-in Photo
-      if (payload.inTimeImageUrl == null) {
-        if (inTimeFile != null && await inTimeFile.exists()) {
-             final url = await apiService.uploadImageToR2(inTimeFile);
-             payload = payload.copyWith(inTimeImageUrl: url);
+      // 🚀 SPEED OPTIMIZATION: PARALLEL NETWORK PIPELINE
+      // Upload both images concurrently instead of sequentially
+      Future<String?> uploadInTime() async {
+        if (payload.inTimeImageUrl == null && inTimeFile != null && await inTimeFile.exists()) {
+          return await apiService.uploadImageToR2(inTimeFile);
         }
+        return payload.inTimeImageUrl;
       }
 
-      // 2. Check-out Photo
-      if (payload.outTimeImageUrl == null) { 
-        if (await outTimeFile.exists()) {
-           final outUrl = await apiService.uploadImageToR2(outTimeFile);
-           payload = payload.copyWith(outTimeImageUrl: outUrl);
+      Future<String?> uploadOutTime() async {
+        if (payload.outTimeImageUrl == null && await outTimeFile.exists()) {
+          return await apiService.uploadImageToR2(outTimeFile);
         }
+        return payload.outTimeImageUrl;
       }
+
+      // Execute network requests simultaneously
+      final results = await Future.wait([uploadInTime(), uploadOutTime()]);
+
+      payload = payload.copyWith(
+        inTimeImageUrl: results[0],
+        outTimeImageUrl: results[1],
+      );
 
       // 3. Final Submission
       await apiService.createDvr(payload);
@@ -87,7 +91,6 @@ class DvrBackgroundWorker {
       await _removeFromSafetyBox(queueId);
       debugPrint("✅ [DVR Worker] Task $queueId COMPLETE & Removed from Queue.");
       return true;
-
     } catch (e) {
       debugPrint("🔴 [DVR Worker] Task $queueId FAILED: $e");
       return false;
@@ -103,16 +106,19 @@ class DvrBackgroundWorker {
 
     debugPrint("🔄 [DVR Worker] Found ${keys.length} stuck items. Flushing...");
 
-    for (String key in keys) {
+    // 🚀 BATTERY OPTIMIZATION: Parallel batch execution
+    // Doing this concurrently allows the phone's radio to sleep faster.
+    final futures = keys.map((key) async {
       final jsonStr = prefs.getString(key);
-      if (jsonStr == null) continue;
+      if (jsonStr == null) return;
 
       final data = jsonDecode(jsonStr);
       final queueId = data['id'];
 
       await _executeUploadTask(queueId, data, apiService);
-      await Future.delayed(const Duration(seconds: 1));
-    }
+    });
+
+    await Future.wait(futures);
   }
 
   // --- 💾 DISK HELPERS ---
@@ -129,10 +135,18 @@ class DvrBackgroundWorker {
   static Future<void> _clearUiDrafts() async {
     final prefs = await SharedPreferences.getInstance();
     final allKeys = prefs.getKeys();
+    
+    // 🚀 DISK I/O OPTIMIZATION: Batch removal to prevent thread blocking
+    final futures = <Future<bool>>[];
+    
     for (String key in allKeys) {
       if (key.startsWith('dvr_ctrl_') || key.startsWith('dvr_val_')) {
-        await prefs.remove(key);
+        futures.add(prefs.remove(key));
       }
+    }
+    
+    if (futures.isNotEmpty) {
+      await Future.wait(futures);
     }
   }
 }
@@ -142,10 +156,13 @@ extension DvrCopyWith on DailyVisitReport {
   DailyVisitReport copyWith({
     String? inTimeImageUrl,
     String? outTimeImageUrl,
-    List<String>? photos, // kept for worker compatibility
+    String? customerType,
+    String? partyType,
+    String? nameOfParty,
+    String? contactNoOfParty,
+    DateTime? expectedActivationDate,
   }) {
     return DailyVisitReport(
-      // --- Existing Fields (Preserved) ---
       id: id,
       userId: userId,
       dealerId: dealerId,
@@ -156,6 +173,12 @@ extension DvrCopyWith on DailyVisitReport {
       subDealerName: subDealerName,
       overdueAmount: overdueAmount,
       timeSpentinLoc: timeSpentinLoc,
+      customerType: customerType ?? this.customerType,
+      partyType: partyType ?? this.partyType,
+      nameOfParty: nameOfParty ?? this.nameOfParty,
+      contactNoOfParty: contactNoOfParty ?? this.contactNoOfParty,
+      expectedActivationDate:
+          expectedActivationDate ?? this.expectedActivationDate,
       location: location,
       latitude: latitude,
       longitude: longitude,
@@ -175,8 +198,6 @@ extension DvrCopyWith on DailyVisitReport {
       createdAt: createdAt,
       updatedAt: updatedAt,
       pjpId: pjpId,
-
-      // --- Updated Fields ---
       inTimeImageUrl: inTimeImageUrl ?? this.inTimeImageUrl,
       outTimeImageUrl: outTimeImageUrl ?? this.outTimeImageUrl,
     );

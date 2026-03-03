@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:slide_to_act/slide_to_act.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 class ActiveJourneyHUD extends StatelessWidget {
   final String distance;
   final Future<void> Function() onStop;
   final VoidCallback onNavigate;
 
-  // Usage: Your exact colors
   final Color cardNavy = const Color(0xFF0F172A);
   final Color dangerRed = const Color(0xFFEF4444);
-  final Color navBlue = const Color(0xFF4285F4); // Google Maps Blue
+  final Color navBlue = const Color(0xFF4285F4); 
 
   const ActiveJourneyHUD({
     super.key,
@@ -22,8 +22,7 @@ class ActiveJourneyHUD extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        // 1. TOP FLOATING PILL (Distance Only)
-        // ✨ UPGRADED: 3D Floating Effect
+        // 1. TOP FLOATING PILL (Distance)
         Positioned(
           top: 60,
           left: 0,
@@ -36,10 +35,10 @@ class ActiveJourneyHUD extends StatelessWidget {
                 borderRadius: BorderRadius.circular(30),
                 boxShadow: [
                   BoxShadow(
-                    color: cardNavy.withOpacity(0.2), // Deeper shadow
+                    color: cardNavy.withOpacity(0.15), 
                     blurRadius: 25,
                     spreadRadius: -2,
-                    offset: const Offset(0, 10), // Vertical lift
+                    offset: const Offset(0, 10), 
                   ),
                 ],
               ),
@@ -48,38 +47,47 @@ class ActiveJourneyHUD extends StatelessWidget {
                 children: [
                   Icon(Icons.directions_car, color: cardNavy, size: 22),
                   const SizedBox(width: 12),
-                  Text(
-                    distance,
-                    style: TextStyle(
-                      fontSize: 20, // Slightly bigger
-                      fontWeight: FontWeight.w900, // Black weight
-                      color: cardNavy,
-                      letterSpacing: 0.5,
+                  // ✨ Smooth text transition for when the distance updates
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    transitionBuilder: (Widget child, Animation<double> animation) {
+                      return FadeTransition(opacity: animation, child: child);
+                    },
+                    child: Text(
+                      distance,
+                      key: ValueKey<String>(distance),
+                      style: TextStyle(
+                        fontSize: 20, 
+                        fontWeight: FontWeight.w900, 
+                        color: cardNavy,
+                        letterSpacing: 0.5,
+                      ),
                     ),
                   ),
                 ],
               ),
-            ),
+            ).animate()
+             .slideY(begin: -1.5, duration: 600.ms, curve: Curves.easeOutBack)
+             .fadeIn(duration: 400.ms),
           ),
         ),
 
         // 2. FLOATING NAVIGATION BUTTON (FAB)
-        // ✨ UPGRADED: Lifted Shadow
         Positioned(
-          bottom: 150, // Slightly higher to clear the larger slider
-          right: 20,
+          bottom: 210, 
+          right: 50,
           child: InkWell(
             onTap: onNavigate,
             borderRadius: BorderRadius.circular(30),
             child: Container(
-              height: 60, // Bigger touch target
+              height: 60, 
               width: 60,
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: cardNavy.withOpacity(0.25),
+                    color: navBlue.withOpacity(0.3),
                     blurRadius: 20,
                     offset: const Offset(0, 8),
                   ),
@@ -91,47 +99,56 @@ class ActiveJourneyHUD extends StatelessWidget {
                 size: 32,
               ),
             ),
-          ),
+          ).animate(delay: 200.ms)
+           .scale(duration: 500.ms, curve: Curves.easeOutBack)
+           .fadeIn()
+           // ✨ Subtle continuous pulse to draw the user's eye to navigation
+           .then()
+           .shimmer(duration: 2000.ms, color: navBlue.withOpacity(0.2))
+           .animate(onPlay: (controller) => controller.repeat(reverse: true))
+           .scaleXY(end: 1.05, duration: 1500.ms, curve: Curves.easeInOutSine),
         ),
 
-        // 3. BOTTOM FLOATING SLIDER (The Professional "Stop" Button)
+        // 3. BOTTOM FLOATING SLIDER
         Positioned(
-          bottom: 40,
+          bottom: 100,
           left: 20,
           right: 20,
           child: Container(
-            // ✨ THE 3D DEPTH EFFECT
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
               boxShadow: [
                 BoxShadow(
-                  color: dangerRed.withOpacity(0.4), // Red Glow
+                  color: dangerRed.withOpacity(0.35), 
                   blurRadius: 25,
-                  spreadRadius: -5, // Tighter spread for "lifted" look
-                  offset: const Offset(0, 12), // Deep vertical shadow
+                  spreadRadius: -5, 
+                  offset: const Offset(0, 12), 
                 ),
               ],
             ),
             child: SlideAction(
-              onSubmit: onStop,
+              onSubmit: () async {
+                await onStop();
+                return null;
+              },
               innerColor: dangerRed,
               outerColor: Colors.white,
-              // ✨ CHUNKY ICON
               sliderButtonIcon: const Icon(Icons.stop_rounded, color: Colors.white, size: 28),
               text: "SLIDE TO END VISIT",
-              // ✨ PROFESSIONAL TYPOGRAPHY
               textStyle: TextStyle(
                 color: dangerRed,
                 fontWeight: FontWeight.w900,
                 fontSize: 15,
-                letterSpacing: 1.5, // Wide spacing for "Tech" feel
+                letterSpacing: 1.5, 
               ),
-              height: 76, // Taller touch target
+              height: 76, 
               borderRadius: 24,
-              elevation: 0, // We handle shadow manually
+              elevation: 0, 
               sliderRotate: false,
             ),
-          ),
+          ).animate(delay: 100.ms)
+           .slideY(begin: 1.0, duration: 600.ms, curve: Curves.easeOutBack)
+           .fadeIn(),
         ),
       ],
     );

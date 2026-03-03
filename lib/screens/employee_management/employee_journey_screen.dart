@@ -79,16 +79,23 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   final List<LatLng> _routeTaken = [];
   bool _isRouteLineLayerAdded = false;
 
+  // 🚀 O(1) BATCHING: Prevents SQLite thread blocking and battery drain
+  final List<JourneyBreadcrumbsCompanion> _breadcrumbBatch = [];
+
   static const _initialCameraPosition = CameraPosition(
     target: LatLng(26.1445, 91.7362),
     zoom: 12,
   );
 
   // ---------- UI STATE ----------
-  String _distanceDisplay = "Loading...";
+  // 🚀 O(1) REBUILDS: ValueNotifier prevents the whole screen from rebuilding every second
+  final ValueNotifier<String> _distanceDisplay = ValueNotifier<String>(
+    "Loading...",
+  );
+
   bool _isJourneyActive = false;
   bool _hasArrived = false;
-  bool _isMapTrackingUser = true; // 🚀 Auto-follow toggle
+  bool _isMapTrackingUser = true;
 
   final _destinationController = TextEditingController();
 
@@ -111,7 +118,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
   // 🚀 ISOLATE DATA RECEIVER (Time Complexity O(1))
   void _onForegroundServiceData(Object data) {
-    // 👈 Removed the '?'
     dev.log("⚡ RAW ISOLATE DATA HIT THE UI: $data", name: 'JourneyDebug');
 
     try {
@@ -140,9 +146,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       _controller.feedNewLocation(LatLng(lat, lng), distance);
 
       if (_isJourneyActive && mounted) {
-        setState(() {
-          _distanceDisplay = "${(distance / 1000.0).toStringAsFixed(2)} km";
-        });
+        // Direct value update, no setState root rebuild
+        _distanceDisplay.value = "${(distance / 1000.0).toStringAsFixed(2)} km";
       }
     } catch (e) {
       dev.log("⚠️ Isolate Data Parsing Error: $e");
@@ -157,7 +162,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       caps: SalesJourneyCapabilities.fromFlags(SalesFlags.dev),
     );
 
-    // 🚀 THE ULTIMATE FIX: You MUST initialize the port in v6+ before listening!
     FlutterForegroundTask.initCommunicationPort();
     FlutterForegroundTask.addTaskDataCallback(_onForegroundServiceData);
 
@@ -168,13 +172,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       if (!mounted) return;
 
       if (state is SalesJourneyStartProcessing) {
-        setState(() => _distanceDisplay = state.message);
+        _distanceDisplay.value = state.message;
       } else if (state is SalesJourneyStartFailure) {
         _showError(state.error);
-        setState(() {
-          _isJourneyActive = false;
-          _distanceDisplay = "Start Failed";
-        });
+        setState(() => _isJourneyActive = false);
+        _distanceDisplay.value = "Start Failed";
       } else if (state is SalesJourneyStartSuccess) {
         _handleJourneyStartSuccess();
       }
@@ -202,18 +204,14 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
   @override
   void dispose() {
-    // 🚀 THE PROPER FIX: Clean up the official callback
     FlutterForegroundTask.removeTaskDataCallback(_onForegroundServiceData);
-
     _cancelJourneySubscriptions();
     _controller.dispose();
     _destinationController.dispose();
+    _distanceDisplay.dispose(); // Clean up notifier
     super.dispose();
   }
 
-  // =====================================================
-  // CORE TRACKING & STREAMS (Accuracy & Complexity Handlers)
-  // =====================================================
   void _cancelJourneySubscriptions() {
     _distanceSub?.cancel();
     _posSub?.cancel();
@@ -223,13 +221,14 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   void _handleJourneyStartSuccess() async {
     setState(() {
       _isJourneyActive = true;
-      _distanceDisplay = "0.00 km";
       _routeTaken.clear();
       _hasArrived = false;
       _isMapTrackingUser = true;
     });
 
-    // 🚀 PREMIUM 3D CAMERA TILT
+    _distanceDisplay.value = "0.00 km";
+    _breadcrumbBatch.clear();
+
     try {
       final controller = await _controllerCompleter.future;
       if (_currentUserLocation != null) {
@@ -254,45 +253,49 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
     _distanceSub = _controller.distanceStream.listen((dist) {
       if (mounted) {
-        setState(
-          () => _distanceDisplay = "${(dist / 1000.0).toStringAsFixed(2)} km",
-        );
+        _distanceDisplay.value = "${(dist / 1000.0).toStringAsFixed(2)} km";
       }
     });
 
-    // 👇 REPLACE THIS ENTIRE _posSub BLOCK 👇
     _posSub = _controller.positionStream.listen((latLng) async {
       _currentUserLocation = latLng;
-      _routeTaken.add(latLng); // 1. Keep it in RAM for fast UI drawing
+      _routeTaken.add(latLng);
 
-      // 2. Draw map line every 5 points
       if (_routeTaken.length % 5 == 0) {
         _updateTravelledPolyline();
       }
 
-      // 🚀 3. THE CRASH-PROOF FIX: Write to SQLite Hard Drive Immediately!
+      // 🚀 BATTERY EFFICIENT SQLITE WRITES
       if (_isJourneyActive && _controller.currentJourneyId != null) {
-        try {
-          await AppDatabase.instance.insertBreadcrumb(
-            JourneyBreadcrumbsCompanion.insert(
-              id: const Uuid().v4(),
-              journeyId: _controller.currentJourneyId!,
-              latitude: latLng.latitude,
-              longitude: latLng.longitude,
-              h3Index:
-                  "pending", // Optional: Update if using Uber's H3 geo-indexing later
-              totalDistance: drift.Value(
-                _controller.totalDistance,
-              ), // Use drift.Value for columns with defaults
-              recordedAt: DateTime.now(),
-            ),
+        _breadcrumbBatch.add(
+          JourneyBreadcrumbsCompanion.insert(
+            id: const Uuid().v4(),
+            journeyId: _controller.currentJourneyId!,
+            latitude: latLng.latitude,
+            longitude: latLng.longitude,
+            h3Index: "pending",
+            totalDistance: drift.Value(_controller.totalDistance),
+            recordedAt: DateTime.now(),
+          ),
+        );
+
+        // Flush to DB every 5 points to save IO cycles
+        if (_breadcrumbBatch.length >= 5) {
+          final batchToInsert = List<JourneyBreadcrumbsCompanion>.from(
+            _breadcrumbBatch,
           );
-        } catch (e) {
-          dev.log("⚠️ Failed to write breadcrumb to DB: $e");
+          _breadcrumbBatch.clear();
+
+          for (var crumb in batchToInsert) {
+            try {
+              await AppDatabase.instance.insertBreadcrumb(crumb);
+            } catch (e) {
+              dev.log("⚠️ Failed to write breadcrumb to DB: $e");
+            }
+          }
         }
       }
     });
-    // 👆 END OF REPLACEMENT 👇
 
     _eventSub = _controller.eventStream.listen((event) {
       if (event == SalesJourneyEvent.arrived && !_hasArrived) {
@@ -312,8 +315,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
     setState(() {
       _destinationController.text = displayName;
-      _distanceDisplay = "Calculating Route...";
     });
+    _distanceDisplay.value = "Calculating Route...";
 
     await _removeRouteLine();
     await _removeDestinationMarker();
@@ -342,7 +345,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       }
     }
 
-    if (mounted) setState(() => _distanceDisplay = "Ready to start");
+    if (mounted) _distanceDisplay.value = "Ready to start";
     widget.onDestinationConsumed?.call();
   }
 
@@ -372,8 +375,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         _activeDealer = null;
         _destinationLocation = null;
         _destinationController.text = "";
-        _distanceDisplay = "Select Destination";
       });
+      _distanceDisplay.value = "Select Destination";
+
       await _removeRouteLine();
       await _removeDestinationMarker();
     } else {
@@ -404,8 +408,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         _dealerId = result.id;
         _activeDealer = result;
         _destinationController.text = result.name;
-        _distanceDisplay = "Calculating Route...";
       });
+      _distanceDisplay.value = "Calculating Route...";
 
       if (result.latitude != null && result.longitude != null) {
         _destinationLocation = LatLng(result.latitude!, result.longitude!);
@@ -420,10 +424,10 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           await _fitBounds();
         }
       } else {
-        _showError("Selected dealer has no GPS coordinates.");
+        //_showError("Iska Address nohi hai.. but Koi baat nai..");
       }
 
-      setState(() => _distanceDisplay = "Ready to start");
+      if (mounted) _distanceDisplay.value = "Ready to start";
     }
   }
 
@@ -496,14 +500,14 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       _taskId = snapshot.taskId;
       _journeyMode = JourneyMode.planned;
       _destinationController.text = snapshot.displayName ?? "Resumed Journey";
-      _distanceDisplay =
-          "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
       _isMapTrackingUser = true;
-
       _currentUserLocation = snapshot.lastPosition;
       _routeTaken.clear();
       _routeTaken.addAll(snapshot.path);
     });
+
+    _distanceDisplay.value =
+        "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
 
     final controller = await _controllerCompleter.future;
 
@@ -535,10 +539,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     final hasPermission = await _ensureJourneyPermission();
     if (!hasPermission) return;
 
-    setState(() {
-      _isJourneyActive = true;
-      _distanceDisplay = "Starting...";
-    });
+    setState(() => _isJourneyActive = true);
+    _distanceDisplay.value = "Starting...";
 
     _journeyStartMachine.dispatch(
       StartSalesJourneyIntent(
@@ -558,9 +560,20 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   Future<void> _handleStop() async {
     if (!_isJourneyActive) return;
 
-    setState(() {
-      _distanceDisplay = "Stopping...";
-    });
+    _distanceDisplay.value = "Stopping...";
+
+    // Flush any remaining batched points to DB before stopping
+    if (_breadcrumbBatch.isNotEmpty) {
+      final finalBatch = List<JourneyBreadcrumbsCompanion>.from(
+        _breadcrumbBatch,
+      );
+      _breadcrumbBatch.clear();
+      for (var crumb in finalBatch) {
+        try {
+          await AppDatabase.instance.insertBreadcrumb(crumb);
+        } catch (_) {}
+      }
+    }
 
     if (_routeTaken.isNotEmpty) {
       await _updateTravelledPolyline();
@@ -571,9 +584,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         userId: int.parse(widget.employee.id),
         taskId: _taskId ?? "",
         currentJourneyId: _controller.currentJourneyId ?? "",
-        totalDistance:
-            _controller.totalDistance, // Now accurate thanks to Step 2!
-        path: List.from(_routeTaken), // 🚀 THE FIX: Pass the red line data!
+        totalDistance: _controller.totalDistance,
+        path: List.from(_routeTaken),
         trackingController: _controller,
         onCleanup: _handleJourneyCleanup,
       ),
@@ -588,7 +600,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
       setState(() {
         _isJourneyActive = false;
-        _distanceDisplay = "0.00 km";
         _taskId = null;
         _dealerId = null;
         _activeDealer = null;
@@ -597,6 +608,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         _journeyMode = JourneyMode.planned;
         _destinationController.clear();
       });
+
+      _distanceDisplay.value = "0.00 km";
 
       await _removeRouteLine();
       await _removeDestinationMarker();
@@ -771,8 +784,10 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
       if (location != null) {
         _currentUserLocation = location;
-        if (mounted && !_isJourneyActive && _distanceDisplay.contains("Map")) {
-          setState(() => _distanceDisplay = "My Location");
+        if (mounted &&
+            !_isJourneyActive &&
+            _distanceDisplay.value.contains("Map")) {
+          _distanceDisplay.value = "My Location";
         }
 
         final controller = await _controllerCompleter.future;
@@ -890,21 +905,16 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
               return MapLibreMap(
                 styleString: snap.data!,
                 initialCameraPosition: _initialCameraPosition,
-
-                // 🚀 HARDWARE ACCELERATED TRACKING
                 myLocationEnabled: true,
                 myLocationTrackingMode: _isMapTrackingUser
                     ? MyLocationTrackingMode.tracking
                     : MyLocationTrackingMode.none,
                 myLocationRenderMode: MyLocationRenderMode.compass,
-
-                // 🚀 SMART UX: Detects if the user drags the map physically
                 onCameraTrackingDismissed: () {
                   if (_isMapTrackingUser && mounted) {
                     setState(() => _isMapTrackingUser = false);
                   }
                 },
-
                 onMapCreated: (c) {
                   if (!_controllerCompleter.isCompleted) {
                     _controllerCompleter.complete(c);
@@ -920,7 +930,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           ),
         ),
 
-        // 🚀 SMART RECENTER BUTTON
         Positioned(
           top: 50,
           right: 16,
@@ -976,34 +985,41 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
               padding: EdgeInsets.only(
                 bottom: MediaQuery.of(context).padding.bottom + 72,
               ),
-              child: JourneyOverlayManager(
-                isJourneyActive: _isJourneyActive,
-                distance: _distanceDisplay,
-                onStop: _handleStop,
-                onNavigate: _launchNavigation,
-                idlePanel:
-                    Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildIdleJourneyPanel(context, isPlanned),
-                            const SizedBox(height: 24),
-                            _StartJourneySlider(
-                              key: ValueKey(_isJourneyActive),
-                              isJourneyActive: false,
-                              onSlideAction: _handleStart,
-                              canStart: canStartJourney,
-                              cardNavy: _cardNavy,
-                              dangerRed: _dangerRed,
-                            ),
-                          ],
-                        )
-                        .animate()
-                        .slideY(
-                          begin: 0.2,
-                          duration: 500.ms,
-                          curve: Curves.easeOutCubic,
-                        )
-                        .fadeIn(),
+              // 🚀 WRAPPED IN VALUELISTENABLEBUILDER
+              child: ValueListenableBuilder<String>(
+                valueListenable: _distanceDisplay,
+                builder: (context, distanceText, child) {
+                  return JourneyOverlayManager(
+                    isJourneyActive: _isJourneyActive,
+                    distance: distanceText,
+                    onStop: _handleStop,
+                    onNavigate: _launchNavigation,
+                    idlePanel:
+                        Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildIdleJourneyPanel(context, isPlanned),
+                                const SizedBox(height: 24),
+                                _StartJourneySlider(
+                                  key: ValueKey(_isJourneyActive),
+                                  isJourneyActive:
+                                      false, // Intentional pass-through based on your original setup
+                                  onSlideAction: _handleStart,
+                                  canStart: canStartJourney,
+                                  cardNavy: _cardNavy,
+                                  dangerRed: _dangerRed,
+                                ),
+                              ],
+                            )
+                            .animate()
+                            .slideY(
+                              begin: 0.2,
+                              duration: 500.ms,
+                              curve: Curves.easeOutCubic,
+                            )
+                            .fadeIn(),
+                  );
+                },
               ),
             ),
           ),
@@ -1012,7 +1028,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     );
   }
 
-  // 🚀 PREMIUM DESIGN UPGRADE: Interactive Material Card
   Widget _buildIdleJourneyPanel(BuildContext context, bool isPlanned) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1094,7 +1109,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           ],
         ),
         const SizedBox(height: 16),
-
         Material(
           color: Colors.transparent,
           child: InkWell(
@@ -1164,9 +1178,6 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   }
 }
 
-// =====================================================
-// SLIDER
-// =====================================================
 class _StartJourneySlider extends StatelessWidget {
   final bool isJourneyActive;
   final Future<void> Function() onSlideAction;
@@ -1238,9 +1249,6 @@ class _StartJourneySlider extends StatelessWidget {
   }
 }
 
-// ============================================================
-// 🔎 UPGRADED DEALER SEARCH DIALOG
-// ============================================================
 class _ServerDealerSearchDialog extends StatefulWidget {
   final ApiService api;
   const _ServerDealerSearchDialog({required this.api});
@@ -1258,6 +1266,13 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   void initState() {
     super.initState();
     _performSearch("");
+  }
+
+  // 🚀 CRITICAL FIX: Prevent memory leak and crash if dialog closes while typing
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
   }
 
   void _onSearchChanged(String query) {
@@ -1339,6 +1354,7 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
                         final String displayZone = dealer.region.isNotEmpty
                             ? dealer.region
                             : "Unknown Zone";
+
                         return ListTile(
                           contentPadding: const EdgeInsets.symmetric(
                             vertical: 4,
@@ -1360,42 +1376,29 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
                               color: Color(0xFF111827),
                             ),
                           ),
+                          // 🚀 MINIMALIST & HIGH PERFORMANCE: Removed heavy nested Rows & Containers
                           subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Row(
+                            padding: const EdgeInsets.only(top: 6.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.orange.shade50,
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: Colors.orange.shade200,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    "Zone: $displayZone",
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.orange.shade800,
-                                    ),
+                                Text(
+                                  "Zone: $displayZone",
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF4B5563), // Clean dark grey
                                   ),
                                 ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    dealer.address,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF6B7280),
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                const SizedBox(height: 2),
+                                Text(
+                                  dealer.address,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF9CA3AF), // Subtle grey
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),

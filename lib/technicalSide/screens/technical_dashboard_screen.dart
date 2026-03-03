@@ -125,7 +125,11 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
               _controller != null) {
             return Stack(
               children: [
-                Center(child: CameraPreview(_controller!)),
+                Center(
+                  child: CameraPreview(
+                    _controller!,
+                  ).animate().fadeIn(duration: 400.ms),
+                ),
                 SafeArea(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -159,17 +163,27 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
                         padding: const EdgeInsets.only(bottom: 40),
                         child: InkWell(
                           onTap: _takePicture,
-                          child: Container(
-                            height: 80,
-                            width: 80,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 4),
-                              color: _isTakingPicture
-                                  ? Colors.white
-                                  : Colors.white24,
-                            ),
-                          ),
+                          child:
+                              Container(
+                                    height: 80,
+                                    width: 80,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 4,
+                                      ),
+                                      color: _isTakingPicture
+                                          ? Colors.white
+                                          : Colors.white24,
+                                    ),
+                                  )
+                                  .animate(target: _isTakingPicture ? 1 : 0)
+                                  .scaleXY(
+                                    end: 0.9,
+                                    duration: 150.ms,
+                                    curve: Curves.easeOut,
+                                  ),
                         ),
                       ),
                     ],
@@ -217,10 +231,10 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   String _greeting = 'Good Morning';
 
   // --- 🎨 PREMIUM THEME PALETTE ---
-  final Color _bgLight = const Color(0xFFF8FAFC); // Slate 50
-  final Color _cardNavy = const Color(0xFF0F172A); // Deep Navy
-  final Color _textDark = const Color(0xFF1E293B); // Slate 800
-  final Color _textGrey = const Color(0xFF64748B); // Slate 500
+  final Color _bgLight = const Color(0xFFF8FAFC);
+  final Color _cardNavy = const Color(0xFF0F172A);
+  final Color _textDark = const Color(0xFF1E293B);
+  final Color _textGrey = const Color(0xFF64748B);
   final Color _surfaceWhite = Colors.white;
 
   @override
@@ -245,10 +259,10 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
 
     if (pendingAction == 'check_in') {
       _toast('Recovering Check-In...');
-      _processCheckIn(recoveredImage);
+      _performAttendanceAction(true, recoveredImage: recoveredImage);
     } else if (pendingAction == 'check_out') {
       _toast('Recovering Check-Out...');
-      _processCheckOut(recoveredImage);
+      _performAttendanceAction(false, recoveredImage: recoveredImage);
     }
     await prefs.remove('attendance_pending_action');
   }
@@ -256,7 +270,6 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   void refreshData() {
     if (!mounted) return;
     _setGreeting();
-    // If day is already completed, do NOT touch attendance state
     if (!_isDayComplete) {
       _checkAttendanceStatus();
     }
@@ -299,24 +312,20 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
 
       setState(() {
         if (!isSameDay) {
-          // OLD RECORD → treat as fresh day
           _isCheckedIn = false;
           _isDayComplete = false;
           _lastCheckInTime = null;
         } else if (att.checkOutTime != null) {
-          // Today completed
           _isCheckedIn = false;
           _isDayComplete = true;
           _lastCheckInTime = null;
         } else {
-          // Today active
           _isCheckedIn = true;
           _isDayComplete = false;
           _lastCheckInTime = att.createdAt;
         }
       });
     } catch (e) {
-      // No attendance today (404)
       if (!mounted) return;
       setState(() {
         _isCheckedIn = false;
@@ -451,171 +460,154 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     return "Lat: $lat, Lng: $lng";
   }
 
-  Future<void> _handleCheckIn() async {
-    if (_isDayComplete) {
+  // 🚀 MAX OPTIMIZED SPACE/TIME UNIFIED HANDLER
+  Future<void> _performAttendanceAction(
+    bool isCheckIn, {
+    File? recoveredImage,
+  }) async {
+    // 1. Logic Guards
+    if (isCheckIn && _isDayComplete) {
       _toast("Attendance for today is already completed.", isError: true);
       return;
     }
-    if (_isCheckedIn) {
+    if (isCheckIn && _isCheckedIn) {
       _toast("You are already checked in.", isError: true);
       return;
     }
+    if (!isCheckIn && (_isDayComplete || !_isCheckedIn)) return;
 
-    final String? imagePath = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
-    );
-
-    if (imagePath == null) return;
-    await _processCheckIn(File(imagePath));
-  }
-
-  Future<void> _processCheckIn(File imageFile) async {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).removeCurrentSnackBar();
-    setState(() => _isCheckingIn = true);
-
-    try {
-      final results = await Future.wait([
-        _getCurrentPosition().timeout(const Duration(seconds: 10)),
-        _apiService.uploadImageToR2(imageFile),
-      ]);
-
-      final Position? position = results[0] as Position?;
-      final String imageUrl = results[1] as String;
-
-      if (position == null) throw Exception("Location verification failed.");
-
-      String address = "Live Location";
-      try {
-        address = await _resolveAddress(position.latitude, position.longitude);
-      } catch (_) {}
-
-      final checkInData = {
-        'userId': int.parse(widget.employee.id),
-        'role': 'TECHNICAL',
-        'attendanceDate': DateTime.now().toIso8601String(),
-        'locationName': address,
-        'inTimeLatitude': position.latitude,
-        'inTimeLongitude': position.longitude,
-        'inTimeImageUrl': imageUrl,
-        'inTimeImageCaptured': true,
-      };
-
-      final newAtt = await _apiService.checkIn(checkInData);
-
-      if (mounted) {
-        setState(() {
-          _isCheckedIn = true;
-          _isDayComplete = false;
-          _lastCheckInTime = newAtt.createdAt;
-        });
-        _toast('Check-in successful!', isError: false);
-      }
-    } catch (e) {
-      debugPrint("🚨 Check-In Error: $e");
-      final errorStr = e.toString().toLowerCase();
-
-      if (errorStr.contains("already checked in") ||
-          errorStr.contains("exists")) {
-        _toast("Syncing status...");
-        await _checkAttendanceStatus(); // Force sync state from server
-
-        if (mounted && _isDayComplete) {
-          _toast(
-            "You have already completed your attendance for today.",
-            isError: true,
-          );
-        }
-      } else {
-        _toast('Failed: $e', isError: true);
-      }
-    } finally {
-      if (mounted) setState(() => _isCheckingIn = false);
-    }
-  }
-
-  Future<void> _handleCheckOut() async {
-    if (_isDayComplete || !_isCheckedIn) return;
-
-    // Guard against checking out too early
-    if (_lastCheckInTime != null) {
+    if (!isCheckIn && _lastCheckInTime != null) {
       final difference = DateTime.now().difference(_lastCheckInTime!);
-      if (difference.inMinutes < 0) {
+      if (difference.inMinutes < 60) {
         _toast(
-          "Wait ${0 - difference.inMinutes} more minute(s)",
+          "Wait ${60 - difference.inMinutes} more minute(s) before checkout.",
           isError: true,
         );
         return;
       }
     }
 
-    final String? imagePath = await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
-    );
-
-    if (imagePath == null) return;
-    await _processCheckOut(File(imagePath));
-  }
-
-  Future<void> _processCheckOut(File imageFile) async {
-    if (!mounted) return;
-    setState(() => _isCheckingOut = true);
+    setState(() => isCheckIn ? _isCheckingIn = true : _isCheckingOut = true);
 
     try {
+      // 🚀 SPEED OPTIMIZATION 1: PRE-WARM GPS
+      Future<Position?> locationFuture = _getCurrentPosition();
+      File imageFile;
+
+      if (recoveredImage != null) {
+        imageFile = recoveredImage;
+      } else {
+        // 📸 OPEN CAMERA IN PARALLEL
+        final String? imagePath = await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const _InlineCameraScreen()),
+        );
+
+        // 🚀 SPEED OPTIMIZATION 2: QUIET CANCEL
+        if (imagePath == null) {
+          setState(
+            () => isCheckIn ? _isCheckingIn = false : _isCheckingOut = false,
+          );
+          return;
+        }
+        imageFile = File(imagePath);
+      }
+
+      // 🚀 SPEED OPTIMIZATION 3: AWAIT PRE-WARMED GPS SAFELY
+      final Position? position = await locationFuture.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => null,
+      );
+
+      if (position == null) {
+        throw Exception(
+          "Location verification failed. Please check your GPS signal.",
+        );
+      }
+
+      // 🚀 SPEED OPTIMIZATION 4: PARALLEL NETWORK PIPELINE
       final results = await Future.wait([
-        _getCurrentPosition().timeout(
-          const Duration(seconds: 10),
-          onTimeout: () => throw TimeoutException("GPS signal too weak."),
-        ),
         _apiService.uploadImageToR2(imageFile),
+        isCheckIn
+            ? _resolveAddress(position.latitude, position.longitude)
+            : Future.value("Out"),
       ]);
 
-      final Position? position = results[0] as Position?;
-      final String imageUrl = results[1] as String;
+      final String imageUrl = results[0];
+      final String address = isCheckIn ? results[1] : "";
 
-      if (position == null) throw Exception("GPS returned null.");
-
-      final checkOutData = {
-        'userId': int.parse(widget.employee.id),
-        'role': 'TECHNICAL',
-        'attendanceDate': DateTime.now().toIso8601String(),
-        'outTimeImageUrl': imageUrl,
-        'outTimeImageCaptured': true,
-        'outTimeLatitude': position.latitude,
-        'outTimeLongitude': position.longitude,
-      };
-
-      await _apiService.checkOut(checkOutData);
-
-      if (mounted) {
-        setState(() {
-          _isCheckedIn = false; // Back to "Ready to Start" UI
-          _isDayComplete = true; // Lock the buttons
-        });
-        _toast('Checked out successfully!', isError: false);
+      // Final API Submit
+      if (isCheckIn) {
+        final data = {
+          'userId': int.parse(widget.employee.id),
+          'role': 'TECHNICAL',
+          'attendanceDate': DateTime.now().toIso8601String(),
+          'locationName': address,
+          'inTimeLatitude': position.latitude,
+          'inTimeLongitude': position.longitude,
+          'inTimeImageUrl': imageUrl,
+          'inTimeImageCaptured': true,
+        };
+        final res = await _apiService.checkIn(data);
+        if (mounted) {
+          setState(() {
+            _isCheckedIn = true;
+            _isDayComplete = false;
+            _lastCheckInTime = res.createdAt;
+          });
+          _toast('Check-in successful!', isError: false);
+        }
+      } else {
+        final data = {
+          'userId': int.parse(widget.employee.id),
+          'role': 'TECHNICAL',
+          'attendanceDate': DateTime.now().toIso8601String(),
+          'outTimeImageUrl': imageUrl,
+          'outTimeImageCaptured': true,
+          'outTimeLatitude': position.latitude,
+          'outTimeLongitude': position.longitude,
+        };
+        await _apiService.checkOut(data);
+        if (mounted) {
+          setState(() {
+            _isCheckedIn = false;
+            _isDayComplete = true;
+          });
+          _toast('Checked out successfully!', isError: false);
+        }
       }
     } catch (e) {
-      debugPrint("🚨 Check-Out Error: $e");
+      debugPrint("🚨 Attendance Error: $e");
       final errorStr = e.toString().toLowerCase();
 
-      if (errorStr.contains("not found") ||
+      if (errorStr.contains("already checked in") ||
+          errorStr.contains("exists")) {
+        _toast("Syncing status...");
+        await _checkAttendanceStatus();
+        if (mounted && _isDayComplete)
+          _toast(
+            "You have already completed your attendance for today.",
+            isError: true,
+          );
+      } else if (errorStr.contains("not found") ||
           errorStr.contains("no attendance") ||
           errorStr.contains("already")) {
         if (mounted) {
           setState(() {
             _isCheckedIn = false;
-            _isDayComplete =
-                true; // Lock state even on "already checked out" error
+            _isDayComplete = true;
           });
         }
         _toast("Syncing: You are already checked out.");
       } else {
-        _toast('Check-out failed: $e', isError: true);
+        _toast('Action failed: $e', isError: true);
       }
     } finally {
-      if (mounted) setState(() => _isCheckingOut = false);
+      if (mounted) {
+        setState(
+          () => isCheckIn ? _isCheckingIn = false : _isCheckingOut = false,
+        );
+      }
     }
   }
 
@@ -658,88 +650,108 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Mason Management",
-                    style: TextStyle(
-                      color: _textDark,
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                        "Mason Management",
+                        style: TextStyle(
+                          color: _textDark,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(duration: 400.ms)
+                      .slideY(begin: 0.2, curve: Curves.easeOutBack),
                   const SizedBox(height: 16),
 
                   _buildActionSheetItem(
-                    icon: Icons.person_add_alt_1_rounded,
-                    title: "Pending Registrations",
-                    subtitle: "Verify new masons & generate IDs",
-                    iconBg: const Color(0xFFE0F2FE),
-                    iconColor: const Color(0xFF0284C7),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _openFullScreen(
-                        PendingMasonsScreen(employee: widget.employee),
-                      );
-                    },
-                  ),
+                        icon: Icons.person_add_alt_1_rounded,
+                        title: "Pending Registrations",
+                        subtitle: "Verify new masons & generate IDs",
+                        iconBg: const Color(0xFFE0F2FE),
+                        iconColor: const Color(0xFF0284C7),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _openFullScreen(
+                            PendingMasonsScreen(employee: widget.employee),
+                          );
+                        },
+                      )
+                      .animate()
+                      .fadeIn(delay: 100.ms)
+                      .slideX(begin: -0.1, curve: Curves.easeOutCubic),
 
                   if (flags.approveBagLift)
                     _buildActionSheetItem(
-                      icon: Icons.shopping_bag_outlined,
-                      title: "Approve Bag Lift",
-                      subtitle: "Verify pending cement bag lifts",
-                      iconBg: const Color(0xFFFFF7ED),
-                      iconColor: Colors.orange,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _openFullScreen(
-                          ApproveMasonBagLift(employee: widget.employee),
-                        );
-                      },
-                    ),
+                          icon: Icons.shopping_bag_outlined,
+                          title: "Approve Bag Lift",
+                          subtitle: "Verify pending cement bag lifts",
+                          iconBg: const Color(0xFFFFF7ED),
+                          iconColor: Colors.orange,
+                          onTap: () {
+                            Navigator.pop(context);
+                            _openFullScreen(
+                              ApproveMasonBagLift(employee: widget.employee),
+                            );
+                          },
+                        )
+                        .animate()
+                        .fadeIn(delay: 150.ms)
+                        .slideX(begin: -0.1, curve: Curves.easeOutCubic),
 
                   if (flags.approveKyc)
                     _buildActionSheetItem(
-                      icon: Icons.verified_user_outlined,
-                      title: "Approve KYC",
-                      subtitle: "Review pending Mason identities",
-                      iconBg: const Color(0xFFEFF6FF),
-                      iconColor: Colors.blue,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _openFullScreen(
-                          ApproveMasonKycScreen(employee: widget.employee),
-                        );
-                      },
-                    ),
+                          icon: Icons.verified_user_outlined,
+                          title: "Approve KYC",
+                          subtitle: "Review pending Mason identities",
+                          iconBg: const Color(0xFFEFF6FF),
+                          iconColor: Colors.blue,
+                          onTap: () {
+                            Navigator.pop(context);
+                            _openFullScreen(
+                              ApproveMasonKycScreen(employee: widget.employee),
+                            );
+                          },
+                        )
+                        .animate()
+                        .fadeIn(delay: 200.ms)
+                        .slideX(begin: -0.1, curve: Curves.easeOutCubic),
 
                   if (flags.approveRewards)
                     _buildActionSheetItem(
-                      icon: Icons.card_giftcard,
-                      title: "Approve Rewards",
-                      subtitle: "Process gift redemption requests",
-                      iconBg: const Color(0xFFFAF5FF),
-                      iconColor: Colors.purple,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _openFullScreen(
-                          ApproveMasonRewardsScreen(employee: widget.employee),
-                        );
-                      },
-                    ),
+                          icon: Icons.card_giftcard,
+                          title: "Approve Rewards",
+                          subtitle: "Process gift redemption requests",
+                          iconBg: const Color(0xFFFAF5FF),
+                          iconColor: Colors.purple,
+                          onTap: () {
+                            Navigator.pop(context);
+                            _openFullScreen(
+                              ApproveMasonRewardsScreen(
+                                employee: widget.employee,
+                              ),
+                            );
+                          },
+                        )
+                        .animate()
+                        .fadeIn(delay: 250.ms)
+                        .slideX(begin: -0.1, curve: Curves.easeOutCubic),
 
                   if (flags.myMasons)
                     _buildActionSheetItem(
-                      icon: Icons.groups_rounded,
-                      title: "My Masons List",
-                      subtitle: "View all linked masons & history",
-                      iconBg: const Color(0xFFF0FDF4),
-                      iconColor: Colors.teal,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _openFullScreen(
-                          AllMasonsScreen(employee: widget.employee),
-                        );
-                      },
-                    ),
+                          icon: Icons.groups_rounded,
+                          title: "My Masons List",
+                          subtitle: "View all linked masons & history",
+                          iconBg: const Color(0xFFF0FDF4),
+                          iconColor: Colors.teal,
+                          onTap: () {
+                            Navigator.pop(context);
+                            _openFullScreen(
+                              AllMasonsScreen(employee: widget.employee),
+                            );
+                          },
+                        )
+                        .animate()
+                        .fadeIn(delay: 300.ms)
+                        .slideX(begin: -0.1, curve: Curves.easeOutCubic),
 
                   const SizedBox(height: 16),
                 ],
@@ -754,6 +766,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
   void _showTechnicalActions(BuildContext context) {
     final flags = context.read<TechnicalFlags>();
     if (!flags.technicalOps) return;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -767,102 +780,110 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              "Technical Operations",
-              style: TextStyle(
-                color: _textDark,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+                  "Technical Operations",
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                )
+                .animate()
+                .fadeIn(duration: 400.ms)
+                .slideY(begin: 0.2, curve: Curves.easeOutBack),
             const SizedBox(height: 16),
+
             if (flags.createTvr)
               _buildActionSheetItem(
-                icon: Icons.assignment_add,
-                title: "Create TVR",
-                subtitle: "Technical Visit Report Form",
-                iconBg: const Color(0xFFF0FDF4),
-                iconColor: Colors.green,
-                onTap: () async {
-                  // 1. Close the sheet using the sheet's specific context
-                  Navigator.pop(sheetContext); 
+                    icon: Icons.assignment_add,
+                    title: "Create TVR",
+                    subtitle: "Technical Visit Report Form",
+                    iconBg: const Color(0xFFF0FDF4),
+                    iconColor: Colors.green,
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      if (!_isCheckedIn) {
+                        ScaffoldMessenger.of(this.context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Hey! YOU did NOT check in today!!"),
+                            duration: Duration(seconds: 3),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                        await Future.delayed(const Duration(seconds: 3));
+                      }
+                      if (!mounted) return;
+                      showDialog(
+                        context: this.context,
+                        barrierDismissible: false,
+                        builder: (dialogContext) =>
+                            CreateTvrScreen(employee: widget.employee),
+                      );
+                    },
+                  )
+                  .animate()
+                  .fadeIn(delay: 100.ms)
+                  .slideX(begin: -0.1, curve: Curves.easeOutCubic),
 
-                  // Soft Warning: Shows message but DOES NOT block operation
-                  if (!_isCheckedIn) {
-                    // Use 'this.context' from the Dashboard state
-                    ScaffoldMessenger.of(this.context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Hey! YOU did NOT check in today!!"),
-                        duration: Duration(seconds: 3),
-                        backgroundColor: Colors.orange, 
-                      ),
-                    );
-                    // Wait for 3 seconds so the user reads it
-                    await Future.delayed(const Duration(seconds: 3));
-                  }
-                  
-                  // Safety check after the delay
-                  if (!mounted) return;
-                  
-                  showDialog(
-                    // 2. Safely open the Dialog on the Dashboard's active context
-                    context: this.context, 
-                    barrierDismissible: false,
-                    builder: (dialogContext) =>
-                        CreateTvrScreen(employee: widget.employee),
-                  );
-                },
-              ),
             if (flags.registerSite)
               _buildActionSheetItem(
-                icon: Icons.add_location_alt,
-                title: "Register Site",
-                subtitle: "Add a new construction site",
-                iconBg: const Color(0xFFECFEFF),
-                iconColor: Colors.cyan,
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _openFullScreen(AddSiteForm(employee: widget.employee));
-                },
-              ),
+                    icon: Icons.add_location_alt,
+                    title: "Register Site",
+                    subtitle: "Add a new construction site",
+                    iconBg: const Color(0xFFECFEFF),
+                    iconColor: Colors.cyan,
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _openFullScreen(AddSiteForm(employee: widget.employee));
+                    },
+                  )
+                  .animate()
+                  .fadeIn(delay: 150.ms)
+                  .slideX(begin: -0.1, curve: Curves.easeOutCubic),
+
             if (flags.addDealerSubDealer)
               _buildActionSheetItem(
-                icon: Icons.store_mall_directory_outlined,
-                title: "Add Dealer/Sub Dealer",
-                subtitle: "Add a new dealer/sub dealer",
-                iconBg: const Color(0xFFFDF4FF),
-                iconColor: Colors.purple,
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  _openFullScreen(AddDealerForm(employee: widget.employee));
-                },
-              ),
+                    icon: Icons.store_mall_directory_outlined,
+                    title: "Add Dealer/Sub Dealer",
+                    subtitle: "Add a new dealer/sub dealer",
+                    iconBg: const Color(0xFFFDF4FF),
+                    iconColor: Colors.purple,
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _openFullScreen(AddDealerForm(employee: widget.employee));
+                    },
+                  )
+                  .animate()
+                  .fadeIn(delay: 200.ms)
+                  .slideX(begin: -0.1, curve: Curves.easeOutCubic),
+
             if (flags.logTsoMeeting)
               _buildActionSheetItem(
-                icon: Icons.handshake_rounded,
-                title: "Log Meetings",
-                subtitle: "Record meeting details and expenses",
-                iconBg: const Color(0xFFEEF2FF),
-                iconColor: const Color(0xFF4F46E5),
-                onTap: () async {
-                  Navigator.pop(sheetContext); // Close bottom sheet
-
-                  // Soft Warning: Shows message but DOES NOT block operation
-                  if (!_isCheckedIn) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text("Hey! YOU did NOT check in today!!"),
-                        duration: Duration(seconds: 3),
-                        backgroundColor: Colors.orange, // Warning color
-                      ),
-                    );
-                    // Wait for 3 seconds so the user reads it
-                    await Future.delayed(const Duration(seconds: 3));
-                  }
-                  // Safety check after the delay
-                  if (!mounted) return;
-                  _openFullScreen(TsoMeetingsForm(employee: widget.employee));
-                },
-              ),
+                    icon: Icons.handshake_rounded,
+                    title: "Log Meetings",
+                    subtitle: "Record meeting details and expenses",
+                    iconBg: const Color(0xFFEEF2FF),
+                    iconColor: const Color(0xFF4F46E5),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      if (!_isCheckedIn) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text("Hey! YOU did NOT check in today!!"),
+                            duration: Duration(seconds: 3),
+                            backgroundColor: Colors.orange,
+                          ),
+                        );
+                        await Future.delayed(const Duration(seconds: 3));
+                      }
+                      if (!mounted) return;
+                      _openFullScreen(
+                        TsoMeetingsForm(employee: widget.employee),
+                      );
+                    },
+                  )
+                  .animate()
+                  .fadeIn(delay: 250.ms)
+                  .slideX(begin: -0.1, curve: Curves.easeOutCubic),
           ],
         ),
       ),
@@ -899,29 +920,36 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                   "https://picsum.photos/200/300?grayscale",
                 ),
               ),
+            ).animate().scale(
+              delay: 100.ms,
+              duration: 400.ms,
+              curve: Curves.easeOutBack,
             ),
             const SizedBox(width: 14),
             Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _greeting,
-                  style: TextStyle(
-                    color: _textGrey,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Text(
-                  widget.employee.displayName,
-                  style: TextStyle(
-                    color: _textDark,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _greeting,
+                      style: TextStyle(
+                        color: _textGrey,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    Text(
+                      widget.employee.displayName,
+                      style: TextStyle(
+                        color: _textDark,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                )
+                .animate()
+                .fadeIn(delay: 200.ms, duration: 400.ms)
+                .slideX(begin: -0.1, curve: Curves.easeOut),
           ],
         ),
         actions: [
@@ -952,158 +980,156 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         onRefresh: _handleRefresh,
         child: ListView(
           padding: const EdgeInsets.all(20.0),
-          children:
-              [
-                    // 1. HERO ATTENDANCE CARD
-                    if (_attendanceEnabled(context))
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(28),
-                        decoration: BoxDecoration(
-                          color: _cardNavy,
-                          borderRadius: BorderRadius.circular(32),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _cardNavy.withOpacity(0.4),
-                              blurRadius: 20,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
+          children: [
+            // 1. HERO ATTENDANCE CARD
+            if (_attendanceEnabled(context))
+              Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(28),
+                    decoration: BoxDecoration(
+                      color: _cardNavy,
+                      borderRadius: BorderRadius.circular(32),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _cardNavy.withOpacity(0.4),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [],
-                            ),
-                            const SizedBox(height: 20),
-                            Text(
-                              _isCheckedIn
-                                  ? "You are Checked In"
-                                  : "Ready to Start?",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 26,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.location_on_rounded,
-                                  color: Colors.white.withOpacity(0.7),
-                                  size: 16,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Area: $userArea',
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.7),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 32),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildGlassButton(
-                                    label: "CHECK IN",
-                                    icon: Icons.login_rounded,
-                                    isLoading: _isCheckingIn,
-                                    isActive: !_isCheckedIn,
-                                    onTap: () {
-                                      if (_isCheckingIn || _isCheckingOut)
-                                        return;
-                                      if (_isCheckedIn) {
-                                        _toast(
-                                          "You are already checked in.",
-                                          isError: true,
-                                        );
-                                      } else if (_isDayComplete) {
-                                        _toast(
-                                          "You have already completed your attendance for today.",
-                                          isError: true,
-                                        );
-                                      } else {
-                                        _handleCheckIn();
-                                      }
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildGlassButton(
-                                    label: "CHECK OUT",
-                                    icon: Icons.logout_rounded,
-                                    isLoading: _isCheckingOut,
-                                    isActive: _isCheckedIn && !_isDayComplete,
-                                    onTap:
-                                        (!_isCheckedIn ||
-                                            _isDayComplete ||
-                                            _isCheckingIn ||
-                                            _isCheckingOut)
-                                        ? null
-                                        : _handleCheckOut,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-
-                    const SizedBox(height: 32),
-
-                    // 2. OPERATIONS HEADER
-                    Text(
-                      "Operations",
-                      style: TextStyle(
-                        color: _textDark,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
+                      ],
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 20),
+                        Text(
+                          _isCheckedIn
+                              ? "You are Checked In"
+                              : "Ready to Start?",
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.location_on_rounded,
+                              color: Colors.white.withOpacity(0.7),
+                              size: 16,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Area: $userArea',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 32),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildGlassButton(
+                                label: "CHECK IN",
+                                icon: Icons.login_rounded,
+                                isLoading: _isCheckingIn,
+                                isActive: !_isCheckedIn && !_isDayComplete,
+                                isPulseActive: !_isCheckedIn && !_isDayComplete,
+                                onTap: () => _performAttendanceAction(true),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _buildGlassButton(
+                                label: "CHECK OUT",
+                                icon: Icons.logout_rounded,
+                                isLoading: _isCheckingOut,
+                                isActive: _isCheckedIn && !_isDayComplete,
+                                isPulseActive: false,
+                                onTap: () => _performAttendanceAction(false),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  )
+                  .animate()
+                  .fadeIn(duration: 600.ms, curve: Curves.easeOut)
+                  .scale(
+                    begin: const Offset(0.9, 0.9),
+                    curve: Curves.easeOutBack,
+                  )
+                  .shimmer(
+                    delay: 800.ms,
+                    duration: 1500.ms,
+                    color: Colors.white24,
+                  ),
 
-                    // 3. MASON MANAGEMENT
-                    if (flags.masonManagement)
-                      _buildFintechCard(
-                        title: "Mason Management",
-                        subtitle: "Masons, KYC, Bag Lifts",
-                        icon: Icons.handyman_rounded,
-                        iconColor: Colors.orange,
-                        iconBg: const Color(0xFFFFF7ED),
-                        actionText: "Manage",
-                        onTap: () => _showMasonActions(context),
-                      ),
+            const SizedBox(height: 32),
 
-                    const SizedBox(height: 16),
+            // 2. OPERATIONS HEADER
+            Text(
+                  "Operations",
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                )
+                .animate()
+                .fadeIn(delay: 400.ms)
+                .slideX(begin: -0.1, curve: Curves.easeOut),
+            const SizedBox(height: 16),
 
-                    // 4. TECHNICAL OPS
-                    if (flags.technicalOps)
-                      _buildFintechCard(
-                        title: "Technical Ops",
-                        subtitle: "TVR, Site Registration, Add Dealer",
-                        icon: Icons.architecture_rounded,
-                        iconColor: const Color(0xFF0F766E),
-                        iconBg: const Color(0xFFECFEFF),
-                        actionText: "Open",
-                        onTap: () => _showTechnicalActions(context),
-                      ),
-                  ]
-                  .animate(interval: 50.ms)
-                  .fadeIn(duration: 400.ms)
-                  .slideY(begin: 0.1, end: 0, curve: Curves.easeOut),
+            // 3. MASON MANAGEMENT
+            if (flags.masonManagement)
+              _buildFintechCard(
+                    title: "Mason Management",
+                    subtitle: "Masons, KYC, Bag Lifts",
+                    icon: Icons.handyman_rounded,
+                    iconColor: Colors.orange,
+                    iconBg: const Color(0xFFFFF7ED),
+                    actionText: "Manage",
+                    onTap: () => _showMasonActions(context),
+                  )
+                  .animate()
+                  .fadeIn(delay: 500.ms, duration: 500.ms)
+                  .scale(
+                    begin: const Offset(0.95, 0.95),
+                    curve: Curves.easeOutBack,
+                  ),
+
+            const SizedBox(height: 16),
+
+            // 4. TECHNICAL OPS
+            if (flags.technicalOps)
+              _buildFintechCard(
+                    title: "Technical Ops",
+                    subtitle: "TVR, Site Registration, Add Dealer",
+                    icon: Icons.architecture_rounded,
+                    iconColor: const Color(0xFF0F766E),
+                    iconBg: const Color(0xFFECFEFF),
+                    actionText: "Open",
+                    onTap: () => _showTechnicalActions(context),
+                  )
+                  .animate()
+                  .fadeIn(delay: 600.ms, duration: 500.ms)
+                  .scale(
+                    begin: const Offset(0.95, 0.95),
+                    curve: Curves.easeOutBack,
+                  ),
+          ],
         ),
       ),
     );
@@ -1117,8 +1143,9 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     required bool isLoading,
     required bool isActive,
     required VoidCallback? onTap,
+    bool isPulseActive = false,
   }) {
-    return Material(
+    Widget button = Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
@@ -1174,6 +1201,14 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         ),
       ),
     );
+
+    if (isPulseActive && isActive && !isLoading) {
+      button = button
+          .animate(onPlay: (controller) => controller.repeat(reverse: true))
+          .shimmer(duration: 2.seconds, color: Colors.blue.withOpacity(0.3));
+    }
+
+    return button;
   }
 
   Widget _buildFintechCard({

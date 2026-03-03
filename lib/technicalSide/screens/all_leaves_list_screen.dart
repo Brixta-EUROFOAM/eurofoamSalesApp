@@ -1,6 +1,8 @@
 // lib/technicalSide/screens/all_leaves_list_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/leave_application_model.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/create_leave_appl_form.dart';
@@ -16,10 +18,13 @@ class AllLeavesListScreen extends StatefulWidget {
 
 class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
   final ApiService _apiService = ApiService();
-  late Future<List<LeaveApplication>> _leavesFuture;
 
-  // --- Theme Colors matching other screens ---
-  static const Color _bgLight = Color(0xFFF5F5F7);
+  // 🚀 O(1) STATE MANAGEMENT: Replaced FutureBuilder for flat memory retention
+  List<LeaveApplication> _leaves = [];
+  bool _isLoading = true;
+
+  // --- 🎨 PREMIUM THEME PALETTE ---
+  static const Color _bgLight = Color(0xFFF8FAFC);
   static const Color _surfaceWhite = Colors.white;
   static const Color _textDark = Color(0xFF1E293B);
   static const Color _textGrey = Color(0xFF64748B);
@@ -31,13 +36,43 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
     _loadLeaves();
   }
 
-  void _loadLeaves() {
-    setState(() {
-      _leavesFuture = _apiService.fetchLeaveApplicationsForUser(
+  // 🚀 O(N log N) SORTED EXACTLY ONCE: Prevents CPU thrashing on UI rebuilds
+  Future<void> _loadLeaves() async {
+    try {
+      final data = await _apiService.fetchLeaveApplicationsForUser(
         widget.userId,
-        limit: 100, // Fetch enough history
+        limit: 100,
       );
-    });
+
+      // Sort once in the background, NOT in the build method
+      data.sort((a, b) {
+        final dateA = a.createdAt ?? a.startDate;
+        final dateB = b.createdAt ?? b.startDate;
+        return dateB.compareTo(dateA);
+      });
+
+      if (mounted) {
+        setState(() {
+          _leaves = data;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load leaves: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleRefresh() async {
+    setState(() => _isLoading = true);
+    await _loadLeaves();
   }
 
   Future<void> _navigateToCreateForm() async {
@@ -48,17 +83,23 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
       ),
     );
 
-    // If leave was applied successfully, refresh the list
     if (result == true) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Leave applied successfully"),
-            backgroundColor: Colors.green,
+          SnackBar(
+            content: const Text(
+              "Leave applied successfully",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }
-      _loadLeaves();
+      _handleRefresh();
     }
   }
 
@@ -67,149 +108,246 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
     return Scaffold(
       backgroundColor: _bgLight,
       appBar: AppBar(
-        title: const Text("Leave History"),
-        backgroundColor: _surfaceWhite,
-        foregroundColor: _textDark,
+        title:
+            const Text(
+                  "Leave History",
+                  style: TextStyle(
+                    color: _cardNavy,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.5,
+                  ),
+                )
+                .animate()
+                .fadeIn(duration: 400.ms)
+                .slideX(begin: -0.1, curve: Curves.easeOut),
+        backgroundColor: _bgLight,
+        iconTheme: const IconThemeData(color: _cardNavy),
         elevation: 0,
-        centerTitle: true,
+        centerTitle: false,
+        toolbarHeight: 70,
         actions: [
-          // ✅ UPDATED: Clear "Apply Leave" button instead of just a + icon
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
-            child: TextButton.icon(
-              onPressed: _navigateToCreateForm,
-              style: TextButton.styleFrom(
-                backgroundColor: _cardNavy,
-                foregroundColor: const Color.fromARGB(255, 255, 255, 255), // Navy text/icon
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-              ),
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text(
-                "Apply Leave",
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-              ),
+            padding: const EdgeInsets.only(right: 16.0),
+            child: Center(
+              child:
+                  InkWell(
+                        onTap: _navigateToCreateForm,
+                        borderRadius: BorderRadius.circular(30),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _cardNavy,
+                            borderRadius: BorderRadius.circular(30),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _cardNavy.withOpacity(0.3),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.add_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                              SizedBox(width: 6),
+                              Text(
+                                "Apply",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      .animate()
+                      .scale(delay: 200.ms, curve: Curves.easeOutBack)
+                      // ✨ Breathing pulse to subtly draw attention
+                      .then()
+                      .shimmer(duration: 2500.ms, color: Colors.white24)
+                      .animate(onPlay: (c) => c.repeat()),
             ),
           ),
         ],
       ),
-      body: FutureBuilder<List<LeaveApplication>>(
-        future: _leavesFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: Color(0xFF0F172A)));
-          }
+      body: RefreshIndicator(
+        onRefresh: _handleRefresh,
+        color: _cardNavy,
+        backgroundColor: Colors.white,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator(color: _cardNavy))
+            : _leaves.isEmpty
+            ? _buildEmptyState()
+            : ListView.separated(
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 40),
+                itemCount: _leaves.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 16),
+                itemBuilder: (_, index) {
+                  // ✨ STAGGERED LIST ANIMATION
+                  return _buildLeaveCard(_leaves[index])
+                      .animate(delay: (index * 40).ms)
+                      .fadeIn(duration: 400.ms)
+                      .slideY(begin: 0.1, curve: Curves.easeOut);
+                },
+              ),
+      ),
+    );
+  }
 
-          if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}"));
-          }
-
-          final leaves = snapshot.data ?? [];
-
-          if (leaves.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.event_busy_rounded, size: 60, color: _textGrey.withOpacity(0.3)),
-                  const SizedBox(height: 16),
-                  const Text("No leave history found", style: TextStyle(color: _textGrey)),
-                  const SizedBox(height: 24),
-                  // Optional: Add a button here for empty state too
-                  ElevatedButton.icon(
-                    onPressed: _navigateToCreateForm,
-                    icon: const Icon(Icons.add),
-                    label: const Text("Apply First Leave"),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0F172A),
-                      foregroundColor: Colors.white,
+  Widget _buildEmptyState() {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: [
+        SizedBox(height: MediaQuery.of(context).size.height * 0.15),
+        Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(32),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _cardNavy.withOpacity(0.06),
+                      blurRadius: 30,
+                      offset: const Offset(0, 15),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.event_busy_rounded,
+                  size: 48,
+                  color: _textGrey.withOpacity(0.5),
+                ),
+              ).animate().scale(
+                delay: 100.ms,
+                curve: Curves.easeOutBack,
+                duration: 600.ms,
+              ),
+              const SizedBox(height: 32),
+              const Text(
+                    "No Leave History",
+                    style: TextStyle(
+                      color: _textDark,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
                     ),
                   )
-                ],
-              ),
-            );
-          }
-
-          // Sort by createdAt (descending). Falls back to startDate if createdAt is null.
-          leaves.sort((a, b) {
-            final dateA = a.createdAt ?? a.startDate;
-            final dateB = b.createdAt ?? b.startDate;
-            return dateB.compareTo(dateA);
-          });
-
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: leaves.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
-            itemBuilder: (_, i) => _buildLeaveCard(leaves[i]),
-          );
-        },
-      ),
+                  .animate()
+                  .fadeIn(delay: 200.ms)
+                  .slideY(begin: 0.5, curve: Curves.easeOutCubic),
+              const SizedBox(height: 8),
+              const Text(
+                "You haven't applied for any leaves yet.",
+                style: TextStyle(color: _textGrey, fontSize: 15),
+              ).animate().fadeIn(delay: 300.ms),
+              const SizedBox(height: 32),
+              ElevatedButton.icon(
+                    onPressed: _navigateToCreateForm,
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text("Apply First Leave"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _cardNavy,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 32,
+                        vertical: 16,
+                      ),
+                      elevation: 8,
+                      shadowColor: _cardNavy.withOpacity(0.4),
+                    ),
+                  )
+                  .animate()
+                  .fadeIn(delay: 400.ms)
+                  .scale(curve: Curves.easeOutBack),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
   Widget _buildLeaveCard(LeaveApplication leave) {
     Color statusColor;
-    Color statusBg;
     IconData statusIcon;
 
     switch (leave.status.toUpperCase()) {
       case 'APPROVED':
-        statusColor = Colors.green;
-        statusBg = Colors.green.shade50;
-        statusIcon = Icons.check_circle_outline;
+        statusColor = const Color(0xFF10B981);
+        statusIcon = Icons.check_circle_rounded;
         break;
       case 'REJECTED':
-        statusColor = Colors.red;
-        statusBg = Colors.red.shade50;
-        statusIcon = Icons.cancel_outlined;
+        statusColor = const Color(0xFFEF4444);
+        statusIcon = Icons.cancel_rounded;
         break;
       default:
         statusColor = Colors.orange;
-        statusBg = Colors.orange.shade50;
-        statusIcon = Icons.hourglass_empty;
+        statusIcon = Icons.hourglass_top_rounded;
     }
 
-    final dateRange = "${DateFormat('dd MMM').format(leave.startDate)} - ${DateFormat('dd MMM yyyy').format(leave.endDate)}";
-    
-    // Handle potentially null createdAt for display
-    final createdDate = leave.createdAt != null 
-        ? DateFormat('dd MMM').format(leave.createdAt!) 
+    final dateRange =
+        "${DateFormat('dd MMM').format(leave.startDate)} - ${DateFormat('dd MMM yyyy').format(leave.endDate)}";
+    final createdDate = leave.createdAt != null
+        ? DateFormat('dd MMM').format(leave.createdAt!)
         : '';
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _showLeaveDetails(leave, statusColor),
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            color: _surfaceWhite,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
+    return Container(
+      decoration: BoxDecoration(
+        color: _surfaceWhite,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: _cardNavy.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
           ),
-          child: Row(
-            children: [
-              // Status Strip
-              Container(
-                width: 6,
-                height: 100, // Fixed height or flexible
-                decoration: BoxDecoration(
-                  color: statusColor,
-                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+          BoxShadow(
+            color: _cardNavy.withOpacity(0.02),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _showLeaveDetails(leave, statusColor),
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // ✨ SQUIRCLE AVATAR
+                Container(
+                  height: 56,
+                  width: 56,
+                  decoration: BoxDecoration(
+                    color: statusColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Icon(statusIcon, color: statusColor, size: 26),
                 ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
+                const SizedBox(width: 16),
+
+                // ✨ LEAVE DETAILS
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -217,29 +355,31 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: statusBg,
-                              borderRadius: BorderRadius.circular(6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
                             ),
-                            child: Row(
-                              children: [
-                                Icon(statusIcon, size: 14, color: statusColor),
-                                const SizedBox(width: 4),
-                                Text(
-                                  leave.status.toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: statusColor,
-                                  ),
-                                ),
-                              ],
+                            decoration: BoxDecoration(
+                              color: statusColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              leave.status.toUpperCase(),
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                                color: statusColor,
+                                letterSpacing: 0.5,
+                              ),
                             ),
                           ),
                           Text(
-                            createdDate, // Applied on
-                            style: TextStyle(fontSize: 11, color: _textGrey.withOpacity(0.7)),
+                            createdDate,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: _textGrey.withOpacity(0.7),
+                            ),
                           ),
                         ],
                       ),
@@ -247,31 +387,53 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
                       Text(
                         leave.leaveType,
                         style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
                           color: _textDark,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Row(
                         children: [
-                          const Icon(Icons.calendar_today_rounded, size: 14, color: _textGrey),
+                          const Icon(
+                            Icons.calendar_today_rounded,
+                            color: _textGrey,
+                            size: 14,
+                          ),
                           const SizedBox(width: 6),
-                          Text(
-                            dateRange,
-                            style: const TextStyle(fontSize: 13, color: _textGrey),
+                          Expanded(
+                            child: Text(
+                              dateRange,
+                              style: const TextStyle(
+                                color: _textGrey,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
                         ],
                       ),
                     ],
                   ),
                 ),
-              ),
-              const Padding(
-                padding: EdgeInsets.only(right: 16),
-                child: Icon(Icons.chevron_right, color: _textGrey),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Container(
+                  height: 36,
+                  width: 36,
+                  decoration: const BoxDecoration(
+                    color: _bgLight,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: _cardNavy,
+                    size: 14,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -281,13 +443,14 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
   void _showLeaveDetails(LeaveApplication leave, Color color) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
         ),
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -295,23 +458,33 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
             Center(
               child: Container(
                 width: 40,
-                height: 4,
+                height: 5,
                 decoration: BoxDecoration(
                   color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  leave.leaveType,
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: _textDark),
+                Expanded(
+                  child: Text(
+                    leave.leaveType,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: _textDark,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: color.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(20),
@@ -319,57 +492,97 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
                   ),
                   child: Text(
                     leave.status.toUpperCase(),
-                    style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 12),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: color,
+                      fontSize: 11,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 24),
-            _detailRow("From", DateFormat('dd MMM yyyy').format(leave.startDate)),
-            _detailRow("To", DateFormat('dd MMM yyyy').format(leave.endDate)),
-            _detailRow("Reason", leave.reason),
-            const Divider(height: 32),
+            const SizedBox(height: 32),
+            _detailRow(
+              Icons.flight_takeoff_rounded,
+              "From",
+              DateFormat('dd MMM yyyy').format(leave.startDate),
+            ),
+            const SizedBox(height: 16),
+            _detailRow(
+              Icons.flight_land_rounded,
+              "To",
+              DateFormat('dd MMM yyyy').format(leave.endDate),
+            ),
+            const SizedBox(height: 16),
+            _detailRow(Icons.subject_rounded, "Reason", leave.reason),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Divider(height: 1),
+            ),
             const Text(
               "ADMIN REMARKS",
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _textGrey, letterSpacing: 1),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                color: _textGrey,
+                letterSpacing: 1.2,
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(16),
               ),
               child: Text(
                 (leave.adminRemarks != null && leave.adminRemarks!.isNotEmpty)
                     ? leave.adminRemarks!
                     : "No remarks provided.",
-                style: const TextStyle(color: _textDark, height: 1.4),
+                style: const TextStyle(
+                  color: _textDark,
+                  height: 1.5,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: MediaQuery.of(context).padding.bottom + 10),
           ],
         ),
       ),
     );
   }
 
-  Widget _detailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 80,
-            child: Text(label, style: const TextStyle(color: _textGrey, fontWeight: FontWeight.w500)),
+  Widget _detailRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, color: _textGrey, size: 20),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 70,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: _textGrey,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
           ),
-          Expanded(
-            child: Text(value, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600)),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: _textDark,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

@@ -1,11 +1,7 @@
 // lib/utils/dvr_constants.dart
 
 class DvrConstants {
-
-  static const List<String> visitTypeOptions = [
-    'New',
-    'Follow Up',
-  ];
+  static const List<String> visitTypeOptions = ['New', 'Follow Up'];
 
   static const List<String> dealerTypeOptions = [
     'Dealer - Best',
@@ -28,4 +24,10 @@ class DvrConstants {
     'other',
   ];
 
+  static const List<String> partyTypeOptions = [
+    'Builder',
+    'Contractor',
+    'Government',
+    'Paver Block',
+  ];
 }

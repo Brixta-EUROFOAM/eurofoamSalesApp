@@ -1,27 +1,32 @@
 // lib/technicalSide/screens/technical_profile_screen.dart
+
 import 'dart:async';
-import 'package:salesmanapp/models/employee_model.dart';
 import 'package:flutter/material.dart';
-import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/api/auth_service.dart';
+import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:salesmanapp/widgets/theme_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/attendance_model.dart';
-import 'package:salesmanapp/technicalSide/tvrwidgets/all_tvr_list_screen.dart';
-import 'package:salesmanapp/technicalSide/screens/all_pjp_list_screen.dart';
-import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
 import 'package:salesmanapp/models/daily_task_model.dart';
 import 'package:salesmanapp/models/leave_application_model.dart';
+import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
+
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/api/auth_service.dart';
+import 'package:salesmanapp/widgets/theme_provider.dart';
+import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
+
+import 'package:salesmanapp/technicalSide/tvrwidgets/all_tvr_list_screen.dart';
+import 'package:salesmanapp/technicalSide/screens/all_pjp_list_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/all_leaves_list_screen.dart';
 
 // local drift db
 import 'package:drift_db_viewer/drift_db_viewer.dart';
 import 'package:salesmanapp/database/app_database.dart';
-import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 
 // --- Helper Data Class for Stats ---
 class TechnicalProfileStats {
@@ -63,10 +68,10 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
   late Future<TechnicalProfileStats> _statsFuture;
 
   // --- 🎨 PREMIUM THEME PALETTE ---
-  final Color _bgLight = const Color(0xFFF8FAFC); // Slate 50
-  final Color _cardNavy = const Color(0xFF0F172A); // Deep Navy
-  final Color _textDark = const Color(0xFF1E293B); // Slate 800
-  final Color _textGrey = const Color(0xFF64748B); // Slate 500
+  final Color _bgLight = const Color(0xFFF8FAFC);
+  final Color _cardNavy = const Color(0xFF0F172A);
+  final Color _textDark = const Color(0xFF1E293B);
+  final Color _textGrey = const Color(0xFF64748B);
   final Color _surfaceWhite = Colors.white;
   final Color _dangerRed = const Color(0xFFEF4444);
 
@@ -85,6 +90,7 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
     await _statsFuture;
   }
 
+  // 🚀 O(max(N)) PARALLEL NETWORK PIPELINE + O(1) MEMORY RETENTION
   Future<TechnicalProfileStats> _fetchProfileStats() async {
     final uid = int.tryParse(widget.employee.id);
     if (uid == null) throw Exception('Invalid Employee ID');
@@ -95,32 +101,21 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
     final startMonthStr = DateFormat('yyyy-MM-dd').format(startOfMonth);
     final endMonthStr = DateFormat('yyyy-MM-dd').format(endOfMonth);
 
-    // 1. Define separate futures to handle errors individually
-    // This ensures if Attendance fails, TVRs still show up.
-
     var tvrsMonthFuture = _apiService.fetchTvrsForUser(
       uid,
       startDate: startMonthStr,
       endDate: endMonthStr,
     );
-    var tvrsTotalFuture = _apiService.fetchTvrsForUser(
-      uid,
-      limit: 10000,
-    ); // Only fetches IDs usually, or small objects
-
-    // Increase limit to ensure we count ALL PJPs correctly
+    var tvrsTotalFuture = _apiService.fetchTvrsForUser(uid, limit: 10000);
     var pjpFuture = _apiService.fetchPjpsForUser(uid);
-
     var tasksFuture = _apiService.fetchDailyTasksForUser(
       uid,
       status: 'Completed',
     );
     var attendanceFuture = _apiService.fetchAttendanceForUser(uid, limit: 1000);
-
     var leaveFuture = _apiService.fetchLeaveApplicationsForUser(uid, limit: 1);
 
     try {
-      // We use a helper to catch errors per request
       final results = await Future.wait([
         Future.value([]), // Index 0 placeholder
         tvrsMonthFuture.catchError((_) => <TechnicalVisitReport>[]),
@@ -142,16 +137,15 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
       final totalOuts = attendance
           .where((a) => a.outTimeTimestamp != null)
           .length;
-
-      // Calculate PJP stats
       final completedPjps = pjps
           .where((p) => p.status.toLowerCase() == 'completed')
           .length;
 
+      // Heavy arrays are instantly marked for Garbage Collection after returning this lightweight object
       return TechnicalProfileStats(
         tvrsThisMonth: tvrsThisMonth.length,
         tvrsTotal: tvrsTotal.length,
-        upcomingVisits: pjps.length, // Or filter for future dates if needed
+        upcomingVisits: pjps.length,
         completedTasks: tasksList.length,
         totalPjps: pjps.length,
         completedPjps: completedPjps,
@@ -161,7 +155,6 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
       );
     } catch (e) {
       debugPrint("Critical Error fetching stats: $e");
-      // Only return 0s if something catastrophic happens
       return TechnicalProfileStats(
         tvrsThisMonth: 0,
         tvrsTotal: 0,
@@ -217,15 +210,19 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
         elevation: 0,
         centerTitle: true,
         automaticallyImplyLeading: false,
-        title: Text(
-          'PROFILE',
-          style: TextStyle(
-            color: _textDark,
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1.5,
-          ),
-        ),
+        title:
+            Text(
+                  'PROFILE',
+                  style: TextStyle(
+                    color: _textDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                  ),
+                )
+                .animate()
+                .fadeIn(duration: 400.ms)
+                .slideY(begin: -0.5, curve: Curves.easeOutBack),
       ),
       body: FutureBuilder<TechnicalProfileStats>(
         future: _statsFuture,
@@ -262,20 +259,23 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                   email: widget.employee.email ?? 'No email',
                   role: "Technical Sales",
                 ),
-
                 const SizedBox(height: 32),
 
                 // --- 2. OVERVIEW STATS ---
                 Text(
-                  "Overview",
-                  style: TextStyle(
-                    color: _textDark,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                      "Overview",
+                      style: TextStyle(
+                        color: _textDark,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 200.ms)
+                    .slideX(begin: -0.1, curve: Curves.easeOut),
                 const SizedBox(height: 16),
 
+                // ✨ STAGGERED GRID ANIMATION
                 GridView.count(
                   crossAxisCount: 2,
                   crossAxisSpacing: 16,
@@ -285,171 +285,203 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                   childAspectRatio: 0.85,
                   children: [
                     _buildStatCard(
-                      title: "TVRs",
-                      value: stats.tvrsThisMonth.toString(),
-                      subtitle: "This month",
-                      footer: "Lifetime: ${stats.tvrsTotal}",
-                      icon: Icons.assignment_turned_in_rounded,
-                      iconColor: Colors.purple,
-                      iconBg: const Color(0xFFFAF5FF),
-                      onTap: () {
-                        final userId = int.tryParse(widget.employee.id);
-                        if (userId != null) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => UserTvrListScreen(userId: userId),
-                            ),
-                          );
-                        }
-                      },
-                    ),
+                          title: "TVRs",
+                          value: stats.tvrsThisMonth.toString(),
+                          subtitle: "This month",
+                          footer: "Lifetime: ${stats.tvrsTotal}",
+                          icon: Icons.assignment_turned_in_rounded,
+                          iconColor: Colors.purple,
+                          iconBg: const Color(0xFFFAF5FF),
+                          onTap: () {
+                            final userId = int.tryParse(widget.employee.id);
+                            if (userId != null)
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      UserTvrListScreen(userId: userId),
+                                ),
+                              );
+                          },
+                        )
+                        .animate()
+                        .fadeIn(delay: 300.ms)
+                        .scaleXY(begin: 0.9, curve: Curves.easeOutBack),
 
                     _buildStatCard(
-                      title: "PJP",
-                      value: stats.totalPjps.toString(),
-                      subtitle: "Total plans",
-                      footer: "Completed: ${stats.completedPjps}",
-                      icon: Icons.route,
-                      iconColor: Colors.indigo,
-                      iconBg: const Color(0xFFE0E7FF),
-                      onTap: () {
-                        final userId = int.tryParse(widget.employee.id);
-                        if (userId != null) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => UserPjpListScreen(userId: userId),
-                            ),
-                          );
-                        }
-                      },
-                    ),
+                          title: "PJP",
+                          value: stats.totalPjps.toString(),
+                          subtitle: "Total plans",
+                          footer: "Completed: ${stats.completedPjps}",
+                          icon: Icons.route,
+                          iconColor: Colors.indigo,
+                          iconBg: const Color(0xFFE0E7FF),
+                          onTap: () {
+                            final userId = int.tryParse(widget.employee.id);
+                            if (userId != null)
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      UserPjpListScreen(userId: userId),
+                                ),
+                              );
+                          },
+                        )
+                        .animate()
+                        .fadeIn(delay: 400.ms)
+                        .scaleXY(begin: 0.9, curve: Curves.easeOutBack),
 
                     _buildStatCard(
-                      title: "Attendance",
-                      value: stats.totalCheckIns.toString(),
-                      subtitle: "Total Ins",
-                      footer: "Total In + Out: ${stats.totalCheckOuts}",
-                      icon: Icons.access_time_filled,
-                      iconColor: Colors.green,
-                      iconBg: const Color(0xFFECFDF5),
-                    ),
+                          title: "Attendance",
+                          value: stats.totalCheckIns.toString(),
+                          subtitle: "Total Ins",
+                          footer: "Total In + Out: ${stats.totalCheckOuts}",
+                          icon: Icons.access_time_filled,
+                          iconColor: Colors.green,
+                          iconBg: const Color(0xFFECFDF5),
+                        )
+                        .animate()
+                        .fadeIn(delay: 500.ms)
+                        .scaleXY(begin: 0.9, curve: Curves.easeOutBack),
                   ],
                 ),
                 const SizedBox(height: 32),
 
-                // Leave Application Section
+                // --- LEAVE APPLICATION ---
                 Text(
-                  "Leave Application",
-                  style: TextStyle(
-                    color: _textDark,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                      "Leave Application",
+                      style: TextStyle(
+                        color: _textDark,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 600.ms)
+                    .slideX(begin: -0.1, curve: Curves.easeOut),
                 const SizedBox(height: 16),
 
                 _buildDetailedLeaveCard(
-                  context: context,
-                  latestLeave: stats.latestLeave,
-                ),
+                      context: context,
+                      latestLeave: stats.latestLeave,
+                    )
+                    .animate()
+                    .fadeIn(delay: 650.ms)
+                    .slideY(begin: 0.2, curve: Curves.easeOutCubic),
+                const SizedBox(height: 32),
 
-                // --- 3. SETTINGS ---
+                // --- 3. PREFERENCES ---
                 Text(
-                  "Preferences",
-                  style: TextStyle(
-                    color: _textDark,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                      "Preferences",
+                      style: TextStyle(
+                        color: _textDark,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 700.ms)
+                    .slideX(begin: -0.1, curve: Curves.easeOut),
                 const SizedBox(height: 16),
 
                 Container(
-                  padding: const EdgeInsets.all(20.0),
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.06),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
+                      padding: const EdgeInsets.all(20.0),
+                      decoration: BoxDecoration(
+                        color: _surfaceWhite,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.06),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'App Theme',
-                        style: TextStyle(
-                          color: _textGrey,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: SegmentedButton<ThemeMode>(
-                          style: ButtonStyle(
-                            backgroundColor:
-                                MaterialStateProperty.resolveWith<Color>((
-                                  states,
-                                ) {
-                                  if (states.contains(MaterialState.selected))
-                                    return _cardNavy;
-                                  return _bgLight;
-                                }),
-                            foregroundColor:
-                                MaterialStateProperty.resolveWith<Color>((
-                                  states,
-                                ) {
-                                  if (states.contains(MaterialState.selected))
-                                    return Colors.white;
-                                  return _textGrey;
-                                }),
-                            side: MaterialStateProperty.all(BorderSide.none),
-                            shape: MaterialStateProperty.all(
-                              RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            padding: MaterialStateProperty.all(
-                              const EdgeInsets.symmetric(vertical: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'App Theme',
+                            style: TextStyle(
+                              color: _textGrey,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
                             ),
                           ),
-                          segments: const [
-                            ButtonSegment(
-                              value: ThemeMode.light,
-                              label: Text('Light'),
-                              icon: Icon(Icons.light_mode_outlined, size: 18),
-                            ),
-                            ButtonSegment(
-                              value: ThemeMode.dark,
-                              label: Text('Dark'),
-                              icon: Icon(Icons.dark_mode_outlined, size: 18),
-                            ),
-                            ButtonSegment(
-                              value: ThemeMode.system,
-                              label: Text('Auto'),
-                              icon: Icon(
-                                Icons.phone_android_outlined,
-                                size: 18,
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: SegmentedButton<ThemeMode>(
+                              style: ButtonStyle(
+                                backgroundColor:
+                                    MaterialStateProperty.resolveWith<Color>(
+                                      (states) =>
+                                          states.contains(
+                                            MaterialState.selected,
+                                          )
+                                          ? _cardNavy
+                                          : _bgLight,
+                                    ),
+                                foregroundColor:
+                                    MaterialStateProperty.resolveWith<Color>(
+                                      (states) =>
+                                          states.contains(
+                                            MaterialState.selected,
+                                          )
+                                          ? Colors.white
+                                          : _textGrey,
+                                    ),
+                                side: MaterialStateProperty.all(
+                                  BorderSide.none,
+                                ),
+                                shape: MaterialStateProperty.all(
+                                  RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                                padding: MaterialStateProperty.all(
+                                  const EdgeInsets.symmetric(vertical: 12),
+                                ),
                               ),
+                              segments: const [
+                                ButtonSegment(
+                                  value: ThemeMode.light,
+                                  label: Text('Light'),
+                                  icon: Icon(
+                                    Icons.light_mode_outlined,
+                                    size: 18,
+                                  ),
+                                ),
+                                ButtonSegment(
+                                  value: ThemeMode.dark,
+                                  label: Text('Dark'),
+                                  icon: Icon(
+                                    Icons.dark_mode_outlined,
+                                    size: 18,
+                                  ),
+                                ),
+                                ButtonSegment(
+                                  value: ThemeMode.system,
+                                  label: Text('Auto'),
+                                  icon: Icon(
+                                    Icons.phone_android_outlined,
+                                    size: 18,
+                                  ),
+                                ),
+                              ],
+                              selected: {themeProvider.themeMode},
+                              onSelectionChanged:
+                                  (Set<ThemeMode> newSelection) => themeProvider
+                                      .setThemeMode(newSelection.first),
                             ),
-                          ],
-                          selected: {themeProvider.themeMode},
-                          onSelectionChanged: (Set<ThemeMode> newSelection) {
-                            themeProvider.setThemeMode(newSelection.first);
-                          },
-                        ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 750.ms)
+                    .slideY(begin: 0.2, curve: Curves.easeOutCubic),
 
                 //  ----- DEBUG TOOLS -----
                 if (flags.showDbViewer) ...[
@@ -478,146 +510,197 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                         size: 14,
                         color: Colors.purple,
                       ),
-                      onTap: () {
-                        final db = AppDatabase.instance;
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (context) => DriftDbViewer(db),
-                          ),
-                        );
-                      },
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) =>
+                              DriftDbViewer(AppDatabase.instance),
+                        ),
+                      ),
                     ),
-                  ),
+                  ).animate().fadeIn(delay: 800.ms),
                 ],
 
-                // ---------------------------------------------------------
-                // --- ACCOUNT SWITCHER (Only visible if Dual Role) ---
-                // ---------------------------------------------------------
-                if (flags.accountSwitcher && 
-                    widget.employee.loginId != null && 
+                // --- ACCOUNT SWITCHER ---
+                if (flags.accountSwitcher &&
+                    widget.employee.loginId != null &&
                     widget.employee.loginId!.isNotEmpty) ...[
                   const SizedBox(height: 32),
                   Text(
-                    "Switch Portal",
-                    style: TextStyle(color: _textDark, fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
+                        "Switch Portal",
+                        style: TextStyle(
+                          color: _textDark,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(delay: 850.ms)
+                      .slideX(begin: -0.1, curve: Curves.easeOut),
                   const SizedBox(height: 16),
                   Container(
-                    decoration: BoxDecoration(
-                      color: _surfaceWhite,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: Colors.blueAccent.withOpacity(0.3), width: 1.5),
-                      boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.06), blurRadius: 20, offset: const Offset(0, 8))],
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      leading: Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(12)),
-                        child: const Icon(Icons.business_center_rounded, color: Colors.blueAccent, size: 26),
-                      ),
-                      title: const Text("Switch to Sales Force", style: TextStyle(color: Colors.blueAccent, fontWeight: FontWeight.w800, fontSize: 16)),
-                      subtitle: const Text("Access EMP Dashboard Side", style: TextStyle(color: Colors.grey, fontSize: 13)),
-                      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16, color: Colors.blueAccent),
-                      onTap: () async {
-                        // 1. Update SharedPrefs to false (Sales Mode)
-                        final prefs = await SharedPreferences.getInstance();
-                        await prefs.setBool('is_technical_mode', false);
-                        
-                        // 2. Navigate securely to Sales Portal passing the current employee session
-                        if (context.mounted) {
-                          Navigator.of(context).pushNamedAndRemoveUntil(
-                            '/home',
-                            (route) => false,
-                            arguments: widget.employee,
-                          );
-                        }
-                      },
-                    ),
-                  ),
+                        decoration: BoxDecoration(
+                          color: _surfaceWhite,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: Colors.blueAccent.withOpacity(0.3),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.06),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          leading: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6FF),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.business_center_rounded,
+                              color: Colors.blueAccent,
+                              size: 26,
+                            ),
+                          ),
+                          title: const Text(
+                            "Switch to Sales Force",
+                            style: TextStyle(
+                              color: Colors.blueAccent,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                          subtitle: const Text(
+                            "Access EMP Dashboard Side",
+                            style: TextStyle(color: Colors.grey, fontSize: 13),
+                          ),
+                          trailing: const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 16,
+                            color: Colors.blueAccent,
+                          ),
+                          onTap: () async {
+                            final prefs = await SharedPreferences.getInstance();
+                            await prefs.setBool('is_technical_mode', false);
+                            if (context.mounted)
+                              Navigator.of(context).pushNamedAndRemoveUntil(
+                                '/home',
+                                (route) => false,
+                                arguments: widget.employee,
+                              );
+                          },
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(delay: 900.ms)
+                      .scale(curve: Curves.easeOutBack)
+                      // ✨ Subtle breathing pulse to draw attention to cross-role functionality
+                      .then()
+                      .shimmer(
+                        duration: 2500.ms,
+                        color: Colors.blueAccent.withOpacity(0.2),
+                      )
+                      .animate(onPlay: (c) => c.repeat()),
                 ],
 
                 // --- 4. ACCOUNT ACTIONS ---
                 const SizedBox(height: 32),
                 Text(
-                  "Account",
-                  style: TextStyle(
-                    color: _textDark,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                      "Account",
+                      style: TextStyle(
+                        color: _textDark,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 950.ms)
+                    .slideX(begin: -0.1, curve: Curves.easeOut),
                 const SizedBox(height: 16),
 
                 Container(
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.06),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Theme(
-                    data: Theme.of(
-                      context,
-                    ).copyWith(dividerColor: Colors.transparent),
-                    child: ExpansionTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: _cardNavy.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          Icons.shield_outlined,
-                          color: _cardNavy,
-                          size: 20,
-                        ),
-                      ),
-                      title: Text(
-                        'Privacy & Security',
-                        style: TextStyle(
-                          color: _textDark,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                        ),
-                      ),
-                      childrenPadding: const EdgeInsets.only(bottom: 12),
-                      children: [
-                        ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 24,
+                      decoration: BoxDecoration(
+                        color: _surfaceWhite,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.06),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
                           ),
-                          leading: const Icon(
-                            Icons.delete_outline,
-                            color: Colors.redAccent,
-                          ),
-                          title: const Text(
-                            "Request Account Deletion",
-                            style: TextStyle(
-                              color: Colors.redAccent,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 14,
+                        ],
+                      ),
+                      child: Theme(
+                        data: Theme.of(
+                          context,
+                        ).copyWith(dividerColor: Colors.transparent),
+                        child: ExpansionTile(
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: _cardNavy.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.shield_outlined,
+                              color: _cardNavy,
+                              size: 20,
                             ),
                           ),
-                          trailing: const Icon(
-                            Icons.open_in_new,
-                            size: 16,
-                            color: Colors.grey,
+                          title: Text(
+                            'Privacy & Security',
+                            style: TextStyle(
+                              color: _textDark,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
                           ),
-                          onTap: _launchDeleteAccountUrl,
+                          childrenPadding: const EdgeInsets.only(bottom: 12),
+                          children: [
+                            ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 24,
+                              ),
+                              leading: const Icon(
+                                Icons.delete_outline,
+                                color: Colors.redAccent,
+                              ),
+                              title: const Text(
+                                "Request Account Deletion",
+                                style: TextStyle(
+                                  color: Colors.redAccent,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              trailing: const Icon(
+                                Icons.open_in_new,
+                                size: 16,
+                                color: Colors.grey,
+                              ),
+                              onTap: _launchDeleteAccountUrl,
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-                ),
+                      ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 1000.ms)
+                    .slideY(begin: 0.2, curve: Curves.easeOutCubic),
 
                 const SizedBox(height: 32),
-                _LogoutButton(color: _dangerRed),
+                _LogoutButton(color: _dangerRed)
+                    .animate()
+                    .fadeIn(delay: 1050.ms)
+                    .scaleXY(begin: 0.95, curve: Curves.easeOut),
               ],
             ),
           );
@@ -662,43 +745,62 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
               ),
             ),
           ),
+        ).animate().scale(
+          delay: 100.ms,
+          duration: 600.ms,
+          curve: Curves.easeOutBack,
         ),
+
         const SizedBox(height: 20),
+
         Text(
-          displayName,
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
-            color: _textDark,
-            letterSpacing: -0.5,
-          ),
-        ),
+              displayName,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+                color: _textDark,
+                letterSpacing: -0.5,
+              ),
+            )
+            .animate()
+            .fadeIn(delay: 200.ms)
+            .slideY(begin: 0.2, curve: Curves.easeOut),
+
         const SizedBox(height: 4),
+
         Text(
-          email,
-          style: TextStyle(
-            color: _textGrey,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
+              email,
+              style: TextStyle(
+                color: _textGrey,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            )
+            .animate()
+            .fadeIn(delay: 250.ms)
+            .slideY(begin: 0.2, curve: Curves.easeOut),
+
         const SizedBox(height: 16),
+
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: _cardNavy.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            role.toUpperCase(),
-            style: TextStyle(
-              color: _cardNavy,
-              fontWeight: FontWeight.w800,
-              fontSize: 11,
-              letterSpacing: 1,
-            ),
-          ),
-        ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: _cardNavy.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                role.toUpperCase(),
+                style: TextStyle(
+                  color: _cardNavy,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 11,
+                  letterSpacing: 1,
+                ),
+              ),
+            )
+            .animate()
+            .fadeIn(delay: 300.ms)
+            .scaleXY(begin: 0.8, curve: Curves.easeOutBack),
       ],
     );
   }
@@ -744,7 +846,6 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                   ),
                   child: Icon(icon, color: iconColor, size: 24),
                 ),
-                // Only show arrow if it's clickable
                 if (onTap != null)
                   Icon(
                     Icons.arrow_forward_ios_rounded,
@@ -792,27 +893,21 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
 
   Widget _buildDetailedLeaveCard({
     required BuildContext context,
-    required LeaveApplication?
-    latestLeave,
+    required LeaveApplication? latestLeave,
   }) {
-    const Color cardBg = Color(
-      0xFFFEE2E2,
-    ); 
+    const Color cardBg = Color(0xFFFEE2E2);
     const Color iconColor = Colors.redAccent;
-    const IconData iconData =
-        Icons.calendar_month_outlined; 
+    const IconData iconData = Icons.calendar_month_outlined;
 
     return GestureDetector(
       onTap: () async {
         final userId = int.parse(widget.employee.id);
-
         await Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => AllLeavesListScreen(userId: userId),
           ),
         );
-
         _refreshStats();
       },
       child: Container(
@@ -830,7 +925,6 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
         ),
         child: Row(
           children: [
-            // Icon
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -840,13 +934,12 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
               child: const Icon(iconData, color: iconColor, size: 28),
             ),
             const SizedBox(width: 16),
-
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Leaves", 
+                    "Leaves",
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -855,7 +948,7 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    "Apply & view history", 
+                    "Apply & view history",
                     style: TextStyle(
                       fontSize: 13,
                       color: _textGrey,
@@ -865,8 +958,6 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                 ],
               ),
             ),
-
-            // Arrow/Action
             Icon(
               Icons.arrow_forward_ios_rounded,
               size: 16,
@@ -893,11 +984,10 @@ class _LogoutButton extends StatelessWidget {
       ),
       onPressed: () async {
         await AuthService().logout();
-        if (context.mounted) {
+        if (context.mounted)
           Navigator.of(
             context,
           ).pushNamedAndRemoveUntil('/selector', (route) => false);
-        }
       },
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
