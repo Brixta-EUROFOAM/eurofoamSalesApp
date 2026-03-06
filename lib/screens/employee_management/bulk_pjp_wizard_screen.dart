@@ -1,10 +1,11 @@
 // lib/screens/employee_management/bulk_pjp_wizard_screen.dart
 import 'package:flutter/material.dart';
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart';
-import 'package:salesmanapp/api/api_service.dart';
+import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
-import 'dart:developer' as dev;
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/models/daily_task_model.dart';
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:uuid/uuid.dart';
 
 class BulkPjpWizardScreen extends StatefulWidget {
   final Employee employee;
@@ -21,532 +22,413 @@ class BulkPjpWizardScreen extends StatefulWidget {
 }
 
 class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
-  int _currentStep = 0;
-  bool _isSubmitting = false;
   final ApiService _apiService = ApiService();
+  final String _batchId = const Uuid().v4();
 
+  int _currentStep = 0;
+  int _plannerPageIndex = 0;
+  bool _isSubmitting = false;
+
+  // CONSTANTS
+  final List<String> _zones = [
+    'Kamrup',
+    'Central Assam',
+    'Upper Assam',
+    'Lower Assam',
+    'Kamrup TSO',
+    'Meghalaya',
+    'Barak Valley',
+    'Mizoram',
+    'Manipur',
+    'Nagaland',
+    'North Bank',
+    'Non Trade',
+    'Tripura',
+  ];
+
+  final List<String> _objectives = [
+    'Order Related',
+    'Payment Collection',
+    'Any Support',
+    'Prospect',
+    'Meetings',
+    'Promotional Activity',
+  ];
+
+  final List<String> _types = [
+    'Important Parties',
+    'Prospect',
+    'Sub Dealer',
+    'Open Visit',
+    'Other Visit',
+  ];
+
+  final List<String> _weeks = ['week1', 'week2', 'week3', 'week4'];
+
+  // DATE STATE
   final Set<DateTime> _selectedDates = {};
   DateTime _focusedDay = DateTime.now();
+  List<DateTime> _sortedDates = [];
 
-  // Master pool of all selected dealers
-  Set<Dealer> _selectedDealerPool = {};
+  // DATE → LIST OF VISITS
+  final Map<DateTime, List<Map<String, dynamic>>> _dailyConfigs = {};
 
-  late Future<List<Dealer>> _dealersFuture;
-  List<Dealer> _allDealers = [];
+  // THEME
+  static const Color _cardNavy = Color(0xFF0F172A);
+  static const Color _bgLight = Color(0xFFF8FAFC);
 
-  // --- FINTECH THEME PALETTE ---
-  static const Color _bgLight       = Color(0xFFF3F4F6); 
-  static const Color _surfaceWhite  = Colors.white;
-  static const Color _cardNavy      = Color(0xFF0F172A); 
-  static const Color _textDark      = Color(0xFF111827); 
-  static const Color _textGrey      = Color(0xFF6B7280); 
-  static const Color _accentGreen   = Color(0xFF10B981); 
-  static const Color _inputFill     = Color(0xFFF9FAFB);
+  // --------------------------------------------------
+  // VISIT MODEL
+  // --------------------------------------------------
 
-  @override
-  void initState() {
-    super.initState();
-    _dealersFuture = _loadDealers();
+  Map<String, dynamic> _createEmptyVisit() {
+    return {
+      'zone': _zones.first,
+      'objective': _objectives.first,
+      'type': _types.first,
+      'week': _weeks.first,
+      'area': TextEditingController(),
+      'route': TextEditingController(),
+      'dealerName': TextEditingController(),
+      'dealerMobile': TextEditingController(),
+      'requiredVisitCount': TextEditingController(text: '1'),
+    };
   }
 
-  Future<List<Dealer>> _loadDealers() async {
-    try {
-      // Fetch plenty of dealers to perform local search/selection
-      final dealers = await _apiService.fetchDealers(
-        userId: int.parse(widget.employee.id),
-        limit: 500, 
-      );
-      if (mounted) {
-        setState(() {
-          _allDealers = dealers;
-        });
-      }
-      return dealers;
-    } catch (e) {
-      dev.log("Error loading dealers: $e");
-      return [];
+  void _initializeDailyConfigs() {
+    _sortedDates = _selectedDates.toList()..sort();
+
+    for (var date in _sortedDates) {
+      _dailyConfigs.putIfAbsent(date, () => [_createEmptyVisit()]);
     }
   }
 
-  Future<void> _generateAndSubmitSmartPlan() async {
+  // --------------------------------------------------
+  // SUBMIT
+  // --------------------------------------------------
+
+  Future<void> _submitBatch() async {
     setState(() => _isSubmitting = true);
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
 
-    // --- 1. VALIDATION ---
-    const int minVisitsPerDay = 8;
-
-    if (_selectedDates.isEmpty) {
-      scaffoldMessenger.showSnackBar(const SnackBar(
-        content: Text('Please select at least one date.'),
-        backgroundColor: Colors.orange,
-      ));
-      if (mounted) setState(() => _isSubmitting = false);
-      return;
-    }
-
-    final List<Dealer> dealerPool = _selectedDealerPool.toList();
-
-    if (dealerPool.length < minVisitsPerDay) {
-      scaffoldMessenger.showSnackBar(SnackBar(
-        content: Text('Please select at least $minVisitsPerDay unique dealers to create a plan.'),
-        backgroundColor: Colors.orange,
-      ));
-      if (mounted) setState(() => _isSubmitting = false);
-      return;
-    }
-
-    // --- 2. THE SCHEDULING ALGORITHM ---
-    final sortedDates = _selectedDates.toList()..sort();
-    
-    // Sort pool by area to group visits geographically (simple optimization)
-    dealerPool.sort((a, b) => (a.area).compareTo(b.area));
-
-    // Track usage count to distribute evenly
-    final Map<String, int> dealerVisitCount = { for (var d in dealerPool) d.id!: 0 };
-
-    for (var _ in sortedDates) {
-      // Pick dealers with least visits so far
-      dealerPool.sort((a, b) => dealerVisitCount[a.id!]!.compareTo(dealerVisitCount[b.id!]!));
-      final dealersForThisDay = dealerPool.take(minVisitsPerDay);
-      for (var dealer in dealersForThisDay) {
-        dealerVisitCount[dealer.id!] = dealerVisitCount[dealer.id!]! + 1;
-      }
-    }
-
-    // --- 4. SUBMIT TO API ---
     try {
-      final List<String> allDealerIds = dealerPool.map((d) => d.id!).toList();
-      final DateTime baseDate = sortedDates.first;
+      List<Future> futures = [];
 
-      const String planDescription = "Monthly Sales Visit Plan";
+      for (var date in _sortedDates) {
+        final visits = _dailyConfigs[date]!;
 
-      final response = await _apiService.createBulkPjp(
-        userId: int.parse(widget.employee.id),
-        createdById: int.parse(widget.employee.id),
-        dealerIds: allDealerIds, // Pass Dealers
-        siteIds: null,           // No Sites
-        baseDate: baseDate,
-        batchSizePerDay: minVisitsPerDay,
-        areaToBeVisited: planDescription,
-        status: 'PENDING',
-        description: planDescription,
-      );
+        for (var visit in visits) {
+          final task = DailyTask(
+            userId: int.parse(widget.employee.id),
+            pjpBatchId: _batchId,
+            taskDate: date,
+            status: "PENDING",
+            zone: visit['zone'],
+            area: visit['area'].text,
+            route: visit['route'].text,
+            dealerNameSnapshot: visit['dealerName'].text,
+            dealerMobile: visit['dealerMobile'].text,
+            objective: visit['objective'],
+            visitType: visit['type'],
+            week: visit['week'],
+            requiredVisitCount: int.tryParse(visit['requiredVisitCount'].text),
+            createdAt: DateTime.now(),
+            updatedAt: DateTime.now(),
+          );
 
-      final createdCount = response['totalRowsCreated'] ?? 0;
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text('Sales Plan submitted! $createdCount visits created.'),
-          backgroundColor: _accentGreen,
-        ),
-      );
+          futures.add(_apiService.createDailyTask(task));
+        }
+      }
+
+      await Future.wait(futures);
 
       widget.onPjpCreated();
-      navigator.pop();
+
+      if (mounted) Navigator.pop(context);
     } catch (e) {
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
+  // --------------------------------------------------
+  // UI
+  // --------------------------------------------------
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _bgLight,
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        backgroundColor: _bgLight,
+        title: const Text(
+          "Weekly Plan Wizard",
+          style: TextStyle(fontWeight: FontWeight.bold, color: _cardNavy),
+        ),
+        backgroundColor: Colors.white,
         elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          _currentStep == 0 ? 'Select Dates' : 'Select Dealers',
-          style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16),
-        ),
+        iconTheme: const IconThemeData(color: _cardNavy),
       ),
       body: Theme(
         data: Theme.of(context).copyWith(
-          colorScheme: const ColorScheme.light(primary: _cardNavy),
-          canvasColor: _bgLight,
+          canvasColor: Colors.white,
+          colorScheme: const ColorScheme.light(
+            primary: _cardNavy,
+            onPrimary: Colors.white,
+          ),
         ),
         child: Stepper(
-          type: StepperType.horizontal,
           elevation: 0,
+          type: StepperType.horizontal,
           currentStep: _currentStep,
           onStepContinue: () {
             if (_currentStep == 0) {
-              if (_selectedDates.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Please select dates.'), backgroundColor: Colors.orange),
-                );
-                return;
-              }
-              setState(() => _currentStep = 1);
+              if (_selectedDates.isEmpty) return;
+
+              setState(() {
+                _initializeDailyConfigs();
+                _currentStep++;
+              });
             } else {
-              _generateAndSubmitSmartPlan();
+              _submitBatch();
             }
           },
-          onStepCancel: () {
-            if (_currentStep == 1) {
-              setState(() => _currentStep = 0);
-            }
-          },
-          controlsBuilder: (context, details) {
-            return Padding(
-              padding: const EdgeInsets.only(top: 32.0, bottom: 20),
-              child: _isSubmitting
-                  ? const Center(child: CircularProgressIndicator(color: _cardNavy))
-                  : Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: details.onStepContinue,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _cardNavy,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                              elevation: 4,
-                              shadowColor: _cardNavy.withOpacity(0.4),
-                            ),
-                            child: Text(
-                              _currentStep == 0 ? 'NEXT STEP' : 'GENERATE PLAN',
-                              style: const TextStyle(fontWeight: FontWeight.bold, letterSpacing: 1.0)
-                            ),
-                          ),
-                        ),
-                        if (_currentStep == 1) ...[
-                          const SizedBox(width: 16),
-                          TextButton(
-                            onPressed: details.onStepCancel,
-                            child: const Text('BACK', style: TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
-                          ),
-                        ],
-                      ],
-                    ),
-            );
-          },
+          onStepCancel: () => _currentStep > 0
+              ? setState(() => _currentStep--)
+              : Navigator.pop(context),
           steps: [
             Step(
-              title: const Text('Schedule'),
-              isActive: _currentStep == 0,
-              state: _currentStep > 0 ? StepState.complete : StepState.indexed,
+              title: const Text("Select Dates"),
+              isActive: _currentStep >= 0,
               content: _buildCalendarStep(),
             ),
             Step(
-              title: const Text('Dealers'),
-              isActive: _currentStep == 1,
-              state: _currentStep > 1 ? StepState.complete : StepState.indexed,
-              content: _buildDealerSelectionStep(),
+              title: const Text("Plan Visits"),
+              isActive: _currentStep >= 1,
+              content: _buildPlannerStep(),
             ),
           ],
         ),
       ),
     );
   }
+
+  // --------------------------------------------------
+  // CALENDAR
+  // --------------------------------------------------
 
   Widget _buildCalendarStep() {
-    return Container(
-      decoration: BoxDecoration(
-        color: _surfaceWhite,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+    return TableCalendar(
+      focusedDay: _focusedDay,
+      firstDay: DateTime.now(),
+      lastDay: DateTime.now().add(const Duration(days: 60)),
+      selectedDayPredicate: (day) =>
+          _selectedDates.contains(DateTime.utc(day.year, day.month, day.day)),
+      onDaySelected: (selectedDay, focusedDay) {
+        final dayUtc = DateTime.utc(
+          selectedDay.year,
+          selectedDay.month,
+          selectedDay.day,
+        );
+
+        setState(() {
+          _focusedDay = focusedDay;
+
+          if (_selectedDates.contains(dayUtc)) {
+            _selectedDates.remove(dayUtc);
+          } else {
+            _selectedDates.add(dayUtc);
+          }
+        });
+      },
+      calendarStyle: const CalendarStyle(
+        selectedDecoration: BoxDecoration(
+          color: _cardNavy,
+          shape: BoxShape.circle,
+        ),
       ),
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Column(
-        children: [
-          TableCalendar(
-            focusedDay: _focusedDay,
-            firstDay: DateTime.now(),
-            lastDay: DateTime.now().add(const Duration(days: 60)),
-            calendarFormat: CalendarFormat.month,
-            selectedDayPredicate: (day) => _selectedDates.contains(
-              DateTime.utc(day.year, day.month, day.day),
-            ),
-            onDaySelected: (selectedDay, focusedDay) {
-              final selectedDayUtc = DateTime.utc(selectedDay.year, selectedDay.month, selectedDay.day);
-              setState(() {
-                _focusedDay = focusedDay;
-                if (_selectedDates.contains(selectedDayUtc)) {
-                  _selectedDates.remove(selectedDayUtc);
-                } else {
-                  _selectedDates.add(selectedDayUtc);
-                }
-              });
-            },
-            headerStyle: const HeaderStyle(
-              formatButtonVisible: false, 
-              titleCentered: true,
-              titleTextStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textDark),
-              leftChevronIcon: Icon(Icons.chevron_left, color: _textGrey),
-              rightChevronIcon: Icon(Icons.chevron_right, color: _textGrey),
-            ),
-            calendarStyle: CalendarStyle(
-              selectedDecoration: const BoxDecoration(color: _cardNavy, shape: BoxShape.circle),
-              todayDecoration: BoxDecoration(color: _cardNavy.withOpacity(0.4), shape: BoxShape.circle),
-              defaultTextStyle: const TextStyle(color: _textDark),
-              weekendTextStyle: const TextStyle(color: _textDark),
-              outsideTextStyle: const TextStyle(color: Color(0xFFD1D5DB)),
-            ),
+    );
+  }
+
+  // --------------------------------------------------
+  // PLANNER
+  // --------------------------------------------------
+
+  Widget _buildPlannerStep() {
+    if (_sortedDates.isEmpty) return const SizedBox.shrink();
+
+    final date = _sortedDates[_plannerPageIndex];
+    final visits = _dailyConfigs[date]!;
+
+    return Column(
+      children: [
+        Text(
+          DateFormat('EEEE, MMM d').format(date),
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: _cardNavy,
           ),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+        ),
+        const SizedBox(height: 20),
+
+        ...visits.asMap().entries.map((entry) {
+          return _buildVisitCard(date, entry.key, entry.value);
+        }),
+
+        const SizedBox(height: 12),
+
+        ElevatedButton.icon(
+          onPressed: () {
+            setState(() {
+              visits.add(_createEmptyVisit());
+            });
+          },
+          icon: const Icon(Icons.add),
+          label: const Text("Add Visit"),
+        ),
+
+        const SizedBox(height: 24),
+
+        _buildPaginationControls(),
+      ],
+    );
+  }
+
+  // --------------------------------------------------
+  // VISIT CARD
+  // --------------------------------------------------
+
+  Widget _buildVisitCard(DateTime date, int index, Map<String, dynamic> visit) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Icon(Icons.calendar_today, size: 16, color: _textGrey),
-                const SizedBox(width: 8),
-                Text('${_selectedDates.length} days selected', style: const TextStyle(color: _textDark, fontWeight: FontWeight.bold)),
+                Text(
+                  "Visit ${index + 1}",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete),
+                  onPressed: () {
+                    setState(() {
+                      _dailyConfigs[date]!.removeAt(index);
+                    });
+                  },
+                ),
               ],
             ),
-          ),
-        ],
+
+            _buildTextField("Dealer Name", visit['dealerName']),
+            _buildTextField("Dealer Mobile", visit['dealerMobile']),
+            _buildTextField("Area", visit['area']),
+            _buildTextField("Route", visit['route']),
+
+            _buildDropdown(
+              "Zone",
+              visit['zone'],
+              _zones,
+              (v) => setState(() => visit['zone'] = v),
+            ),
+
+            _buildDropdown(
+              "Objective",
+              visit['objective'],
+              _objectives,
+              (v) => setState(() => visit['objective'] = v),
+            ),
+
+            _buildDropdown(
+              "Visit Type",
+              visit['type'],
+              _types,
+              (v) => setState(() => visit['type'] = v),
+            ),
+
+            _buildDropdown(
+              "Week",
+              visit['week'],
+              _weeks,
+              (v) => setState(() => visit['week'] = v),
+            ),
+
+            _buildTextField("Required Visits", visit['requiredVisitCount']),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildDealerSelectionStep() {
-    const int minVisits = 8;
-    final int totalDealers = _selectedDealerPool.length;
-    final bool hasError = totalDealers < minVisits;
+  // --------------------------------------------------
+  // INPUTS
+  // --------------------------------------------------
 
-    return FutureBuilder<List<Dealer>>(
-      future: _dealersFuture,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.all(40.0),
-            child: Center(child: CircularProgressIndicator(color: _cardNavy)),
-          );
-        }
-        if (_allDealers.isEmpty) {
-          return const Center(child: Text("No dealers found.", style: TextStyle(color: _textGrey)));
-        }
-        
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEFF6FF), // Light Blue
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFDBEAFE)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: Color(0xFF2563EB)),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      "Select at least 8 dealers. The system will distribute them evenly across your selected dates.",
-                      style: TextStyle(color: Color(0xFF1E40AF), fontSize: 13),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // Summary Card (Click to open dialog)
-            Container(
-              decoration: BoxDecoration(
-                color: _surfaceWhite,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: hasError ? Colors.red.shade200 : Colors.transparent),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]
-              ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-                title: const Text('Dealer Pool', style: TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
-                subtitle: Text('$totalDealers dealers selected', style: TextStyle(color: hasError ? Colors.red : _textGrey)),
-                trailing: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: _bgLight, borderRadius: BorderRadius.circular(8)),
-                  child: const Icon(Icons.edit_rounded, color: _cardNavy, size: 20),
-                ),
-                onTap: () async {
-                  final updatedDealers = await showDialog<Set<Dealer>>(
-                    context: context,
-                    builder: (_) => _DealerSelectionDialog(
-                      dealers: _allDealers,
-                      initialSelection: _selectedDealerPool,
-                    ),
-                  );
-
-                  if (updatedDealers != null) {
-                    setState(() {
-                      _selectedDealerPool = updatedDealers;
-                    });
-                  }
-                },
-              ),
-            ),
-            
-            if (hasError)
-              Padding(
-                padding: const EdgeInsets.only(top: 12.0),
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, size: 16, color: Colors.red),
-                    const SizedBox(width: 8),
-                    Text('Select at least $minVisits dealers.', style: const TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-// ================================
-// Dealer Selection Dialog (Styled)
-// ================================
-class _DealerSelectionDialog extends StatefulWidget {
-  final List<Dealer> dealers;
-  final Set<Dealer> initialSelection;
-
-  const _DealerSelectionDialog({
-    required this.dealers,
-    required this.initialSelection,
-  });
-
-  @override
-  State<_DealerSelectionDialog> createState() => _DealerSelectionDialogState();
-}
-
-class _DealerSelectionDialogState extends State<_DealerSelectionDialog> {
-  late Set<Dealer> _selectedDealers;
-  String _searchQuery = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _selectedDealers = Set.from(widget.initialSelection);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Filter dealers based on search
-    final filteredDealers = widget.dealers.where((dealer) {
-      if (_searchQuery.isEmpty) return true;
-      return dealer.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          dealer.area.toLowerCase().contains(_searchQuery.toLowerCase());
-    }).toList();
-
-    return AlertDialog(
-      backgroundColor: _BulkPjpWizardScreenState._surfaceWhite,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: const Text('Select Dealers', style: TextStyle(color: _BulkPjpWizardScreenState._textDark, fontWeight: FontWeight.bold)),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: MediaQuery.of(context).size.height * 0.6,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              style: const TextStyle(color: _BulkPjpWizardScreenState._textDark, fontWeight: FontWeight.w500),
-              decoration: InputDecoration(
-                hintText: 'Search dealers...',
-                hintStyle: const TextStyle(color: _BulkPjpWizardScreenState._textGrey),
-                prefixIcon: const Icon(Icons.search, color: _BulkPjpWizardScreenState._textGrey),
-                filled: true,
-                fillColor: _BulkPjpWizardScreenState._inputFill,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              onChanged: (value) => setState(() => _searchQuery = value),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: filteredDealers.length,
-                itemBuilder: (context, index) {
-                  final dealer = filteredDealers[index];
-                  final isSelected = _selectedDealers.contains(dealer);
-                  
-                  return Material(
-                    color: isSelected ? _BulkPjpWizardScreenState._cardNavy.withOpacity(0.03) : Colors.transparent,
-                    child: InkWell(
-                      onTap: () {
-                        setState(() {
-                          if (isSelected) _selectedDealers.remove(dealer);
-                          else _selectedDealers.add(dealer);
-                        });
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        child: Row(
-                          children: [
-                            // Custom Checkbox
-                            Container(
-                              width: 24, height: 24,
-                              decoration: BoxDecoration(
-                                color: isSelected ? _BulkPjpWizardScreenState._cardNavy : Colors.white,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: isSelected ? _BulkPjpWizardScreenState._cardNavy : Colors.grey[300]!, width: 2),
-                              ),
-                              child: isSelected 
-                                ? const Icon(Icons.check, size: 16, color: Colors.white) 
-                                : null,
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    dealer.name, 
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold, 
-                                      color: isSelected ? _BulkPjpWizardScreenState._cardNavy : _BulkPjpWizardScreenState._textDark,
-                                      fontSize: 14,
-                                    )
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    "${dealer.area} • ${dealer.region}", 
-                                    style: const TextStyle(color: _BulkPjpWizardScreenState._textGrey, fontSize: 12)
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+  Widget _buildTextField(String label, TextEditingController controller) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        controller: controller,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+          filled: true,
+          fillColor: _bgLight,
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('CANCEL', style: TextStyle(color: _BulkPjpWizardScreenState._textGrey, fontWeight: FontWeight.bold)),
+    );
+  }
+
+  Widget _buildDropdown(
+    String label,
+    String value,
+    List<String> items,
+    Function(String?) onChanged,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DropdownButtonFormField<String>(
+        value: value,
+        decoration: const InputDecoration(
+          border: OutlineInputBorder(),
+          labelText: "",
         ),
-        ElevatedButton(
-          onPressed: () => Navigator.of(context).pop(_selectedDealers),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _BulkPjpWizardScreenState._cardNavy,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-          child: Text('SAVE (${_selectedDealers.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+        items: items
+            .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+            .toList(),
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  // --------------------------------------------------
+  // DATE PAGINATION
+  // --------------------------------------------------
+
+  Widget _buildPaginationControls() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        IconButton(
+          onPressed: _plannerPageIndex > 0
+              ? () => setState(() => _plannerPageIndex--)
+              : null,
+          icon: const Icon(Icons.arrow_back_ios),
+        ),
+        Text(
+          "Day ${_plannerPageIndex + 1} of ${_sortedDates.length}",
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        IconButton(
+          onPressed: _plannerPageIndex < _sortedDates.length - 1
+              ? () => setState(() => _plannerPageIndex++)
+              : null,
+          icon: const Icon(Icons.arrow_forward_ios),
         ),
       ],
     );

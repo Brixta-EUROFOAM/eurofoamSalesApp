@@ -38,7 +38,7 @@ class _AllTasksListScreenState extends State<AllTasksListScreen> {
         });
       }
     } catch (e) {
-      debugPrint("Error loading tasks: $e");
+      debugPrint("Error loading PJPs: $e");
     }
   }
 
@@ -55,7 +55,7 @@ class _AllTasksListScreenState extends State<AllTasksListScreen> {
     return Scaffold(
       backgroundColor: _bgLight,
       appBar: AppBar(
-        title: const Text("Daily Tasks"),
+        title: const Text("PJPs (Daily Tasks)"),
         backgroundColor: _surfaceWhite,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -72,7 +72,7 @@ class _AllTasksListScreenState extends State<AllTasksListScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
                 if (_filteredTasks.isEmpty) {
-                  return Center(child: Text("No ${_selectedTab} Tasks", style: TextStyle(color: Colors.grey.shade500)));
+                  return Center(child: Text("No ${_selectedTab} PJPs", style: TextStyle(color: Colors.grey.shade500)));
                 }
                 return ListView.separated(
                   padding: const EdgeInsets.all(16),

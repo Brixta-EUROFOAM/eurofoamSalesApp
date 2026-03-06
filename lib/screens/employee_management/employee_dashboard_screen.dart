@@ -14,6 +14,7 @@ import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
 import 'package:salesmanapp/screens/forms/create_dvr.dart';
 import 'package:salesmanapp/screens/forms/create_competition_form.dart';
 import 'package:salesmanapp/screens/employee_management/employee_salesorder_screen.dart';
+import 'package:salesmanapp/screens/employee_management/team_view_list_screen.dart';
 
 // ---------------------------------------------------------------------------
 // 🟢 INLINE CAMERA (LOCAL COPY - SALES SIDE)
@@ -396,6 +397,30 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                       )
                       .animate()
                       .fadeIn(delay: 250.ms)
+                      .slideX(begin: -0.1, curve: Curves.easeOutCubic),
+
+                if (flags.teamView)
+                  _buildActionSheetItem(
+                        icon: Icons.groups_outlined,
+                        title: "My Team",
+                        subtitle: "View team & reports",
+                        iconBg: const Color(0xFFF1F5F9),
+                        iconColor: Colors.lightBlue,
+                        onTap: () {
+                          Navigator.pop(context);
+                          // This will open the specific Sales Team List
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => TeamViewListScreen(
+                                seniorId: int.parse(widget.employee.id),
+                              ),
+                            ),
+                          );
+                        },
+                      )
+                      .animate()
+                      .fadeIn(delay: 300.ms)
                       .slideX(begin: -0.1, curve: Curves.easeOutCubic),
               ],
             ),

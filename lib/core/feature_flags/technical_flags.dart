@@ -11,6 +11,7 @@ class TechnicalFlags {
   final bool registerSite;
   final bool addDealerSubDealer;
   final bool logTsoMeeting;
+  final bool teamView;
   //pantydropping navigation
   final bool dashboard;
   final bool visits;
@@ -45,6 +46,7 @@ class TechnicalFlags {
     required this.registerSite,
     required this.addDealerSubDealer,
     required this.logTsoMeeting,
+    required this.teamView,
     required this.dashboard,
     required this.visits,
     required this.journey,
@@ -74,6 +76,7 @@ class TechnicalFlags {
     registerSite: true,
     addDealerSubDealer: true,
     logTsoMeeting: true,
+    teamView: false,
     //nav bar stuff
     dashboard: true,
     journey: true,

@@ -20,6 +20,7 @@ import '../technicalSide/models/mason_rewards_model.dart';
 import '../technicalSide/models/sites_model.dart';
 import '../technicalSide/models/mason_pc_model.dart';
 import '../technicalSide/models/tso_meetings_model.dart';
+import '../models/team_members_model.dart';
 
 // --- ✅ 1. (NEW) TSO USER HELPER CLASS (DEFINED HERE) ---
 class TsoUser {
@@ -43,8 +44,8 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  static String baseUrl = 'http://65.0.208.126'; //aws
-  //static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  //static String baseUrl = 'http://65.0.208.126'; //aws
+  static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
   //static String baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
 
   // --- ✅ FIX: Initialize http.Client ---
@@ -772,18 +773,18 @@ class ApiService {
     };
 
     final queryString = Uri(queryParameters: queryParams).query;
-    final endpoint = 'daily-tasks/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
-    
-    return _get(
-      endpoint,
-      (json) {
-        final dataArray = json is Map<String, dynamic> && json.containsKey('data') 
-            ? json['data'] 
-            : json;
-            
-        return (dataArray as List).map((item) => DailyTask.fromJson(item)).toList();
-      },
-    );
+    final endpoint =
+        'daily-tasks/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
+
+    return _get(endpoint, (json) {
+      final dataArray = json is Map<String, dynamic> && json.containsKey('data')
+          ? json['data']
+          : json;
+
+      return (dataArray as List)
+          .map((item) => DailyTask.fromJson(item))
+          .toList();
+    });
   }
 
   Future<DailyTask> createDailyTask(DailyTask task) async {
@@ -794,9 +795,17 @@ class ApiService {
     );
   }
 
+  // Generic DailyTask Update
+  Future<void> updateDailyTask(
+    String taskId,
+    Map<String, dynamic> updateData,
+  ) async {
+    await _patch('daily-tasks/$taskId', updateData, (json) => json);
+  }
+
+  // Just update the DailyTask status
   Future<void> updateDailyTaskStatus(String taskId, String status) async {
-    await _patch('daily-tasks/$taskId', 
-    {'status': status}, (json) => json);
+    await _patch('daily-tasks/$taskId', {'status': status}, (json) => json);
   }
 
   Future<void> deleteDailyTask(String taskId) => _delete('daily-tasks/$taskId');
@@ -839,6 +848,18 @@ class ApiService {
     );
   }
 
+  Future<void> updateLeaveStatus({
+    required String leaveId,
+    required String status,
+    String? adminRemarks,
+  }) async {
+    final body = {
+      'status': status,
+      if (adminRemarks != null) 'adminRemarks': adminRemarks,
+    };
+    await _patch('leave-applications/$leaveId', body, (json) => null);
+  }
+
   Future<void> deleteLeaveApplication(String leaveId) =>
       _delete('leave-applications/$leaveId');
 
@@ -859,15 +880,13 @@ class ApiService {
     };
 
     final queryString = Uri(queryParameters: queryParams).query;
-    final endpoint = 'daily-visit-reports/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
+    final endpoint =
+        'daily-visit-reports/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
 
-    return _get(
-      endpoint,
-      (json) {
-        final List dataList = json is List ? json : (json['data'] ?? []);
-        return dataList.map((item) => DailyVisitReport.fromJson(item)).toList();
-      },
-    );
+    return _get(endpoint, (json) {
+      final List dataList = json is List ? json : (json['data'] ?? []);
+      return dataList.map((item) => DailyVisitReport.fromJson(item)).toList();
+    });
   }
 
   Future<DailyVisitReport> createDvr(DailyVisitReport dvr) async {
@@ -928,7 +947,6 @@ class ApiService {
 
   Future<void> deleteSalesOrder(String orderId) =>
       _delete('sales-orders/$orderId');
-
 
   Future<Employee> fetchEmployeeProfile(String userId) async {
     final json = await _get(
@@ -1157,7 +1175,8 @@ class ApiService {
     if (startDate != null) queryParams['startDate'] = startDate;
     if (endDate != null) queryParams['endDate'] = endDate;
     if (type != null) queryParams['type'] = type;
-    if (createdByUserId != null) queryParams['createdByUserId'] = createdByUserId.toString();
+    if (createdByUserId != null)
+      queryParams['createdByUserId'] = createdByUserId.toString();
     if (sortBy != null) queryParams['sortBy'] = sortBy;
     if (sortDir != null) queryParams['sortDir'] = sortDir;
 
@@ -1165,7 +1184,8 @@ class ApiService {
 
     return _get(
       'tso-meetings?$queryString',
-      (json) => (json as List).map((item) => TsoMeeting.fromJson(item)).toList(),
+      (json) =>
+          (json as List).map((item) => TsoMeeting.fromJson(item)).toList(),
     );
   }
 
@@ -1188,15 +1208,13 @@ class ApiService {
 
     return _get(
       'tso-meetings/user/$userId?$queryString',
-      (json) => (json as List).map((item) => TsoMeeting.fromJson(item)).toList(),
+      (json) =>
+          (json as List).map((item) => TsoMeeting.fromJson(item)).toList(),
     );
   }
 
   Future<TsoMeeting> fetchTsoMeetingById(String meetingId) async {
-    return _get(
-      'tso-meetings/$meetingId',
-      (json) => TsoMeeting.fromJson(json),
-    );
+    return _get('tso-meetings/$meetingId', (json) => TsoMeeting.fromJson(json));
   }
 
   Future<TsoMeeting> createTsoMeeting(TsoMeeting meeting) async {
@@ -1218,4 +1236,11 @@ class ApiService {
     );
   }
 
+  Future<List<TeamMember>> fetchRecursiveTeam(int seniorId) async {
+    return _get(
+      'team/recursive/$seniorId',
+      (json) =>
+          (json as List).map((item) => TeamMember.fromJson(item)).toList(),
+    );
+  }
 }

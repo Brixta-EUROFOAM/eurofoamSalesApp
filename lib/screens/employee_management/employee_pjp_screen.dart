@@ -1,13 +1,14 @@
 // lib/screens/employee_management/employee_pjp_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 🔥 ADDED FOR HAPTICS
+import 'package:flutter/services.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/daily_task_model.dart';
 import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/screens/employee_management/bulk_pjp_wizard_screen.dart';
 
 class EmployeePJPScreen extends StatefulWidget {
   final Employee employee;
@@ -162,6 +163,20 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen>
         context,
       ).showSnackBar(SnackBar(content: Text("Error starting task: $e")));
     }
+  }
+
+  void _openBulkPlanner() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BulkPjpWizardScreen(
+          employee: widget.employee,
+          onPjpCreated: () {
+            refreshPjpList(); // refresh task list
+          },
+        ),
+      ),
+    );
   }
 
   // ===========================================================================
@@ -570,6 +585,57 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen>
             ],
           ),
         ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 20.0, top: 10),
+            child:
+                InkWell(
+                      onTap: _openBulkPlanner,
+                      borderRadius: BorderRadius.circular(30),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _cardNavy,
+                          borderRadius: BorderRadius.circular(30),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _cardNavy.withOpacity(0.3),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.add_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              "New Plan",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                    .animate()
+                    .scale(delay: 200.ms, curve: Curves.easeOutBack)
+                    .then()
+                    .shimmer(duration: 2500.ms, color: Colors.white24)
+                    .animate(onPlay: (c) => c.repeat()),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -702,14 +768,16 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen>
 
   // ✨ THE SQUIRCLE CARD UI WITH EXPLICIT START BUTTON
   Widget _buildTaskCard(DailyTask task) {
+    final isPending = task.status.toLowerCase() == 'pending';
     final isStarted =
         task.status.toLowerCase() == 'started' ||
         task.status.toLowerCase() == 'in progress';
-    final isAssigned = task.status.toLowerCase() == 'assigned';
+    final isAssigned = task.status.toLowerCase() == 'assigned' || task.status.toLowerCase() == 'approved';
 
     Color statusColor = _cardNavy;
     if (isStarted) statusColor = _accentBlue;
-    if (isAssigned) statusColor = _pendingOrange;
+    if (isAssigned) statusColor = _accentGreen;
+    if (isPending) statusColor = _pendingOrange;
 
     final String displayAddress = task.area != null && task.zone != null
         ? "${task.area}, ${task.zone}"
@@ -718,7 +786,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen>
               : "Location pending");
 
     Widget cardContent = Slidable(
-      // enabled: !isStarted, // Disable slide if active to prevent accidental ends
+      enabled: !isPending && !isStarted,
       startActionPane: ActionPane(
         motion: const BehindMotion(),
         children: [
@@ -877,7 +945,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen>
                         ),
 
                         // 🚀 THE EXPLICIT TAP-TO-PLAY BUTTON
-                        if (!isStarted)
+                        if (!isStarted && !isPending)
                           GestureDetector(
                             onTap: () {
                               HapticFeedback.heavyImpact();

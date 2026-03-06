@@ -7,6 +7,7 @@ class SalesFlags {
   final bool addDealer;
   final bool competitionForm;
   final bool salesOrders;
+  final bool teamView;
 
   final bool showDbViewer;
   final bool accountSwitcher;
@@ -18,6 +19,7 @@ class SalesFlags {
     required this.addDealer,
     required this.competitionForm,
     required this.salesOrders,
+    required this.teamView,
 
     required this.showDbViewer,
     required this.accountSwitcher,
@@ -30,6 +32,7 @@ class SalesFlags {
     addDealer: true,
     competitionForm: true,
     salesOrders: false,
+    teamView: true,
 
     showDbViewer: false,
     accountSwitcher: true,

@@ -62,6 +62,8 @@ class TechnicalJourneyScreen extends StatefulWidget {
 class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   late final TechnicalFlags flags;
   final Completer<MapLibreMapController> _controllerCompleter = Completer();
+  //HARDWARE ACCELERATION TOGGLE..
+  final bool _useHardwareAcceleration = false;
   late Future<String> _styleFuture;
   late final MapSelectionController _mapSelectionController = AppKernel.instance
       .feature<MapSelectionController>();
@@ -597,6 +599,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _removeRouteLine() async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     if (!_isRouteLineLayerAdded) return;
     final controller = await _controllerCompleter.future;
     try {
@@ -609,6 +612,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _getDirectionsAndDrawRoute() async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     if (_currentUserLocation == null || _destinationLocation == null) return;
     if (_radarApiKey == null) return;
 
@@ -685,6 +689,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _fitBounds() async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     if (_currentUserLocation == null || _destinationLocation == null) return;
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.fitBounds(
@@ -695,11 +700,13 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _addDestinationMarker(LatLng point) async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.addDestinationMarker(controller, point);
   }
 
   Future<void> _removeDestinationMarker() async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     final controller = await _controllerCompleter.future;
     try {
       await controller.removeLayer('dest-layer-inner');
@@ -881,6 +888,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   }
 
   Future<void> _updateTravelledPolyline() async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.updateTravelledPath(controller, _routeTaken);
   }
@@ -988,37 +996,59 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     return Stack(
       children: [
         // 1. MAP BACKGROUND
+        // 1. MAP BACKGROUND (🛡️ PROTECTED)
         SizedBox.expand(
-          child: FutureBuilder<String>(
-            future: _styleFuture,
-            builder: (ctx, snap) {
-              if (!snap.hasData) return Container(color: _bgLight);
-              return MapLibreMap(
-                styleString: snap.data!,
-                initialCameraPosition: _initialCameraPosition,
-                trackCameraPosition: true,
-
-                // 🚀 HARDWARE ACCELERATED 60FPS POINTER ANIMATION (Restored from File 1)
-                myLocationEnabled: true,
-                myLocationTrackingMode: _isMapTrackingUser
-                    ? MyLocationTrackingMode.tracking
-                    : MyLocationTrackingMode.none,
-                myLocationRenderMode: MyLocationRenderMode.compass,
-                onCameraTrackingDismissed: () {
-                  if (_isMapTrackingUser && mounted) {
-                    setState(() => _isMapTrackingUser = false);
-                  }
-                },
-
-                onMapCreated: (c) {
-                  if (!_controllerCompleter.isCompleted) {
-                    _controllerCompleter.complete(c);
-                  }
-                },
-                onStyleLoadedCallback: _onMapStyleLoaded,
-              ).animate().fadeIn(duration: 800.ms);
-            },
-          ),
+          child: !_useHardwareAcceleration
+              ? Container(
+                  color: _bgLight,
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.map_rounded, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          "Map Hardware Acceleration Disabled",
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          "Emulator Safe Mode",
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : FutureBuilder<String>(
+                  future: _styleFuture,
+                  builder: (ctx, snap) {
+                    if (!snap.hasData) return Container(color: _bgLight);
+                    return MapLibreMap(
+                      styleString: snap.data!,
+                      initialCameraPosition: _initialCameraPosition,
+                      trackCameraPosition: true,
+                      myLocationEnabled: true,
+                      myLocationTrackingMode: _isMapTrackingUser
+                          ? MyLocationTrackingMode.tracking
+                          : MyLocationTrackingMode.none,
+                      myLocationRenderMode: MyLocationRenderMode.compass,
+                      onCameraTrackingDismissed: () {
+                        if (_isMapTrackingUser && mounted) {
+                          setState(() => _isMapTrackingUser = false);
+                        }
+                      },
+                      onMapCreated: (c) {
+                        if (!_controllerCompleter.isCompleted) {
+                          _controllerCompleter.complete(c);
+                        }
+                      },
+                      onStyleLoadedCallback: _onMapStyleLoaded,
+                    ).animate().fadeIn(duration: 800.ms);
+                  },
+                ),
         ),
 
         // 2. SEARCH MODE UI

@@ -12,6 +12,7 @@ import 'package:salesmanapp/models/daily_visit_report_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/technicalSide/utils/dvrworker.dart'; // 🚀 IMPORTED BACKGROUND WORKER
 
 import 'package:salesmanapp/screens/dvrwidgets/dvr_dealer_form.dart';
 import 'package:salesmanapp/screens/dvrwidgets/dvr_nontrade_form.dart';
@@ -44,7 +45,12 @@ class CreateDvrScreen extends StatefulWidget {
   State<CreateDvrScreen> createState() => _CreateDvrScreenState();
 }
 
-class _CreateDvrScreenState extends State<CreateDvrScreen> {
+// 🚀 ADDED WidgetsBindingObserver TO PREVENT CRASHES ON MINIMIZE
+class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingObserver {
+  
+  // 🛡️ Tracks if app is minimized
+  bool _isAppInForeground = true;
+
   final _formKey = GlobalKey<FormState>();
   final _dynamicFormKey = GlobalKey<FormState>();
   // 🚀 Added for UI Screenshot Sharing
@@ -90,10 +96,22 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this); // 🚀 START WATCHING LIFECYCLE
     if (widget.dealer != null) {
       _selectedDealer = widget.dealer;
       _selectedCustomerType = 'Dealer';
     }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // 🚀 STOP WATCHING LIFECYCLE
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _isAppInForeground = (state == AppLifecycleState.resumed);
   }
 
   /// ------------------------------------------------
@@ -192,30 +210,33 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
 
       // Extract and check for nulls safely
       final Position? pos = results[0] as Position?;
-      if (pos == null)
-        throw Exception(
-          "Could not lock GPS location. Ensure location services are ON.",
-        );
+      if (pos == null) throw Exception("Could not lock GPS location. Ensure location services are ON.");
 
-      setState(() {
-        _checkInTime = DateTime.now();
-        _checkInLocation = pos;
-        _inTimeImageUrl = results[1] as String;
-        _isUploadingImage = false;
-      });
+      // 🛡️ PROTECTED UI UPDATE
+      if (mounted && _isAppInForeground) {
+        setState(() {
+          _checkInTime = DateTime.now();
+          _checkInLocation = pos;
+          _inTimeImageUrl = results[1] as String;
+          _isUploadingImage = false;
+        });
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Check-In Error: $e"),
-          backgroundColor: Colors.red,
-        ),
-      );
-      setState(() => _isUploadingImage = false);
+      // 🛡️ PROTECTED ERROR HANDLING
+      if (mounted && _isAppInForeground) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Check-In Error: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() => _isUploadingImage = false);
+      }
     }
   }
 
   /// ------------------------------------------------
-  /// 🚀 SUBMIT DVR
+  /// 🚀 SUBMIT DVR (O(1) BACKGROUND WORKER)
   /// ------------------------------------------------
   Future<void> _submitDvr() async {
     if (_checkInTime == null || _checkInLocation == null) return;
@@ -242,16 +263,17 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
         MaterialPageRoute(builder: (_) => const DvrCameraScreen()),
       );
 
-      String? outTimeUrl;
-      if (outImagePath != null) {
-        _outImagePathLocal = outImagePath;
-        outTimeUrl = await _apiService.uploadImageToR2(File(outImagePath));
+      if (outImagePath == null) {
+         setState(() => _isSubmitting = false);
+         return; 
       }
+      
+      _outImagePathLocal = outImagePath;
 
       /// DEALER MAPPING BASED ON TOGGLE
       String? finalDealerId;
       String? finalSubDealerId;
-      String locationAddress = "";
+      String locationAddress = "Location fetched via GPS";
 
       if (_selectedCustomerType == 'Dealer') {
         if (_isSubDealerVisit) {
@@ -261,8 +283,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
           finalDealerId = _selectedDealer?.id;
         }
         locationAddress = _selectedDealer?.address ?? "Unknown";
-      } else {
-        locationAddress = "Location fetched via GPS";
       }
 
       final dvr = DailyVisitReport(
@@ -270,81 +290,75 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
         reportDate: DateTime.now(),
         dealerId: finalDealerId,
         subDealerId: finalSubDealerId,
-
         customerType: _selectedCustomerType,
         dealerType: _formData['dealerType'] ?? 'Unknown',
         partyType: _formData['partyType'],
         nameOfParty: _formData['nameOfParty'],
         contactNoOfParty: _formData['contactNoOfParty'],
         expectedActivationDate: _formData['expectedActivationDate'],
-
         location: locationAddress,
         latitude: _checkInLocation!.latitude,
         longitude: _checkInLocation!.longitude,
         visitType: _formData['visitType'] ?? 'PLANNED',
-
-        dealerTotalPotential:
-            double.tryParse("${_formData['dealerTotalPotential']}") ?? 0,
-        dealerBestPotential:
-            double.tryParse("${_formData['dealerBestPotential']}") ?? 0,
+        dealerTotalPotential: double.tryParse("${_formData['dealerTotalPotential']}") ?? 0,
+        dealerBestPotential: double.tryParse("${_formData['dealerBestPotential']}") ?? 0,
         brandSelling: (_formData['brandSelling'] as List<String>?) ?? [],
         contactPerson: _formData['contactPerson'],
         contactPersonPhoneNo: _formData['contactPersonPhoneNo'],
         todayOrderMt: double.tryParse("${_formData['todayOrderMt']}") ?? 0,
-        todayCollectionRupees:
-            double.tryParse("${_formData['todayCollectionRupees']}") ?? 0,
+        todayCollectionRupees: double.tryParse("${_formData['todayCollectionRupees']}") ?? 0,
         feedbacks: "${_formData['feedbacks'] ?? ""}",
         solutionBySalesperson: _formData['solutionBySalesperson'],
         anyRemarks: _formData['anyRemarks'],
         checkInTime: _checkInTime!,
         checkOutTime: DateTime.now(),
-        inTimeImageUrl: _inTimeImageUrl,
-        outTimeImageUrl: outTimeUrl,
+        inTimeImageUrl: _inTimeImageUrl, 
+        outTimeImageUrl: null, // 🚀 LEFT NULL! The background worker handles the upload.
         pjpId: widget.pjp?.id,
       );
 
-      // 🚀 TIME COMPLEXITY O(1): Parallel Execution Pipeline
-      // We use <Future<dynamic>> so it accepts both createDvr and updateDealer methods!
-      final List<Future<dynamic>> networkTasks = [_apiService.createDvr(dvr)];
-
-      // Automatically update the dealer's verified GPS coordinates in the background
+      // 🚀 FIRE AND FORGET THE DEALER GPS UPDATE (Non-blocking)
       if (_enableDealerUpdateOnSubmit && finalDealerId != null) {
-        networkTasks.add(
-          _apiService.updateDealer(finalDealerId, {
-            'latitude': _checkInLocation!.latitude,
-            'longitude': _checkInLocation!.longitude,
-          }),
-        );
+        _apiService.updateDealer(finalDealerId, {
+          'latitude': _checkInLocation!.latitude,
+          'longitude': _checkInLocation!.longitude,
+        });
       }
 
-      // Execute both server hits at the exact same time
-      await Future.wait(networkTasks);
+      // ⚡ O(1) TIME COMPLEXITY: Hand off to the Background Worker instantly!
+      await DvrBackgroundWorker.processAndSubmit(
+        apiService: _apiService,
+        dvrPayload: dvr,
+        inTimeFile: null, // Already uploaded during check-in
+        outTimeFile: File(outImagePath),
+        evidenceFiles: [],
+        clearDrafts: true,
+      );
 
-      if (mounted) {
+      // 🛡️ PROTECTED UI UPDATE: Instantly show success without waiting for uploads!
+      if (mounted && _isAppInForeground) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              "DVR Submitted Successfully!",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            content: Text("DVR Queued & Submitted!", style: TextStyle(fontWeight: FontWeight.bold)),
             backgroundColor: Colors.green,
           ),
         );
-        setState(() => _showSummary = true);
+        setState(() {
+           _showSummary = true;
+           _isSubmitting = false;
+        });
       }
     } catch (e) {
       debugPrint("DVR Error $e");
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Failed to submit DVR",
-            style: TextStyle(fontWeight: FontWeight.bold),
+      if (mounted && _isAppInForeground) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Failed to queue DVR", style: TextStyle(fontWeight: FontWeight.bold)),
+            backgroundColor: Colors.red,
           ),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _isSubmitting = false);
+        );
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
@@ -1032,11 +1046,13 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       final imageFile = File(imagePath);
       await imageFile.writeAsBytes(pngBytes);
 
-      // 📤 SHARE: Image and text instantly
-      await Share.shareXFiles([XFile(imagePath)], text: text);
+      // 🛡️ PROTECT SHARE INVOCATION
+      if (mounted && _isAppInForeground) {
+        await Share.shareXFiles([XFile(imagePath)], text: text);
+      }
     } catch (e) {
       debugPrint("Share error: $e");
-      if (mounted) {
+      if (mounted && _isAppInForeground) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Failed to capture and share summary.")),
         );

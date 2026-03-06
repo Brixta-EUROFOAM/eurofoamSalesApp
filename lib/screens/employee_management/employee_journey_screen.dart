@@ -41,12 +41,12 @@ import 'package:salesmanapp/technicalSide/screens/journeyUi/journey_overlay_mana
 import 'package:salesmanapp/services/states/journeyStates/sales_journey_screen_state.dart';
 import 'package:salesmanapp/services/states/journeyStates/journey_screen_state.dart';
 
-
 class EmployeeJourneyScreen extends StatefulWidget {
   final Employee employee;
   final Map<String, dynamic>? initialJourneyData;
   final VoidCallback? onDestinationConsumed;
-  final Function(Pjp pjp, Dealer dealer, DateTime checkInTime)? onJourneyCompleted;
+  final Function(Pjp pjp, Dealer dealer, DateTime checkInTime)?
+  onJourneyCompleted;
 
   const EmployeeJourneyScreen({
     super.key,
@@ -61,6 +61,10 @@ class EmployeeJourneyScreen extends StatefulWidget {
 }
 
 class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
+  //HARDWARE ACCELERATION
+  final bool _useHardwareAcceleration = false;
+  //HARDWARE ACCELERATION
+  DateTime _lastPolylineUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   late SalesJourneyController _controller;
   final Completer<MapLibreMapController> _controllerCompleter = Completer();
 
@@ -72,7 +76,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   late Future<String> _styleFuture;
   final String? _radarApiKey = dotenv.env['RADAR_API_KEY'];
 
-  late final MapSelectionController _mapSelectionController = AppKernel.instance.feature<MapSelectionController>();
+  late final MapSelectionController _mapSelectionController = AppKernel.instance
+      .feature<MapSelectionController>();
   final _searchController = TextEditingController();
   bool _isSelectionMode = false;
   bool _isSearching = false;
@@ -87,6 +92,15 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   final List<LatLng> _routeTaken = [];
   bool _isRouteLineLayerAdded = false;
 
+  bool _canUpdatePolyline() {
+    final now = DateTime.now();
+    if (now.difference(_lastPolylineUpdate).inMilliseconds < 500) {
+      return false;
+    }
+    _lastPolylineUpdate = now;
+    return true;
+  }
+
   // 🚀 O(1) BATCHING: Prevents SQLite thread blocking and battery drain
   final List<JourneyBreadcrumbsCompanion> _breadcrumbBatch = [];
 
@@ -96,7 +110,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   );
 
   // ---------- UI STATE ----------
-  final ValueNotifier<String> _distanceDisplay = ValueNotifier<String>("Loading...");
+  final ValueNotifier<String> _distanceDisplay = ValueNotifier<String>(
+    "Loading...",
+  );
 
   bool _isJourneyActive = false;
   bool _hasArrived = false;
@@ -143,13 +159,16 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         return;
       }
 
-      dev.log("📱 [UI RECEIVER] Caught distance: $distance meters", name: 'JourneyDebug');
+      dev.log(
+        "📱 [UI RECEIVER] Caught distance: $distance meters",
+        name: 'JourneyDebug',
+      );
 
       _controller.feedNewLocation(LatLng(lat, lng), distance);
-
-      if (_isJourneyActive && mounted) {
-        _distanceDisplay.value = "${(distance / 1000.0).toStringAsFixed(2)} km";
-      }
+      //commented out for some space and time complexity issue
+      // if (_isJourneyActive && mounted) {
+      //   _distanceDisplay.value = "${(distance / 1000.0).toStringAsFixed(2)} km";
+      // }
     } catch (e) {
       dev.log("⚠️ Isolate Data Parsing Error: $e");
     }
@@ -162,9 +181,10 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _controller = SalesJourneyController(
       caps: SalesJourneyCapabilities.fromFlags(SalesFlags.dev),
     );
-
-    FlutterForegroundTask.initCommunicationPort();
-    FlutterForegroundTask.addTaskDataCallback(_onForegroundServiceData);
+    if (_useHardwareAcceleration) {
+      FlutterForegroundTask.initCommunicationPort();
+      FlutterForegroundTask.addTaskDataCallback(_onForegroundServiceData);
+    }
 
     _styleFuture = _readStyle();
 
@@ -197,7 +217,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   @override
   void didUpdateWidget(covariant EmployeeJourneyScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.initialJourneyData != null && widget.initialJourneyData != oldWidget.initialJourneyData) {
+    if (widget.initialJourneyData != null &&
+        widget.initialJourneyData != oldWidget.initialJourneyData) {
       _loadTaskData(widget.initialJourneyData!);
     }
   }
@@ -205,6 +226,10 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   @override
   void dispose() {
     FlutterForegroundTask.removeTaskDataCallback(_onForegroundServiceData);
+
+    if (_useHardwareAcceleration) {
+      FlutterForegroundTask.removeTaskDataCallback(_onForegroundServiceData);
+    }
     _cancelJourneySubscriptions();
     _controller.dispose();
     _destinationController.dispose();
@@ -231,14 +256,20 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _breadcrumbBatch.clear();
 
     try {
-      final controller = await _controllerCompleter.future;
-      if (_currentUserLocation != null) {
-        await controller.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(target: _currentUserLocation!, zoom: 16.5, tilt: 45.0),
-          ),
-          duration: const Duration(milliseconds: 1200),
-        );
+      if (_useHardwareAcceleration && _currentUserLocation != null) {
+        final controller = await _controllerCompleter.future;
+        if (_currentUserLocation != null) {
+          await controller.animateCamera(
+            CameraUpdate.newCameraPosition(
+              CameraPosition(
+                target: _currentUserLocation!,
+                zoom: 16.5,
+                tilt: 45.0,
+              ),
+            ),
+            duration: const Duration(milliseconds: 1200),
+          );
+        }
       }
     } catch (_) {}
 
@@ -249,14 +280,17 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _cancelJourneySubscriptions();
 
     _distanceSub = _controller.distanceStream.listen((dist) {
-      if (mounted) _distanceDisplay.value = "${(dist / 1000.0).toStringAsFixed(2)} km";
+      if (mounted)
+        _distanceDisplay.value = "${(dist / 1000.0).toStringAsFixed(2)} km";
     });
 
     _posSub = _controller.positionStream.listen((latLng) async {
       _currentUserLocation = latLng;
       _routeTaken.add(latLng);
 
-      if (_routeTaken.length % 5 == 0) _updateTravelledPolyline();
+      if (_canUpdatePolyline()) {
+        _updateTravelledPolyline();
+      }
 
       // 🚀 BATTERY EFFICIENT SQLITE WRITES
       if (_isJourneyActive && _controller.currentJourneyId != null) {
@@ -273,14 +307,20 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         );
 
         if (_breadcrumbBatch.length >= 5) {
-          final batchToInsert = List<JourneyBreadcrumbsCompanion>.from(_breadcrumbBatch);
+          final batchToInsert = List<JourneyBreadcrumbsCompanion>.from(
+            _breadcrumbBatch,
+          );
           _breadcrumbBatch.clear();
-          for (var crumb in batchToInsert) {
-            try {
-              await AppDatabase.instance.insertBreadcrumb(crumb);
-            } catch (e) {
-              dev.log("⚠️ Failed to write breadcrumb to DB: $e");
-            }
+
+          try {
+            // ✅ Wrap the loop in a transaction! 5 writes become 1 lightning-fast write.
+            await AppDatabase.instance.transaction(() async {
+              for (var crumb in batchToInsert) {
+                await AppDatabase.instance.insertBreadcrumb(crumb);
+              }
+            });
+          } catch (e) {
+            dev.log("⚠️ Failed to write breadcrumb batch to DB: $e");
           }
         }
       }
@@ -346,7 +386,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
   void _toggleJourneyMode() async {
     setState(() {
-      _journeyMode = _journeyMode == JourneyMode.planned ? JourneyMode.unplanned : JourneyMode.planned;
+      _journeyMode = _journeyMode == JourneyMode.planned
+          ? JourneyMode.unplanned
+          : JourneyMode.planned;
     });
 
     if (_journeyMode == JourneyMode.unplanned) {
@@ -412,12 +454,21 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _distanceDisplay.value = "Processing...";
 
     try {
-      final controller = await _controllerCompleter.future;
-      final LatLng? target = controller.cameraPosition?.target;
+      LatLng? target;
+
+      // 🛡️ PROTECTED: Only read map if it exists, otherwise use current location
+      if (_useHardwareAcceleration) {
+        final controller = await _controllerCompleter.future;
+        target = controller.cameraPosition?.target;
+      } else {
+        target = _currentUserLocation ?? const LatLng(26.1445, 91.7362);
+      }
 
       if (target == null) {
         _distanceDisplay.value = "Select Destination";
-        _showError("Map center not detected. Please move the map slightly and try again.");
+        _showError(
+          "Map center not detected. Please move the map slightly and try again.",
+        );
         return;
       }
 
@@ -435,7 +486,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         UnplannedJourneyResult(
           destination: target,
           displayName: address,
-          type: UnplannedEntityType.dealer, 
+          type: UnplannedEntityType.dealer,
         ),
       );
     } catch (e) {
@@ -450,7 +501,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       _journeyMode = JourneyMode.unplanned;
       _destinationLocation = result.destination;
       _destinationController.text = result.displayName;
-      _dealerId = null; 
+      _dealerId = null;
       _activeDealer = null;
       _taskId = null;
     });
@@ -501,21 +552,36 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     return await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: const Text("Resume journey?", style: TextStyle(fontWeight: FontWeight.bold)),
-            content: Text("You have an active visit to ${snapshot.displayName}. Continue tracking?"),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            title: const Text(
+              "Resume journey?",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            content: Text(
+              "You have an active visit to ${snapshot.displayName}. Continue tracking?",
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text("Discard", style: TextStyle(color: Colors.grey)),
+                child: const Text(
+                  "Discard",
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _cardNavy,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text("Resume", style: TextStyle(color: Colors.white)),
+                child: const Text(
+                  "Resume",
+                  style: TextStyle(color: Colors.white),
+                ),
               ),
             ],
           ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms),
@@ -535,16 +601,23 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       _routeTaken.addAll(snapshot.path);
     });
 
-    _distanceDisplay.value = "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
+    _distanceDisplay.value =
+        "${(snapshot.distance / 1000.0).toStringAsFixed(2)} km";
 
-    final controller = await _controllerCompleter.future;
+    if (_useHardwareAcceleration) {
+      final controller = await _controllerCompleter.future;
 
-    if (snapshot.path.isNotEmpty) {
-      await JourneyMapRenderer.updateTravelledPath(controller, snapshot.path);
-    }
+      if (snapshot.path.isNotEmpty) {
+        await JourneyMapRenderer.updateTravelledPath(controller, snapshot.path);
+      }
 
-    if (snapshot.path.length >= 2) {
-      await JourneyMapRenderer.fitBounds(controller, snapshot.path.first, snapshot.path.last);
+      if (snapshot.path.length >= 2) {
+        await JourneyMapRenderer.fitBounds(
+          controller,
+          snapshot.path.first,
+          snapshot.path.last,
+        );
+      }
     }
 
     _attachStreams();
@@ -588,13 +661,19 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _distanceDisplay.value = "Stopping...";
 
     if (_breadcrumbBatch.isNotEmpty) {
-      final finalBatch = List<JourneyBreadcrumbsCompanion>.from(_breadcrumbBatch);
+      final finalBatch = List<JourneyBreadcrumbsCompanion>.from(
+        _breadcrumbBatch,
+      );
       _breadcrumbBatch.clear();
-      for (var crumb in finalBatch) {
-        try {
-          await AppDatabase.instance.insertBreadcrumb(crumb);
-        } catch (_) {}
-      }
+
+      try {
+        // ✅ Wrap the final flush in a transaction!
+        await AppDatabase.instance.transaction(() async {
+          for (var crumb in finalBatch) {
+            await AppDatabase.instance.insertBreadcrumb(crumb);
+          }
+        });
+      } catch (_) {}
     }
 
     if (_routeTaken.isNotEmpty) {
@@ -636,20 +715,28 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       await _removeRouteLine();
       await _removeDestinationMarker();
 
-      final controller = await _controllerCompleter.future;
-      if (_currentUserLocation != null) {
-        controller.animateCamera(
-          CameraUpdate.newCameraPosition(
-            CameraPosition(target: _currentUserLocation!, zoom: 14.0, tilt: 0),
-          ),
-          duration: const Duration(seconds: 1),
-        );
+      if (_useHardwareAcceleration && _currentUserLocation != null) {
+        final controller = await _controllerCompleter.future;
+        if (_currentUserLocation != null) {
+          controller.animateCamera(
+            CameraUpdate.newCameraPosition(
+              CameraPosition(
+                target: _currentUserLocation!,
+                zoom: 14.0,
+                tilt: 0,
+              ),
+            ),
+            duration: const Duration(seconds: 1),
+          );
+        }
       }
 
       showDialog(
         context: context,
         builder: (_) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(24.0),
             child: Column(
@@ -661,7 +748,10 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                   size: 64,
                 ).animate().scale(delay: 200.ms, curve: Curves.easeOutBack),
                 const SizedBox(height: 16),
-                const Text("Journey Completed", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const Text(
+                  "Journey Completed",
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 const Text(
                   "Would you like to fill the Daily Visit Report now?",
@@ -675,10 +765,18 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         onPressed: () => Navigator.pop(context),
-                        child: const Text("Later", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold)),
+                        child: const Text(
+                          "Later",
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -687,28 +785,38 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _cardNavy,
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
                         onPressed: () {
                           Navigator.pop(context);
                           if (completedDealer != null) {
-                             Navigator.push(
-                               context,
-                               MaterialPageRoute(
-                                 builder: (_) => CreateDvrScreen(
-                                   employee: widget.employee,
-                                   dealer: completedDealer,
-                                 ),
-                               ),
-                             );
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CreateDvrScreen(
+                                  employee: widget.employee,
+                                  dealer: completedDealer,
+                                ),
+                              ),
+                            );
                           } else {
                             // If Unplanned location without a dealer entity, just close or navigate to a generic report
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text("Unplanned Visit log saved.")),
+                              const SnackBar(
+                                content: Text("Unplanned Visit log saved."),
+                              ),
                             );
                           }
                         },
-                        child: const Text("Open DVR", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                        child: const Text(
+                          "Open DVR",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -748,7 +856,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: _cardNavy,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             onPressed: () {
               Navigator.pop(context);
@@ -782,13 +892,17 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       final location = await JourneyLocationLogic.resolveCurrentLocation(
         onEnsurePermissions: _ensureJourneyPermission,
         onFetchLocationFromController: () async {
-          return await AppKernel.instance.feature<JourneyLocationController>().resolveCurrentLocation();
+          return await AppKernel.instance
+              .feature<JourneyLocationController>()
+              .resolveCurrentLocation();
         },
       );
 
       if (location != null) {
         _currentUserLocation = location;
-        if (mounted && !_isJourneyActive && _distanceDisplay.value.contains("Map")) {
+        if (mounted &&
+            !_isJourneyActive &&
+            _distanceDisplay.value.contains("Map")) {
           _distanceDisplay.value = "My Location";
         }
 
@@ -806,7 +920,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   }
 
   Future<void> _getDirectionsAndDrawRoute() async {
-    if (_currentUserLocation == null || _destinationLocation == null || _radarApiKey == null) return;
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
+    if (_currentUserLocation == null ||
+        _destinationLocation == null ||
+        _radarApiKey == null)
+      return;
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.drawRoute(
       controller: controller,
@@ -818,16 +936,19 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   }
 
   Future<void> _addDestinationMarker(LatLng point) async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.addDestinationMarker(controller, point);
   }
 
   Future<void> _updateTravelledPolyline() async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.updateTravelledPath(controller, _routeTaken);
   }
 
   Future<void> _fitBounds() async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     if (_currentUserLocation == null || _destinationLocation == null) return;
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.fitBounds(
@@ -838,6 +959,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   }
 
   Future<void> _removeRouteLine() async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     if (!_isRouteLineLayerAdded) return;
     final controller = await _controllerCompleter.future;
     try {
@@ -848,6 +970,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   }
 
   Future<void> _removeDestinationMarker() async {
+    if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     final controller = await _controllerCompleter.future;
     try {
       await controller.removeLayer('dest-layer-inner');
@@ -868,7 +991,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   Widget build(BuildContext context) {
     final salesFlags = context.watch<SalesFlags>();
     final bool isPlanned = _journeyMode == JourneyMode.planned;
-    final bool canStartJourney = _isJourneyActive || (isPlanned ? _taskId != null : _destinationLocation != null);
+    final bool canStartJourney =
+        _isJourneyActive ||
+        (isPlanned ? _taskId != null : _destinationLocation != null);
 
     if (!salesFlags.journey) {
       return Scaffold(
@@ -881,7 +1006,11 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
               SizedBox(height: 16),
               Text(
                 "Journey Tracking Unavailable",
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey),
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                ),
               ),
             ],
           ),
@@ -892,108 +1021,167 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     return Stack(
       children: [
         // 1. MAP BACKGROUND
+        // 1. MAP BACKGROUND
         SizedBox.expand(
-          child: FutureBuilder<String>(
-            future: _styleFuture,
-            builder: (ctx, snap) {
-              if (!snap.hasData) return Container(color: _bgLight);
-              return MapLibreMap(
-                styleString: snap.data!,
-                initialCameraPosition: _initialCameraPosition,
-                myLocationEnabled: true,
-                trackCameraPosition: true,
-                myLocationTrackingMode: _isMapTrackingUser
-                    ? MyLocationTrackingMode.tracking
-                    : MyLocationTrackingMode.none,
-                myLocationRenderMode: MyLocationRenderMode.compass,
-                onCameraTrackingDismissed: () {
-                  if (_isMapTrackingUser && mounted) {
-                    setState(() => _isMapTrackingUser = false);
-                  }
-                },
-                onMapCreated: (c) {
-                  if (!_controllerCompleter.isCompleted) {
-                    _controllerCompleter.complete(c);
-                  }
-                  if (_isJourneyActive) {
-                    if (_destinationLocation != null) _addDestinationMarker(_destinationLocation!);
-                    if (_routeTaken.isNotEmpty) _updateTravelledPolyline();
-                  }
-                },
-              ).animate().fadeIn(duration: 800.ms);
-            },
-          ),
+          child: !_useHardwareAcceleration
+              ? Container(
+                  color: _bgLight,
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.map_rounded, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          "Map Hardware Acceleration Disabled",
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          "Emulator Safe Mode",
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : FutureBuilder<String>(
+                  future: _styleFuture,
+                  builder: (ctx, snap) {
+                    if (!snap.hasData) return Container(color: _bgLight);
+                    return MapLibreMap(
+                      styleString: snap.data!,
+                      initialCameraPosition: _initialCameraPosition,
+                      myLocationEnabled: true,
+                      trackCameraPosition: true,
+                      myLocationTrackingMode: _isMapTrackingUser
+                          ? MyLocationTrackingMode.tracking
+                          : MyLocationTrackingMode.none,
+                      myLocationRenderMode: MyLocationRenderMode.compass,
+                      onCameraTrackingDismissed: () {
+                        if (_isMapTrackingUser && mounted) {
+                          setState(() => _isMapTrackingUser = false);
+                        }
+                      },
+                      onMapCreated: (c) {
+                        if (!_controllerCompleter.isCompleted) {
+                          _controllerCompleter.complete(c);
+                        }
+                        if (_isJourneyActive) {
+                          if (_destinationLocation != null)
+                            _addDestinationMarker(_destinationLocation!);
+                          if (_routeTaken.isNotEmpty)
+                            _updateTravelledPolyline();
+                        }
+                      },
+                    ).animate().fadeIn(duration: 800.ms);
+                  },
+                ),
         ),
 
         // 2. SEARCH MODE UI (Overlays the Dashboard)
         if (_isSelectionMode) ...[
           Positioned(
-            top: 50,
-            left: 16,
-            right: 16,
-            child: Card(
-              elevation: 4,
-              shadowColor: Colors.black.withOpacity(0.2),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: TextField(
-                controller: _searchController,
-                textInputAction: TextInputAction.search,
-                onSubmitted: _performSearch,
-                decoration: InputDecoration(
-                  hintText: "Search area (e.g., Guwahati)",
-                  hintStyle: const TextStyle(color: Color(0xFF64748B)),
-                  filled: true,
-                  fillColor: Colors.white,
-                  prefixIcon: IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Color(0xFF0F172A)),
-                    onPressed: () {
-                      setState(() {
-                        _isSelectionMode = false;
-                        _searchController.clear();
-                      });
-                    },
+                top: 50,
+                left: 16,
+                right: 16,
+                child: Card(
+                  elevation: 4,
+                  shadowColor: Colors.black.withOpacity(0.2),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  suffixIcon: _isSearching
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : IconButton(
-                          icon: const Icon(Icons.search, color: Color(0xFF0F172A)),
-                          onPressed: () => _performSearch(_searchController.text),
+                  child: TextField(
+                    controller: _searchController,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: _performSearch,
+                    decoration: InputDecoration(
+                      hintText: "Search area (e.g., Guwahati)",
+                      hintStyle: const TextStyle(color: Color(0xFF64748B)),
+                      filled: true,
+                      fillColor: Colors.white,
+                      prefixIcon: IconButton(
+                        icon: const Icon(
+                          Icons.arrow_back,
+                          color: Color(0xFF0F172A),
                         ),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        onPressed: () {
+                          setState(() {
+                            _isSelectionMode = false;
+                            _searchController.clear();
+                          });
+                        },
+                      ),
+                      suffixIcon: _isSearching
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : IconButton(
+                              icon: const Icon(
+                                Icons.search,
+                                color: Color(0xFF0F172A),
+                              ),
+                              onPressed: () =>
+                                  _performSearch(_searchController.text),
+                            ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ).animate().slideY(begin: -0.2, duration: 400.ms, curve: Curves.easeOutCubic).fadeIn(),
+              )
+              .animate()
+              .slideY(begin: -0.2, duration: 400.ms, curve: Curves.easeOutCubic)
+              .fadeIn(),
 
           Center(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 35),
-              child: Icon(Icons.location_on, size: 50, color: _cardNavy),
-            ),
-          ).animate().moveY(begin: -40, end: 0, duration: 800.ms, curve: Curves.bounceOut).fadeIn(duration: 400.ms),
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 35),
+                  child: Icon(Icons.location_on, size: 50, color: _cardNavy),
+                ),
+              )
+              .animate()
+              .moveY(
+                begin: -40,
+                end: 0,
+                duration: 800.ms,
+                curve: Curves.bounceOut,
+              )
+              .fadeIn(duration: 400.ms),
 
           Positioned(
-            bottom: 120,
-            left: 20,
-            right: 20,
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _cardNavy,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                elevation: 4,
-              ),
-              onPressed: _confirmSelection,
-              child: const Text(
-                "CONFIRM THIS LOCATION",
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1.1),
-              ),
-            ),
-          ).animate().slideY(begin: 0.2, duration: 400.ms, curve: Curves.easeOutCubic).fadeIn(),
+                bottom: 120,
+                left: 20,
+                right: 20,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _cardNavy,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    elevation: 4,
+                  ),
+                  onPressed: _confirmSelection,
+                  child: const Text(
+                    "CONFIRM THIS LOCATION",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                ),
+              )
+              .animate()
+              .slideY(begin: 0.2, duration: 400.ms, curve: Curves.easeOutCubic)
+              .fadeIn(),
         ],
 
         // 3. DASHBOARD UI (Only visible when NOT searching)
@@ -1001,33 +1189,49 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
           Positioned(
             top: 50,
             right: 16,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10),
-                ],
-              ),
-              child: IconButton(
-                icon: Icon(
-                  _isMapTrackingUser ? Icons.my_location : Icons.location_searching,
-                  color: _isMapTrackingUser ? Colors.blueAccent : const Color(0xFF6B7280),
-                ),
-                onPressed: () async {
-                  setState(() => _isMapTrackingUser = true);
-                  if (_currentUserLocation != null) {
-                    final controller = await _controllerCompleter.future;
-                    controller.animateCamera(
-                      CameraUpdate.newCameraPosition(
-                        CameraPosition(target: _currentUserLocation!, zoom: 16.5, tilt: _isJourneyActive ? 45 : 0),
+            child:
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 10,
                       ),
-                      duration: const Duration(milliseconds: 600),
-                    );
-                  }
-                },
-              ),
-            ).animate().scale(delay: 500.ms, duration: 400.ms, curve: Curves.easeOutBack),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: Icon(
+                      _isMapTrackingUser
+                          ? Icons.my_location
+                          : Icons.location_searching,
+                      color: _isMapTrackingUser
+                          ? Colors.blueAccent
+                          : const Color(0xFF6B7280),
+                    ),
+                    onPressed: () async {
+                      setState(() => _isMapTrackingUser = true);
+                      if (_currentUserLocation != null) {
+                        final controller = await _controllerCompleter.future;
+                        controller.animateCamera(
+                          CameraUpdate.newCameraPosition(
+                            CameraPosition(
+                              target: _currentUserLocation!,
+                              zoom: 16.5,
+                              tilt: _isJourneyActive ? 45 : 0,
+                            ),
+                          ),
+                          duration: const Duration(milliseconds: 600),
+                        );
+                      }
+                    },
+                  ),
+                ).animate().scale(
+                  delay: 500.ms,
+                  duration: 400.ms,
+                  curve: Curves.easeOutBack,
+                ),
           ),
 
           Positioned.fill(
@@ -1045,21 +1249,29 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                       distance: distanceText,
                       onStop: _handleStop,
                       onNavigate: _launchNavigation,
-                      idlePanel: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          _buildIdleJourneyPanel(context, isPlanned),
-                          const SizedBox(height: 24),
-                          _StartJourneySlider(
-                            key: ValueKey(_isJourneyActive),
-                            isJourneyActive: false,
-                            onSlideAction: _handleStart,
-                            canStart: canStartJourney,
-                            cardNavy: _cardNavy,
-                            dangerRed: _dangerRed,
-                          ),
-                        ],
-                      ).animate().slideY(begin: 0.2, duration: 500.ms, curve: Curves.easeOutCubic).fadeIn(),
+                      idlePanel:
+                          Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  _buildIdleJourneyPanel(context, isPlanned),
+                                  const SizedBox(height: 24),
+                                  _StartJourneySlider(
+                                    key: ValueKey(_isJourneyActive),
+                                    isJourneyActive: false,
+                                    onSlideAction: _handleStart,
+                                    canStart: canStartJourney,
+                                    cardNavy: _cardNavy,
+                                    dangerRed: _dangerRed,
+                                  ),
+                                ],
+                              )
+                              .animate()
+                              .slideY(
+                                begin: 0.2,
+                                duration: 500.ms,
+                                curve: Curves.easeOutCubic,
+                              )
+                              .fadeIn(),
                     );
                   },
                 ),
@@ -1085,7 +1297,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
-                isPlanned ? Icons.assignment_outlined : Icons.storefront_outlined,
+                isPlanned
+                    ? Icons.assignment_outlined
+                    : Icons.storefront_outlined,
                 color: _cardNavy,
                 size: 18,
               ),
@@ -1097,11 +1311,22 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                 children: [
                   Text(
                     isPlanned ? "PLANNED TASK" : "UNPLANNED VISIT",
-                    style: TextStyle(fontWeight: FontWeight.w900, color: _cardNavy, fontSize: 13, letterSpacing: 1.2),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: _cardNavy,
+                      fontSize: 13,
+                      letterSpacing: 1.2,
+                    ),
                   ),
                   Text(
-                    isPlanned ? "Assigned via Sales Plan" : "Ad-hoc Location Visit",
-                    style: TextStyle(color: _textGrey, fontSize: 11, fontWeight: FontWeight.w500),
+                    isPlanned
+                        ? "Assigned via Sales Plan"
+                        : "Ad-hoc Location Visit",
+                    style: TextStyle(
+                      color: _textGrey,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
@@ -1110,16 +1335,30 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
               onPressed: _toggleJourneyMode,
               icon: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 300),
-                transitionBuilder: (child, anim) => RotationTransition(turns: anim, child: child),
-                child: Icon(Icons.swap_horiz, size: 18, key: ValueKey(isPlanned)),
+                transitionBuilder: (child, anim) =>
+                    RotationTransition(turns: anim, child: child),
+                child: Icon(
+                  Icons.swap_horiz,
+                  size: 18,
+                  key: ValueKey(isPlanned),
+                ),
               ),
               label: Text(isPlanned ? "UNPLANNED" : "PLANNED"),
               style: TextButton.styleFrom(
                 foregroundColor: Colors.blueAccent,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
                 backgroundColor: Colors.blueAccent.withOpacity(0.1),
-                textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+                textStyle: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
           ],
@@ -1132,11 +1371,17 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
-              color: isPlanned ? Colors.transparent : Colors.blueAccent.withOpacity(0.3),
+              color: isPlanned
+                  ? Colors.transparent
+                  : Colors.blueAccent.withOpacity(0.3),
               width: 1.5,
             ),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 15, offset: const Offset(0, 8)),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 15,
+                offset: const Offset(0, 8),
+              ),
             ],
           ),
           child: Center(
@@ -1151,14 +1396,23 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                       if (_currentUserLocation != null) {
                         try {
                           final controller = await _controllerCompleter.future;
-                          controller.animateCamera(CameraUpdate.newLatLngZoom(_currentUserLocation!, 16));
+                          controller.animateCamera(
+                            CameraUpdate.newLatLngZoom(
+                              _currentUserLocation!,
+                              16,
+                            ),
+                          );
                         } catch (_) {}
                       }
                     }
                   : null,
               style: TextStyle(
-                color: _destinationController.text.isEmpty ? _textGrey : _cardNavy,
-                fontWeight: _destinationController.text.isEmpty ? FontWeight.w500 : FontWeight.w800,
+                color: _destinationController.text.isEmpty
+                    ? _textGrey
+                    : _cardNavy,
+                fontWeight: _destinationController.text.isEmpty
+                    ? FontWeight.w500
+                    : FontWeight.w800,
                 fontSize: 15,
               ),
               decoration: InputDecoration(
@@ -1167,10 +1421,15 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                   color: _cardNavy,
                   size: 24,
                 ),
-                hintText: isPlanned ? "Planned Task" : "Tap to set destination...",
+                hintText: isPlanned
+                    ? "Planned Task"
+                    : "Tap to set destination...",
                 hintStyle: const TextStyle(color: Color(0xFF64748B)),
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 suffixIcon: _destinationController.text.isNotEmpty
                     ? IconButton(
                         icon: Icon(Icons.refresh_rounded, color: _dangerRed),
@@ -1193,14 +1452,22 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                       )
                     : (!isPlanned
                           ? Padding(
-                              padding: const EdgeInsets.only(right: 8.0, top: 10.0, bottom: 10.0),
+                              padding: const EdgeInsets.only(
+                                right: 8.0,
+                                top: 10.0,
+                                bottom: 10.0,
+                              ),
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: _cardNavy,
                                   foregroundColor: Colors.white,
                                   elevation: 0,
-                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
                                 ),
                                 onPressed: () async {
                                   setState(() {
@@ -1208,12 +1475,24 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                                   });
                                   if (_currentUserLocation != null) {
                                     try {
-                                      final controller = await _controllerCompleter.future;
-                                      controller.animateCamera(CameraUpdate.newLatLngZoom(_currentUserLocation!, 16));
+                                      final controller =
+                                          await _controllerCompleter.future;
+                                      controller.animateCamera(
+                                        CameraUpdate.newLatLngZoom(
+                                          _currentUserLocation!,
+                                          16,
+                                        ),
+                                      );
                                     } catch (_) {}
                                   }
                                 },
-                                child: const Text("SET", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                                child: const Text(
+                                  "SET",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
                               ),
                             )
                           : null),

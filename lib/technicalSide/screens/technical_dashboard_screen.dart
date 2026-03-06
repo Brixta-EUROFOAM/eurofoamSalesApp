@@ -24,6 +24,7 @@ import 'package:salesmanapp/technicalSide/screens/forms/add_site_form.dart';
 import 'package:salesmanapp/technicalSide/screens/all_masons_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/pending_masons_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/tso_meetings_form.dart';
+import 'package:salesmanapp/technicalSide/screens/team_view_list_screen.dart';
 
 // ---------------------------------------------------------------------------
 // 🟢 INTERNAL CAMERA SCREEN
@@ -584,11 +585,12 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
           errorStr.contains("exists")) {
         _toast("Syncing status...");
         await _checkAttendanceStatus();
-        if (mounted && _isDayComplete)
+        if (mounted && _isDayComplete) {
           _toast(
             "You have already completed your attendance for today.",
             isError: true,
           );
+        }
       } else if (errorStr.contains("not found") ||
           errorStr.contains("no attendance") ||
           errorStr.contains("already")) {
@@ -773,118 +775,149 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (sheetContext) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-                  "Technical Operations",
-                  style: TextStyle(
-                    color: _textDark,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                )
-                .animate()
-                .fadeIn(duration: 400.ms)
-                .slideY(begin: 0.2, curve: Curves.easeOutBack),
-            const SizedBox(height: 16),
+      builder: (sheetContext) => SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                    "Technical Operations",
+                    style: TextStyle(
+                      color: _textDark,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  )
+                  .animate()
+                  .fadeIn(duration: 400.ms)
+                  .slideY(begin: 0.2, curve: Curves.easeOutBack),
+              const SizedBox(height: 16),
 
-            if (flags.createTvr)
-              _buildActionSheetItem(
-                    icon: Icons.assignment_add,
-                    title: "Create TVR",
-                    subtitle: "Technical Visit Report Form",
-                    iconBg: const Color(0xFFF0FDF4),
-                    iconColor: Colors.green,
-                    onTap: () async {
-                      Navigator.pop(sheetContext);
-                      if (!_isCheckedIn) {
-                        ScaffoldMessenger.of(this.context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Hey! YOU did NOT check in today!!"),
-                            duration: Duration(seconds: 3),
-                            backgroundColor: Colors.orange,
+              if (flags.createTvr)
+                _buildActionSheetItem(
+                      icon: Icons.assignment_add,
+                      title: "Create TVR",
+                      subtitle: "Technical Visit Report Form",
+                      iconBg: const Color(0xFFF0FDF4),
+                      iconColor: Colors.green,
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        if (!_isCheckedIn) {
+                          ScaffoldMessenger.of(this.context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                "Hey! YOU did NOT check in today!!",
+                              ),
+                              duration: Duration(seconds: 3),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                          await Future.delayed(const Duration(seconds: 3));
+                        }
+                        if (!mounted) return;
+                        showDialog(
+                          context: this.context,
+                          barrierDismissible: false,
+                          builder: (dialogContext) =>
+                              CreateTvrScreen(employee: widget.employee),
+                        );
+                      },
+                    )
+                    .animate()
+                    .fadeIn(delay: 100.ms)
+                    .slideX(begin: -0.1, curve: Curves.easeOutCubic),
+
+              if (flags.registerSite)
+                _buildActionSheetItem(
+                      icon: Icons.add_location_alt,
+                      title: "Register Site",
+                      subtitle: "Add a new construction site",
+                      iconBg: const Color(0xFFECFEFF),
+                      iconColor: Colors.cyan,
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _openFullScreen(AddSiteForm(employee: widget.employee));
+                      },
+                    )
+                    .animate()
+                    .fadeIn(delay: 150.ms)
+                    .slideX(begin: -0.1, curve: Curves.easeOutCubic),
+
+              if (flags.addDealerSubDealer)
+                _buildActionSheetItem(
+                      icon: Icons.store_mall_directory_outlined,
+                      title: "Add Dealer/Sub Dealer",
+                      subtitle: "Add a new dealer/sub dealer",
+                      iconBg: const Color(0xFFFDF4FF),
+                      iconColor: Colors.purple,
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _openFullScreen(
+                          AddDealerForm(employee: widget.employee),
+                        );
+                      },
+                    )
+                    .animate()
+                    .fadeIn(delay: 200.ms)
+                    .slideX(begin: -0.1, curve: Curves.easeOutCubic),
+
+              if (flags.logTsoMeeting)
+                _buildActionSheetItem(
+                      icon: Icons.handshake_rounded,
+                      title: "Log Meetings",
+                      subtitle: "Record meeting details and expenses",
+                      iconBg: const Color(0xFFEEF2FF),
+                      iconColor: const Color(0xFF4F46E5),
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        if (!_isCheckedIn) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                "Hey! YOU did NOT check in today!!",
+                              ),
+                              duration: Duration(seconds: 3),
+                              backgroundColor: Colors.orange,
+                            ),
+                          );
+                          await Future.delayed(const Duration(seconds: 3));
+                        }
+                        if (!mounted) return;
+                        _openFullScreen(
+                          TsoMeetingsForm(employee: widget.employee),
+                        );
+                      },
+                    )
+                    .animate()
+                    .fadeIn(delay: 250.ms)
+                    .slideX(begin: -0.1, curve: Curves.easeOutCubic),
+
+              if (flags.teamView)
+                _buildActionSheetItem(
+                      icon: Icons.groups_outlined,
+                      title: "My Team",
+                      subtitle: "View team & reports",
+                      iconBg: const Color(0xFFF1F5F9),
+                      iconColor: Colors.lightBlue,
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => TechnicalTeamViewListScreen(
+                              seniorId: int.parse(widget.employee.id),
+                            ),
                           ),
                         );
-                        await Future.delayed(const Duration(seconds: 3));
-                      }
-                      if (!mounted) return;
-                      showDialog(
-                        context: this.context,
-                        barrierDismissible: false,
-                        builder: (dialogContext) =>
-                            CreateTvrScreen(employee: widget.employee),
-                      );
-                    },
-                  )
-                  .animate()
-                  .fadeIn(delay: 100.ms)
-                  .slideX(begin: -0.1, curve: Curves.easeOutCubic),
-
-            if (flags.registerSite)
-              _buildActionSheetItem(
-                    icon: Icons.add_location_alt,
-                    title: "Register Site",
-                    subtitle: "Add a new construction site",
-                    iconBg: const Color(0xFFECFEFF),
-                    iconColor: Colors.cyan,
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _openFullScreen(AddSiteForm(employee: widget.employee));
-                    },
-                  )
-                  .animate()
-                  .fadeIn(delay: 150.ms)
-                  .slideX(begin: -0.1, curve: Curves.easeOutCubic),
-
-            if (flags.addDealerSubDealer)
-              _buildActionSheetItem(
-                    icon: Icons.store_mall_directory_outlined,
-                    title: "Add Dealer/Sub Dealer",
-                    subtitle: "Add a new dealer/sub dealer",
-                    iconBg: const Color(0xFFFDF4FF),
-                    iconColor: Colors.purple,
-                    onTap: () {
-                      Navigator.pop(sheetContext);
-                      _openFullScreen(AddDealerForm(employee: widget.employee));
-                    },
-                  )
-                  .animate()
-                  .fadeIn(delay: 200.ms)
-                  .slideX(begin: -0.1, curve: Curves.easeOutCubic),
-
-            if (flags.logTsoMeeting)
-              _buildActionSheetItem(
-                    icon: Icons.handshake_rounded,
-                    title: "Log Meetings",
-                    subtitle: "Record meeting details and expenses",
-                    iconBg: const Color(0xFFEEF2FF),
-                    iconColor: const Color(0xFF4F46E5),
-                    onTap: () async {
-                      Navigator.pop(sheetContext);
-                      if (!_isCheckedIn) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text("Hey! YOU did NOT check in today!!"),
-                            duration: Duration(seconds: 3),
-                            backgroundColor: Colors.orange,
-                          ),
-                        );
-                        await Future.delayed(const Duration(seconds: 3));
-                      }
-                      if (!mounted) return;
-                      _openFullScreen(
-                        TsoMeetingsForm(employee: widget.employee),
-                      );
-                    },
-                  )
-                  .animate()
-                  .fadeIn(delay: 250.ms)
-                  .slideX(begin: -0.1, curve: Curves.easeOutCubic),
-          ],
+                      },
+                    )
+                    .animate()
+                    .fadeIn(delay: 300.ms)
+                    .slideX(begin: -0.1, curve: Curves.easeOutCubic),
+            ],
+          ),
         ),
       ),
     );
@@ -1123,6 +1156,8 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                     begin: const Offset(0.95, 0.95),
                     curve: Curves.easeOutBack,
                   ),
+
+            const SizedBox(height: 16),
           ],
         ),
       ),

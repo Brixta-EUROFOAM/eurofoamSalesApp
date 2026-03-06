@@ -1,5 +1,6 @@
 // lib/models/daily_task_model.dart
 import 'dart:convert';
+import 'package:intl/intl.dart';
 
 DailyTask dailyTaskFromJson(String str) => DailyTask.fromJson(json.decode(str));
 String dailyTaskToJson(DailyTask data) => json.encode(data.toJson());
@@ -72,6 +73,7 @@ class DailyTask {
       );
 
   Map<String, dynamic> toJson() => {
+        if (id != null) "id": id,
         "pjpBatchId": pjpBatchId,
         "userId": userId,
         "dealerId": dealerId,
@@ -84,7 +86,7 @@ class DailyTask {
         "visitType": visitType,
         "requiredVisitCount": requiredVisitCount,
         "week": week,
-        "taskDate": taskDate.toIso8601String(),
+        "taskDate": DateFormat('yyyy-MM-dd').format(taskDate),
         "status": status,
       };
 }
