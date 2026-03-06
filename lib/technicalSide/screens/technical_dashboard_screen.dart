@@ -907,18 +907,12 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         toolbarHeight: 80,
         title: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: _cardNavy, width: 2),
-              ),
-              child: CircleAvatar(
-                radius: 20,
-                backgroundColor: Colors.grey[300],
-                backgroundImage: const NetworkImage(
-                  "https://picsum.photos/200/300?grayscale",
-                ),
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: Colors.white,
+              child: Text(
+                widget.employee.displayName[0],
+                style: TextStyle(color: _cardNavy, fontWeight: FontWeight.bold),
               ),
             ).animate().scale(
               delay: 100.ms,

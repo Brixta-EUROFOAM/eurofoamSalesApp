@@ -15,6 +15,7 @@ class LeaveApplication {
   final String? adminRemarks;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+  final String? appRole;
 
   LeaveApplication({
     this.id,
@@ -27,6 +28,7 @@ class LeaveApplication {
     this.adminRemarks,
     this.createdAt,
     this.updatedAt,
+    this.appRole,
   });
 
   factory LeaveApplication.fromJson(Map<String, dynamic> json) => LeaveApplication(
@@ -38,6 +40,7 @@ class LeaveApplication {
         reason: json["reason"],
         status: json["status"],
         adminRemarks: json["adminRemarks"],
+        appRole: json["appRole"],
         createdAt: json["createdAt"] == null ? null : DateTime.parse(json["createdAt"]),
         updatedAt: json["updatedAt"] == null ? null : DateTime.parse(json["updatedAt"]),
       );
@@ -51,5 +54,6 @@ class LeaveApplication {
         "endDate": endDate.toIso8601String(),
         "reason": reason,
         "status": status, // Status is required by the server, e.g., "Pending"
+        if (appRole != null) "appRole": appRole,
       };
 }

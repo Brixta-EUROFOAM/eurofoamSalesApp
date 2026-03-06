@@ -5,8 +5,9 @@ import 'package:salesmanapp/models/leave_application_model.dart';
 
 class CreateLeaveFormScreen extends StatefulWidget {
   final int userId; // Changed to int userId to match List Screen
+  final String appRole;
 
-  const CreateLeaveFormScreen({super.key, required this.userId});
+  const CreateLeaveFormScreen({super.key, required this.userId, required this.appRole,});
 
   @override
   State<CreateLeaveFormScreen> createState() => _CreateLeaveFormScreenState();
@@ -73,6 +74,7 @@ class _CreateLeaveFormScreenState extends State<CreateLeaveFormScreen> {
     try {
       final leave = LeaveApplication(
         userId: widget.userId,
+        appRole: widget.appRole,
         leaveType: _leaveType,
         startDate: _startDate!,
         endDate: _endDate!,

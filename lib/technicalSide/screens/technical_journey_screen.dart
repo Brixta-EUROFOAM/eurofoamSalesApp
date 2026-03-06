@@ -712,50 +712,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     } catch (_) {}
   }
 
-  void _handleJourneyCleanup() async {
-    _cancelJourneySubscriptions();
-    final checkInTime = DateTime.now();
-
-    if (widget.onJourneyCompleted != null && _currentPjp != null) {
-      widget.onJourneyCompleted!(
-        _currentPjp!,
-        _currentPjp,
-        _isSiteVisit,
-        checkInTime,
-      );
-    }
-
-    if (mounted) {
-      final modeController = AppKernel.instance
-          .feature<JourneyModeController>();
-      final defaultMode = modeController.defaultMode(hasPjp: false).mode;
-
-      setState(() {
-        _isJourneyActive = false;
-        _currentPjp = null;
-        _destinationLocation = null;
-        _backupPlannedPjp = null;
-        _backupDestination = null;
-        _currentGeoTrackingDbId = null;
-        _totalDistanceTravelled = 0.0;
-        _lastRecordedLocation = null;
-        _hasArrived = false;
-
-        _destinationController.clear();
-        _journeyMode = defaultMode;
-        _isSelectionMode = false;
-
-        _routeTaken.clear();
-      });
-
-      _distanceDisplay.value = "Select Destination";
-
-      await _removeRouteLine();
-      await _removeDestinationMarker();
-      await _determinePositionAndMoveCamera();
-    }
-  }
-
   String _resolveName(Pjp pjp) {
     try {
       if (pjp.areaToBeVisited.contains('|')) {
@@ -765,6 +721,130 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     } catch (_) {
       return "Planned Visit";
     }
+  }
+
+  void _handleJourneyCleanup() async {
+    _cancelJourneySubscriptions();
+
+    if (!mounted) return;
+
+    final completedPjp = _currentPjp;
+    final checkInTime = DateTime.now();
+
+    setState(() {
+      _isJourneyActive = false;
+      _currentPjp = null;
+      _destinationLocation = null;
+      _backupPlannedPjp = null;
+      _backupDestination = null;
+      _currentGeoTrackingDbId = null;
+      _totalDistanceTravelled = 0.0;
+      _lastRecordedLocation = null;
+      _hasArrived = false;
+
+      _destinationController.clear();
+      _routeTaken.clear();
+    });
+
+    _distanceDisplay.value = "Select Destination";
+
+    await _removeRouteLine();
+    await _removeDestinationMarker();
+    await _determinePositionAndMoveCamera();
+
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.verified_rounded,
+                color: Color(0xFF10B981),
+                size: 64,
+              ).animate().scale(delay: 200.ms, curve: Curves.easeOutBack),
+
+              const SizedBox(height: 16),
+
+              const Text(
+                "Journey Completed",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+
+              const SizedBox(height: 8),
+
+              const Text(
+                "Would you like to fill the Technical Visit Report now?",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey),
+              ),
+
+              const SizedBox(height: 24),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        "Later",
+                        style: TextStyle(
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(width: 12),
+
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _cardNavy,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(context);
+
+                        if (widget.onJourneyCompleted != null &&
+                            completedPjp != null) {
+                          widget.onJourneyCompleted!(
+                            completedPjp,
+                            completedPjp,
+                            _isSiteVisit,
+                            checkInTime,
+                          );
+                        }
+                      },
+                      child: const Text(
+                        "Open TVR",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
+    );
   }
 
   void _showArrivalDialog() {
@@ -777,10 +857,10 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
           children: [
             Icon(Icons.location_on, color: Color(0xFF10B981)),
             SizedBox(width: 8),
-            Text('SITE REACHED'),
+            Text('Arrived'),
           ],
         ),
-        content: const Text('You have arrived at your destination.'),
+        content: const Text('You have arrived at your target location.'),
         actions: [
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -791,7 +871,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
             ),
             onPressed: () {
               Navigator.pop(context);
-              _handleJourneyCleanup();
+              _stopJourney(); // same behaviour as Sales Side
             },
             child: const Text('OK', style: TextStyle(color: Colors.white)),
           ),

@@ -7,8 +7,9 @@ import 'package:salesmanapp/models/leave_application_model.dart';
 
 class CreateLeaveApplicationForm extends StatefulWidget {
   final int userId;
+  final String appRole;
 
-  const CreateLeaveApplicationForm({super.key, required this.userId});
+  const CreateLeaveApplicationForm({super.key, required this.userId, required this.appRole,});
 
   @override
   State<CreateLeaveApplicationForm> createState() =>
@@ -82,6 +83,7 @@ class _CreateLeaveApplicationFormState
         endDate: _endDate!,
         reason: _reason,
         status: 'Pending',
+        appRole: widget.appRole,
       );
 
       await _apiService.createLeaveApplication(leave);

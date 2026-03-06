@@ -79,7 +79,7 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CreateLeaveApplicationForm(userId: widget.userId),
+        builder: (_) => CreateLeaveApplicationForm(userId: widget.userId, appRole: 'TECHNICAL',),
       ),
     );
 

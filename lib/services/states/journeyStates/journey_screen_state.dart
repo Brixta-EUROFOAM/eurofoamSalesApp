@@ -1016,6 +1016,7 @@ class JourneyLocalLogic {
         userId: uId,
         type: 'START',
         payload: jsonEncode({
+          'appRole': 'TECHNICAL',
           'siteName': pjp?.areaToBeVisited ?? "Unplanned",
           'destLat': destLoc?.latitude,
           'destLng': destLoc?.longitude,
@@ -1053,6 +1054,7 @@ class JourneyLocalLogic {
         userId: userId,
         type: 'STOP', // treated as PATCH on server
         payload: jsonEncode({
+          'appRole': 'TECHNICAL',
           'status': 'COMPLETED',
           'totalDistance': distanceInKm,
           'endedAt': DateTime.now().toIso8601String(),

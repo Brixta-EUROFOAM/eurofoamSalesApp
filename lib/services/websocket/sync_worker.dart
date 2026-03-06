@@ -64,12 +64,15 @@ class SyncWorker {
     debugPrint("📤 [SyncWorker] Sending ${pendingOps.length} ops...");
 
     final payload = pendingOps.map((op) {
+      final decodedPayload = jsonDecode(op.payload);
+
       return {
         'opId': op.opId,
         'journeyId': op.journeyId,
         'userId': op.userId,
         'type': op.type,
-        'payload': jsonDecode(op.payload),
+        'payload': decodedPayload,
+        'appRole': decodedPayload['appRole'],
         'createdAt': op.createdAt.toIso8601String(),
       };
     }).toList();

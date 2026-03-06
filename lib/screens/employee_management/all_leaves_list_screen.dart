@@ -30,7 +30,10 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
 
   void _loadLeaves() {
     setState(() {
-      _leavesFuture = _apiService.fetchLeaveApplicationsForUser(widget.userId, limit: 100);
+      _leavesFuture = _apiService.fetchLeaveApplicationsForUser(
+        widget.userId,
+        limit: 100,
+      );
     });
   }
 
@@ -38,14 +41,18 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CreateLeaveFormScreen(userId: widget.userId),
+        builder: (_) =>
+            CreateLeaveFormScreen(userId: widget.userId, appRole: 'SALES'),
       ),
     );
 
     if (result == true) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Leave applied successfully"), backgroundColor: Colors.green),
+          const SnackBar(
+            content: Text("Leave applied successfully"),
+            backgroundColor: Colors.green,
+          ),
         );
       }
       _loadLeaves();
@@ -64,17 +71,25 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
         centerTitle: true,
         actions: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 10.0,
+            ),
             child: TextButton.icon(
               onPressed: _navigateToCreateForm,
               style: TextButton.styleFrom(
                 backgroundColor: _cardNavy,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
                 padding: const EdgeInsets.symmetric(horizontal: 16),
               ),
               icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text("Apply Leave", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              label: const Text(
+                "Apply Leave",
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              ),
             ),
           ),
         ],
@@ -83,7 +98,9 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
         future: _leavesFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: _cardNavy));
+            return const Center(
+              child: CircularProgressIndicator(color: _cardNavy),
+            );
           }
           final leaves = snapshot.data ?? [];
           if (leaves.isEmpty) {
@@ -91,21 +108,31 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.event_busy, size: 48, color: _textGrey.withOpacity(0.5)),
+                  Icon(
+                    Icons.event_busy,
+                    size: 48,
+                    color: _textGrey.withOpacity(0.5),
+                  ),
                   const SizedBox(height: 16),
-                  const Text("No leave history found", style: TextStyle(color: _textGrey)),
+                  const Text(
+                    "No leave history found",
+                    style: TextStyle(color: _textGrey),
+                  ),
                   const SizedBox(height: 20),
                   ElevatedButton.icon(
                     onPressed: _navigateToCreateForm,
                     icon: const Icon(Icons.add),
                     label: const Text("Apply Now"),
-                    style: ElevatedButton.styleFrom(backgroundColor: _cardNavy, foregroundColor: Colors.white),
-                  )
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _cardNavy,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
                 ],
               ),
             );
           }
-          
+
           leaves.sort((a, b) => b.startDate.compareTo(a.startDate));
 
           return ListView.separated(
@@ -124,13 +151,20 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
     if (leave.status.toLowerCase() == 'approved') color = Colors.green;
     if (leave.status.toLowerCase() == 'rejected') color = Colors.red;
 
-    final dateRange = "${DateFormat('dd MMM').format(leave.startDate)} - ${DateFormat('dd MMM').format(leave.endDate)}";
+    final dateRange =
+        "${DateFormat('dd MMM').format(leave.startDate)} - ${DateFormat('dd MMM').format(leave.endDate)}";
 
     return Container(
       decoration: BoxDecoration(
         color: _surfaceWhite,
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -138,15 +172,37 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
           tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           leading: Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Icon(Icons.calendar_today, color: color, size: 20),
           ),
-          title: Text(leave.leaveType, style: const TextStyle(fontWeight: FontWeight.bold, color: _textDark)),
-          subtitle: Text(dateRange, style: const TextStyle(color: _textGrey, fontSize: 13)),
+          title: Text(
+            leave.leaveType,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: _textDark,
+            ),
+          ),
+          subtitle: Text(
+            dateRange,
+            style: const TextStyle(color: _textGrey, fontSize: 13),
+          ),
           trailing: Container(
-             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-             decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
-             child: Text(leave.status.toUpperCase(), style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: color)),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              leave.status.toUpperCase(),
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+            ),
           ),
           children: [
             Padding(
@@ -156,16 +212,37 @@ class _AllLeavesListScreenState extends State<AllLeavesListScreen> {
                 children: [
                   const Divider(),
                   const SizedBox(height: 8),
-                  Text("Reason:", style: TextStyle(fontSize: 12, color: _textGrey.withOpacity(0.8), fontWeight: FontWeight.bold)),
+                  Text(
+                    "Reason:",
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _textGrey.withOpacity(0.8),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   Text(leave.reason, style: const TextStyle(color: _textDark)),
-                  if(leave.adminRemarks != null && leave.adminRemarks!.isNotEmpty) ...[
-                     const SizedBox(height: 12),
-                     Text("Admin Remarks:", style: TextStyle(fontSize: 12, color: _textGrey.withOpacity(0.8), fontWeight: FontWeight.bold)),
-                     Text(leave.adminRemarks!, style: TextStyle(color: color, fontWeight: FontWeight.w500)),
-                  ]
+                  if (leave.adminRemarks != null &&
+                      leave.adminRemarks!.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      "Admin Remarks:",
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: _textGrey.withOpacity(0.8),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Text(
+                      leave.adminRemarks!,
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ],
               ),
-            )
+            ),
           ],
         ),
       ),

@@ -173,6 +173,7 @@ class SalesJourneyStopStateMachine {
       await db.stopLocalJourney(intent.currentJourneyId, distanceInKm);
 
       final stopPayload = {
+        'appRole': 'SALES',
         'status': 'COMPLETED',
         'totalDistance': distanceInKm,
         'endedAt': DateTime.now().toIso8601String(),

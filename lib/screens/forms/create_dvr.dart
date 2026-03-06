@@ -358,7 +358,11 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> {
       appBar: AppBar(
         title: const Text(
           "Daily Visit Report",
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: -0.5),
+          style: TextStyle(
+            fontWeight: FontWeight.w900, 
+            letterSpacing: -0.5,
+            color: Colors.white, 
+          ),
         ),
         backgroundColor: _cardNavy,
         foregroundColor: Colors.white,

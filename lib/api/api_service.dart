@@ -841,14 +841,33 @@ class ApiService {
 
   Future<void> deleteLeaveApplication(String leaveId) =>
       _delete('leave-applications/$leaveId');
+
   Future<List<DailyVisitReport>> fetchDvrsForUser(
     int userId, {
     String? startDate,
     String? endDate,
     String? dealerType,
     String? visitType,
+    int limit = 100,
   }) async {
-    throw Exception('Failed to fetch DVRs.');
+    final queryParams = <String, String>{
+      if (startDate != null) 'startDate': startDate,
+      if (endDate != null) 'endDate': endDate,
+      if (dealerType != null && dealerType != 'All') 'dealerType': dealerType,
+      if (visitType != null) 'visitType': visitType,
+      'limit': limit.toString(),
+    };
+
+    final queryString = Uri(queryParameters: queryParams).query;
+    final endpoint = 'daily-visit-reports/user/$userId${queryString.isNotEmpty ? '?$queryString' : ''}';
+
+    return _get(
+      endpoint,
+      (json) {
+        final List dataList = json is List ? json : (json['data'] ?? []);
+        return dataList.map((item) => DailyVisitReport.fromJson(item)).toList();
+      },
+    );
   }
 
   Future<DailyVisitReport> createDvr(DailyVisitReport dvr) async {
