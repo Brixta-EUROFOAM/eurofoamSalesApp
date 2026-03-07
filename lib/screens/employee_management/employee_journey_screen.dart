@@ -62,7 +62,7 @@ class EmployeeJourneyScreen extends StatefulWidget {
 
 class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   //HARDWARE ACCELERATION
-  final bool _useHardwareAcceleration = false;
+  final bool _useHardwareAcceleration = true;
   //HARDWARE ACCELERATION
   DateTime _lastPolylineUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   late SalesJourneyController _controller;
@@ -342,6 +342,17 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
     final String displayName = data['displayName'] ?? "Visit";
 
+    // 🚀 1. EXTRACT COORDINATES IMMEDIATELY FROM PAYLOAD
+    final coords = data['coordinates'];
+    if (coords != null && coords['lat'] != null && coords['lng'] != null) {
+      _destinationLocation = LatLng(
+        (coords['lat'] as num).toDouble(),
+        (coords['lng'] as num).toDouble(),
+      );
+    } else {
+      _destinationLocation = null;
+    }
+
     setState(() {
       _destinationController.text = displayName;
     });
@@ -355,12 +366,25 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       await _determinePositionAndMoveCamera();
     }
 
+    // 🚀 2. OPTIMISTIC UI: DRAW ROUTE INSTANTLY WITHOUT WAITING FOR API
+    if (_destinationLocation != null) {
+      await _addDestinationMarker(_destinationLocation!);
+      if (_currentUserLocation != null) {
+        await _getDirectionsAndDrawRoute();
+        await _fitBounds();
+      }
+    }
+
+    // 🚀 3. BACKGROUND FETCH: Get full dealer info for the DVR form later
     if (_dealerId != null) {
       try {
         final dealer = await ApiService().fetchDealerById(_dealerId!);
         _activeDealer = dealer;
 
-        if (dealer.latitude != null && dealer.longitude != null) {
+        // FALLBACK: If payload didn't have coordinates, use the fetched ones
+        if (_destinationLocation == null &&
+            dealer.latitude != null &&
+            dealer.longitude != null) {
           _destinationLocation = LatLng(dealer.latitude!, dealer.longitude!);
           await _addDestinationMarker(_destinationLocation!);
 

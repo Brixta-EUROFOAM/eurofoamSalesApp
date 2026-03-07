@@ -670,7 +670,7 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
       MaterialPageRoute(
         builder: (_) => EditPjpWizardScreen(
           employee: widget.member,
-          batchId: task.pjpBatchId!,
+          taskId: task.id!,
         ),
       ),
     ).then((_) => _refreshPjps());

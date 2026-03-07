@@ -63,7 +63,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   late final TechnicalFlags flags;
   final Completer<MapLibreMapController> _controllerCompleter = Completer();
   //HARDWARE ACCELERATION TOGGLE..
-  final bool _useHardwareAcceleration = false;
+  final bool _useHardwareAcceleration = true;
   late Future<String> _styleFuture;
   late final MapSelectionController _mapSelectionController = AppKernel.instance
       .feature<MapSelectionController>();

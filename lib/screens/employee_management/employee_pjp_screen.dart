@@ -152,7 +152,9 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen>
       'dealerId': task.dealerId,
       'displayName': task.dealerNameSnapshot ?? "Site Visit",
       'description': task.objective,
-      'coordinates': null,
+      'coordinates': (task.latitude != null && task.longitude != null) 
+          ? {'lat': task.latitude, 'lng': task.longitude} 
+          : null,
       'visitType': task.visitType,
     };
 
@@ -786,7 +788,7 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen>
               : "Location pending");
 
     Widget cardContent = Slidable(
-      enabled: !isPending && !isStarted,
+      enabled: !isPending,
       startActionPane: ActionPane(
         motion: const BehindMotion(),
         children: [

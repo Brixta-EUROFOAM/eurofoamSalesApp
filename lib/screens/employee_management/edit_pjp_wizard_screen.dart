@@ -10,12 +10,12 @@ import 'package:salesmanapp/models/dealer_model.dart';
 
 class EditPjpWizardScreen extends StatefulWidget {
   final TeamMember employee;
-  final String batchId;
+  final String taskId;
 
   const EditPjpWizardScreen({
     super.key,
     required this.employee,
-    required this.batchId,
+    required this.taskId,
   });
 
   @override
@@ -73,11 +73,15 @@ class _EditPjpWizardScreenState extends State<EditPjpWizardScreen> {
   }
 
   Future<void> _loadBatch() async {
+    _grouped.clear();
     final tasks = await _api.fetchDailyTasksForUser(widget.employee.id);
 
     final batchTasks = tasks
-        .where((t) => t.pjpBatchId == widget.batchId)
+        .where((t) => t.id == widget.taskId)
         .toList();
+
+    // SORT BY DATE ASCENDING
+    batchTasks.sort((a, b) => a.taskDate.compareTo(b.taskDate));
 
     for (var t in batchTasks) {
       final d = DateTime(t.taskDate.year, t.taskDate.month, t.taskDate.day);
@@ -125,25 +129,13 @@ class _EditPjpWizardScreenState extends State<EditPjpWizardScreen> {
     setState(() => _saving = false);
   }
 
-  Future<void> _openDealerSearch(Map edit) async {
+  Future<Dealer?> _openDealerSearch() async {
     final dealer = await showDialog<Dealer>(
       context: context,
       builder: (_) => _ServerDealerSearchDialog(api: _api),
     );
 
-    if (dealer == null) return;
-
-    setState(() {
-      edit["dealerNameSnapshot"] = dealer.name;
-      edit["dealerMobile"] = dealer.phoneNo;
-      edit["area"] = dealer.area;
-
-      if (!_zones.contains(dealer.region)) {
-        _zones.add(dealer.region);
-      }
-
-      edit["zone"] = dealer.region;
-    });
+    return dealer;
   }
 
   @override
@@ -158,7 +150,8 @@ class _EditPjpWizardScreenState extends State<EditPjpWizardScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          for (var entry in _grouped.entries) ...[
+          for (var entry
+              in _grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key))) ...[
             _buildDaySection(entry.key, entry.value),
             const SizedBox(height: 24),
           ],
@@ -222,9 +215,26 @@ class _EditPjpWizardScreenState extends State<EditPjpWizardScreen> {
           children: [
             /// DEALER SEARCH
             GestureDetector(
-              onTap: () => _openDealerSearch(edit),
+              onTap: () async {
+                final dealer = await _openDealerSearch();
+
+                if (dealer == null) return;
+
+                setState(() {
+                  edit["dealerNameSnapshot"] = dealer.name;
+                  edit["dealerMobile"] = dealer.phoneNo;
+                  edit["area"] = dealer.area;
+
+                  if (!_zones.contains(dealer.region)) {
+                    _zones.add(dealer.region);
+                  }
+
+                  edit["zone"] = dealer.region;
+                });
+              },
               child: AbsorbPointer(
                 child: TextFormField(
+                  key: ValueKey(edit["dealerNameSnapshot"]),
                   initialValue: edit["dealerNameSnapshot"],
                   decoration: const InputDecoration(
                     labelText: "Dealer (Search)",
@@ -237,6 +247,7 @@ class _EditPjpWizardScreenState extends State<EditPjpWizardScreen> {
 
             /// MOBILE
             TextFormField(
+              key: ValueKey(edit["dealerMobile"]),
               initialValue: edit["dealerMobile"],
               decoration: const InputDecoration(labelText: "Dealer Mobile"),
               onChanged: (v) => edit["dealerMobile"] = v,
@@ -246,6 +257,7 @@ class _EditPjpWizardScreenState extends State<EditPjpWizardScreen> {
 
             /// AREA
             TextFormField(
+              key: ValueKey(edit["area"]),
               initialValue: edit["area"],
               decoration: const InputDecoration(labelText: "Area"),
               onChanged: (v) => edit["area"] = v,

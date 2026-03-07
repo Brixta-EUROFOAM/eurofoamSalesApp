@@ -20,6 +20,8 @@ class DailyTask {
   final int? requiredVisitCount;
   final String? week;
   final DateTime taskDate;
+  final double? latitude;
+  final double? longitude;
   final String status;
   final DateTime? createdAt;
   final DateTime? updatedAt;
@@ -31,6 +33,7 @@ class DailyTask {
     this.dealerId,
     this.dealerNameSnapshot,
     this.dealerMobile,
+
     this.zone,
     this.area,
     this.route,
@@ -38,6 +41,8 @@ class DailyTask {
     this.visitType,
     this.requiredVisitCount,
     this.week,
+    this.latitude,
+    this.longitude,
     required this.taskDate,
     required this.status,
     this.createdAt,
@@ -64,6 +69,12 @@ class DailyTask {
         week: json["week"]?.toString(),
         taskDate: DateTime.parse(json["taskDate"]),
         status: json["status"]?.toString() ?? 'Assigned',
+        latitude: json["latitude"] != null 
+            ? double.tryParse(json["latitude"].toString()) 
+            : null,
+        longitude: json["longitude"] != null 
+            ? double.tryParse(json["longitude"].toString()) 
+            : null,
         createdAt: json["createdAt"] == null
             ? null
             : DateTime.parse(json["createdAt"]),
@@ -85,6 +96,8 @@ class DailyTask {
         "objective": objective,
         "visitType": visitType,
         "requiredVisitCount": requiredVisitCount,
+        "latitude": latitude,
+        "longitude": longitude,
         "week": week,
         "taskDate": DateFormat('yyyy-MM-dd').format(taskDate),
         "status": status,

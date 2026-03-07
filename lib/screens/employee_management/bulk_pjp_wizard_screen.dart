@@ -95,6 +95,10 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
       'dealerName': TextEditingController(),
       'dealerMobile': TextEditingController(),
       'requiredVisitCount': TextEditingController(text: '1'),
+      'dealerId': null,
+      'lat': null, // ADD THIS
+      'lng': null, // ADD THIS
+
     };
   }
 
@@ -115,12 +119,16 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
     if (dealer == null) return;
 
     setState(() {
+      visit['dealerId'] = dealer.id;
       visit['dealerName'].text = dealer.name;
       visit['dealerMobile'].text = dealer.phoneNo;
       visit['area'].text = dealer.area;
+      visit['lat'] = dealer.latitude;   // ADD THIS (assuming Dealer model has latitude)
+      visit['lng'] = dealer.longitude;
       visit['zone'] = _zones.contains(dealer.region)
           ? dealer.region
           : _zones.first;
+
     });
   }
 
@@ -143,6 +151,7 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
             pjpBatchId: _batchId,
             taskDate: date,
             status: "PENDING",
+            dealerId: visit['dealerId'],
             zone: visit['zone'],
             area: visit['area'].text,
             route: visit['route'].text,
@@ -151,6 +160,8 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
             objective: visit['objective'],
             visitType: visit['type'],
             week: visit['week'],
+            latitude: visit['lat'],  // ADD THIS
+            longitude: visit['lng'], // ADD THIS
             requiredVisitCount: int.tryParse(visit['requiredVisitCount'].text),
             createdAt: DateTime.now(),
             updatedAt: DateTime.now(),
