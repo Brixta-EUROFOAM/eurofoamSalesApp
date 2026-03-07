@@ -6,6 +6,7 @@ import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/team_members_model.dart';
 import 'package:salesmanapp/models/leave_application_model.dart';
 import 'package:salesmanapp/models/daily_task_model.dart';
+import 'package:salesmanapp/screens/employee_management/edit_pjp_wizard_screen.dart';
 
 class MemberActivityLogsScreen extends StatefulWidget {
   final TeamMember member;
@@ -466,8 +467,12 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
               var list = snapshot.data ?? [];
               if (_selectedFilter != 'All') {
                 list = list
-    .where((t) => t.status.toLowerCase() == _selectedFilter.toLowerCase())
-    .toList();
+                    .where(
+                      (t) =>
+                          t.status.toLowerCase() ==
+                          _selectedFilter.toLowerCase(),
+                    )
+                    .toList();
               }
 
               if (list.isEmpty) return _buildEmptyState();
@@ -576,6 +581,25 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
             Row(
               children: [
                 Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => _openEditPlan(task),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.indigoAccent,
+                      side: const BorderSide(color: Colors.indigo),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text(
+                      "EDIT PLAN",
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                Expanded(
                   child: ElevatedButton(
                     onPressed: () => _handleApprove(task),
                     style: ElevatedButton.styleFrom(
@@ -638,6 +662,18 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
         context,
       ).showSnackBar(const SnackBar(content: Text("Failed to approve PJP")));
     }
+  }
+
+  void _openEditPlan(DailyTask task) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditPjpWizardScreen(
+          employee: widget.member,
+          batchId: task.pjpBatchId!,
+        ),
+      ),
+    ).then((_) => _refreshPjps());
   }
 
   Widget _statusBadge(String status) {

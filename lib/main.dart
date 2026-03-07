@@ -79,19 +79,19 @@ Future<void> setupRemoteConfig() async {
     ));
 
     // Fallback just in case they open the app with no internet
-    // await remoteConfig.setDefaults(const {
-    //   "api_base_url": "http://65.0.208.126",
-    // });
+    await remoteConfig.setDefaults(const {
+      "api_base_url": "http://65.0.208.126",
+    });
 
-    // await remoteConfig.fetchAndActivate();
+    await remoteConfig.fetchAndActivate();
 
-    // final String fetchedUrl = remoteConfig.getString("api_base_url");
+    final String fetchedUrl = remoteConfig.getString("api_base_url");
 
-    // if (fetchedUrl.isNotEmpty) {
-    //   ApiService.baseUrl = fetchedUrl;
-    //   AuthService.baseUrl = fetchedUrl;
-    //   debugPrint("✅ Firebase Remote Config: Base URL set to $fetchedUrl");
-    // }
+    if (fetchedUrl.isNotEmpty) {
+      ApiService.baseUrl = fetchedUrl;
+      AuthService.baseUrl = fetchedUrl;
+      debugPrint("✅ Firebase Remote Config: Base URL set to $fetchedUrl");
+    }
   } catch (e) {
     debugPrint("⚠️ Failed to fetch Remote Config: $e");
   }

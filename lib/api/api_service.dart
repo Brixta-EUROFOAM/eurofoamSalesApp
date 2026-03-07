@@ -44,8 +44,8 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  //static String baseUrl = 'http://65.0.208.126'; //aws
-  static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  static String baseUrl = 'http://65.0.208.126'; //aws
+  //static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
   //static String baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
 
   // --- ✅ FIX: Initialize http.Client ---
