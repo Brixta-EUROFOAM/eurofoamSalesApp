@@ -62,7 +62,7 @@ class EmployeeJourneyScreen extends StatefulWidget {
 
 class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   //HARDWARE ACCELERATION
-  final bool _useHardwareAcceleration = true;
+  final bool _useHardwareAcceleration = false;
   //HARDWARE ACCELERATION
   DateTime _lastPolylineUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   late SalesJourneyController _controller;
@@ -280,8 +280,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     _cancelJourneySubscriptions();
 
     _distanceSub = _controller.distanceStream.listen((dist) {
-      if (mounted)
+      if (mounted) {
         _distanceDisplay.value = "${(dist / 1000.0).toStringAsFixed(2)} km";
+      }
     });
 
     _posSub = _controller.positionStream.listen((latLng) async {
@@ -947,8 +948,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     if (_currentUserLocation == null ||
         _destinationLocation == null ||
-        _radarApiKey == null)
+        _radarApiKey == null) {
       return;
+    }
     final controller = await _controllerCompleter.future;
     await JourneyMapRenderer.drawRoute(
       controller: controller,
@@ -1078,6 +1080,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                     return MapLibreMap(
                       styleString: snap.data!,
                       initialCameraPosition: _initialCameraPosition,
+                      //HARDWARE ACCELERATION BITS..
                       myLocationEnabled: true,
                       trackCameraPosition: true,
                       myLocationTrackingMode: _isMapTrackingUser
@@ -1085,6 +1088,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                           : MyLocationTrackingMode.none,
                       myLocationRenderMode: MyLocationRenderMode.compass,
                       onCameraTrackingDismissed: () {
+                        //lmao
                         if (_isMapTrackingUser && mounted) {
                           setState(() => _isMapTrackingUser = false);
                         }
@@ -1094,10 +1098,12 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                           _controllerCompleter.complete(c);
                         }
                         if (_isJourneyActive) {
-                          if (_destinationLocation != null)
+                          if (_destinationLocation != null) {
                             _addDestinationMarker(_destinationLocation!);
-                          if (_routeTaken.isNotEmpty)
+                          }
+                          if (_routeTaken.isNotEmpty) {
                             _updateTravelledPolyline();
+                          }
                         }
                       },
                     ).animate().fadeIn(duration: 800.ms);

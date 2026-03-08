@@ -325,36 +325,30 @@ class _BulkTechnicalPjpWizardScreenState
             ),
           ),
 
-          // ✨ SMOOTH GPU MAP TRANSITION
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 300),
-            switchInCurve: Curves.easeOutCubic,
-            switchOutCurve: Curves.easeInCubic,
-            child: _isMapVisible
-                ? Positioned.fill(
-                    key: const ValueKey("MapLayer"),
-                    child: Material(
-                      color: Colors.white,
-                      child: _mapController.buildPickerUI(
-                        context,
-                        initialPos: const LatLng(26.1445, 91.7362),
-                        onLocationSelected: (result) {
-                          if (_activeMapDate != null) {
-                            setState(() {
-                              _dailyConfigs[_activeMapDate]!['locationResult'] =
-                                  result;
-                              _dailyConfigs[_activeMapDate]!['route'].text =
-                                  result.address;
-                              _isMapVisible = false;
-                            });
-                          }
-                        },
-                        onCancel: () => setState(() => _isMapVisible = false),
-                      ),
-                    ),
-                  )
-                : const SizedBox.shrink(key: ValueKey("EmptyMap")),
-          ),
+          // ✨ SMOOTH GPU MAP TRANSITION not being used
+          // ✨ NATIVE-SAFE MAP RENDERING (No Opacity Animations)
+          if (_isMapVisible)
+            Positioned.fill(
+              child: Material(
+                color: Colors.white,
+                child: _mapController.buildPickerUI(
+                  context,
+                  initialPos: const LatLng(26.1445, 91.7362),
+                  onLocationSelected: (result) {
+                    if (_activeMapDate != null) {
+                      setState(() {
+                        _dailyConfigs[_activeMapDate]!['locationResult'] =
+                            result;
+                        _dailyConfigs[_activeMapDate]!['route'].text =
+                            result.address;
+                        _isMapVisible = false;
+                      });
+                    }
+                  },
+                  onCancel: () => setState(() => _isMapVisible = false),
+                ),
+              ),
+            ),
         ],
       ),
     );
