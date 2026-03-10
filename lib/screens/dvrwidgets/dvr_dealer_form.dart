@@ -1,19 +1,22 @@
 // lib/screens/dvrwidgets/dvr_dealer_form.dart
 
-import 'dart:async'; // 🔥 ADDED FOR DEBOUNCE
+import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:salesmanapp/technicalSide/utils/dvr_constants.dart';
 import 'dvr_form_widgets.dart';
+import 'package:salesmanapp/models/dealer_model.dart';
 
 class DvrDealerFormWidget extends StatefulWidget {
   final GlobalKey<FormState> formKey;
   final Function(Map<String, dynamic>) onDataChanged;
+  final Dealer? initialDealer;
 
   const DvrDealerFormWidget({
     super.key,
     required this.formKey,
     required this.onDataChanged,
+    this.initialDealer,
   });
 
   @override
@@ -46,14 +49,36 @@ class _DvrDealerFormWidgetState extends State<DvrDealerFormWidget> {
   final TextEditingController _solutionCtrl = TextEditingController();
   final TextEditingController _remarksCtrl = TextEditingController();
 
+
   // 🚀 CRITICAL FIX: Attach listeners to Number Fields here instead of in the widget tree
   @override
   void initState() {
     super.initState();
+
+    final d = widget.initialDealer;
+    if (d != null) {
+      if (DvrConstants.dealerTypeOptions.contains(d.type)) {
+        _dealerType = d.type;
+      } else {
+        _dealerType = null;
+      }
+      _dealerTotalPotentialCtrl.text = d.totalPotential.toString();
+      _dealerBestPotentialCtrl.text = d.bestPotential.toString();
+
+      _contactPhoneCtrl.text = d.phoneNo;
+      _contactPersonCtrl.text = d.nameOfFirm ?? d.name;
+
+      _brandSelling = List.from(d.brandSelling);
+    }
+
     _dealerTotalPotentialCtrl.addListener(_debouncedNotifyParent);
     _dealerBestPotentialCtrl.addListener(_debouncedNotifyParent);
     _todayOrderCtrl.addListener(_debouncedNotifyParent);
     _todayCollectionCtrl.addListener(_debouncedNotifyParent);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _notifyParent();
+    });
   }
 
   // -------------------------------

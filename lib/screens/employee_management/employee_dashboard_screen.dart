@@ -656,7 +656,12 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       body: RefreshIndicator(
         onRefresh: () async => refreshData(),
         child: ListView(
-          padding: const EdgeInsets.all(20.0),
+          padding: EdgeInsets.fromLTRB(
+            20,
+            20,
+            20,
+            MediaQuery.of(context).padding.bottom + 110,
+          ),
           children: [
             // --- 1. HERO ATTENDANCE CARD ---
             Container(

@@ -410,16 +410,16 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       _controllers['partyName']!.text = site.concernedPerson;
       _controllers['siteAddress']!.text = site.address;
       _controllers['area']!.text = site.area ?? '';
-      if (site.latitude != 0.0)
-        _controllers['latitude']!.text = site.latitude.toStringAsFixed(6);
-      if (site.longitude != 0.0)
-        _controllers['longitude']!.text = site.longitude.toStringAsFixed(6);
+      if (site.latitude != 0.0){
+        _controllers['latitude']!.text = site.latitude.toStringAsFixed(6);}
+      if (site.longitude != 0.0){
+        _controllers['longitude']!.text = site.longitude.toStringAsFixed(6);}
       if (site.region != null &&
-          TvrConstants.regionOptions.contains(site.region))
-        _values['selectedRegion'] = site.region;
+          TvrConstants.regionOptions.contains(site.region)){
+        _values['selectedRegion'] = site.region;}
       if (site.stageOfConstruction != null &&
-          TvrConstants.stageOptions.contains(site.stageOfConstruction))
-        _values['selectedStage'] = site.stageOfConstruction;
+          TvrConstants.stageOptions.contains(site.stageOfConstruction)){
+        _values['selectedStage'] = site.stageOfConstruction;}
     });
     _saveDrafts();
   }
@@ -432,10 +432,10 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       _controllers['phone']!.text = dealer.phoneNo;
       _controllers['siteAddress']!.text = dealer.address;
       _controllers['area']!.text = dealer.area;
-      if (dealer.latitude != null)
-        _controllers['latitude']!.text = dealer.latitude!.toStringAsFixed(6);
-      if (dealer.longitude != null)
-        _controllers['longitude']!.text = dealer.longitude!.toStringAsFixed(6);
+      if (dealer.latitude != null){
+        _controllers['latitude']!.text = dealer.latitude!.toStringAsFixed(6);}
+      if (dealer.longitude != null){
+        _controllers['longitude']!.text = dealer.longitude!.toStringAsFixed(6);}
       _values['selectedInfluencerType'] = 'Dealer';
     });
     _saveDrafts();
@@ -450,6 +450,70 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       _values['selectedInfluencerType'] = 'Mason';
     });
     _saveDrafts();
+  }
+
+  Map<String, dynamic> _buildDealerPatch(Position location) {
+    final dealer = _values['selectedDealer'];
+    if (dealer == null) return {};
+
+    final patch = <String, dynamic>{};
+
+    final name = _controllers['partyName']!.text;
+    if (name != dealer.name) {
+      patch['name'] = name;
+    }
+
+    final phone = _controllers['phone']!.text;
+    if (phone != dealer.phoneNo) {
+      patch['phoneNo'] = phone;
+    }
+
+    final address = _controllers['siteAddress']!.text;
+    if (address != dealer.address) {
+      patch['address'] = address;
+    }
+
+    final area = _controllers['area']!.text;
+    if (area != dealer.area) {
+      patch['area'] = area;
+    }
+
+    patch['latitude'] = location.latitude;
+    patch['longitude'] = location.longitude;
+
+    return patch;
+  }
+
+  Map<String, dynamic> _buildSitePatch(Position location) {
+    final site = _values['selectedSite'];
+    if (site == null) return {};
+
+    final patch = <String, dynamic>{};
+
+    final name = _controllers['partyName']!.text;
+    if (name != site.concernedPerson) {
+      patch['concernedPerson'] = name;
+    }
+
+    final phone = _controllers['phone']!.text;
+    if (phone != site.phoneNo) {
+      patch['phoneNo'] = phone;
+    }
+
+    final address = _controllers['siteAddress']!.text;
+    if (address != site.address) {
+      patch['address'] = address;
+    }
+
+    final area = _controllers['area']!.text;
+    if (area != site.area) {
+      patch['area'] = area;
+    }
+
+    patch['latitude'] = location.latitude;
+    patch['longitude'] = location.longitude;
+
+    return patch;
   }
 
   // --- 🚀 SUBMIT ---
@@ -743,6 +807,26 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       final File outTimeFile = File(outPath);
       final File? sitePhotoFile = _values['sitePhotoFile'];
 
+      // Patch the edited details to the original dealer/site data
+      final Position? location = _values['capturedLocation'];
+      if (location != null) {
+        final dealer = _values['selectedDealer'];
+        if (dealer != null) {
+          final patch = _buildDealerPatch(location);
+          if (patch.isNotEmpty) {
+            _apiService.updateDealer(dealer.id!, patch);
+          }
+        }
+
+        final site = _values['selectedSite'];
+        if (site != null) {
+          final patch = _buildSitePatch(location);
+          if (patch.isNotEmpty) {
+            _apiService.updateTechnicalSite(site.id!, patch);
+          }
+        }
+      }
+
       await TvrBackgroundWorker.processAndSubmit(
         apiService: _apiService,
         tvrPayload: payload,
@@ -911,7 +995,7 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
 
   Widget _buildFormSwitcher() {
     final type = _values['selectedCustomerType'];
-    if (type == 'IHB/Site'){
+    if (type == 'IHB/Site') {
       return TvrIhbSection(
         controllers: _controllers,
         values: _values,
@@ -920,8 +1004,9 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         onMasonSearch: _openMasonSearch,
         onLocationFetch: _fetchLocationAndAddress,
         onPickPhoto: _pickSitePhoto,
-      );}
-    if (type != null && type.contains("Dealer")){
+      );
+    }
+    if (type != null && type.contains("Dealer")) {
       return TvrDealerSection(
         controllers: _controllers,
         values: _values,
@@ -930,7 +1015,8 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
         onLocationFetch: _fetchLocationAndAddress,
         onPickPhoto: _pickSitePhoto,
         onSelectSupplyDate: _selectSupplyDate,
-      );}
+      );
+    }
     return TvrInfluencerSection(
       controllers: _controllers,
       values: _values,

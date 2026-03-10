@@ -62,7 +62,7 @@ class EmployeeJourneyScreen extends StatefulWidget {
 
 class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   //HARDWARE ACCELERATION
-  final bool _useHardwareAcceleration = true;
+  final bool _useHardwareAcceleration = false;
   //HARDWARE ACCELERATION
   DateTime _lastPolylineUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   late SalesJourneyController _controller;
@@ -816,24 +816,15 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                         ),
                         onPressed: () {
                           Navigator.pop(context);
-                          if (completedDealer != null) {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => CreateDvrScreen(
-                                  employee: widget.employee,
-                                  dealer: completedDealer,
-                                ),
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => CreateDvrScreen(
+                                employee: widget.employee,
+                                dealer: completedDealer, // may be null
                               ),
-                            );
-                          } else {
-                            // If Unplanned location without a dealer entity, just close or navigate to a generic report
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text("Unplanned Visit log saved."),
-                              ),
-                            );
-                          }
+                            ),
+                          );
                         },
                         child: const Text(
                           "Open DVR",

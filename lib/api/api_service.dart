@@ -994,7 +994,16 @@ class ApiService {
     ); // Adjust endpoint if different
   }
 
-  // Fetch bag lifts (TSO view)
+  Future<TechnicalSite> updateTechnicalSite(
+    String siteId,
+    Map<String, dynamic> data,
+  ) async {
+    return _patch(
+      'technical-sites/$siteId',
+      data,
+      (json) => TechnicalSite.fromJson(json),
+    );
+  }
 
   // 1. Fetch ALL approved lifts for TSO (For the Total Count on Card)
   Future<List<MasonBagLift>> fetchAllApprovedBagLiftsForTso(

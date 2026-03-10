@@ -1006,7 +1006,12 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       body: RefreshIndicator(
         onRefresh: _handleRefresh,
         child: ListView(
-          padding: const EdgeInsets.all(20.0),
+          padding: EdgeInsets.fromLTRB(
+            20,
+            20,
+            20,
+            MediaQuery.of(context).padding.bottom + 110,
+          ),
           children: [
             // 1. HERO ATTENDANCE CARD
             if (_attendanceEnabled(context))

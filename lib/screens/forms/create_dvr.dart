@@ -46,8 +46,8 @@ class CreateDvrScreen extends StatefulWidget {
 }
 
 // 🚀 ADDED WidgetsBindingObserver TO PREVENT CRASHES ON MINIMIZE
-class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingObserver {
-  
+class _CreateDvrScreenState extends State<CreateDvrScreen>
+    with WidgetsBindingObserver {
   // 🛡️ Tracks if app is minimized
   bool _isAppInForeground = true;
 
@@ -124,8 +124,28 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingOb
       builder: (context) => _ServerDealerSearchDialog(api: _apiService),
     );
 
-    if (result != null) {
-      setState(() => _selectedDealer = result);
+    if (result == null) return;
+    if (result.id == null) {
+      setState(() {
+        _selectedDealer = result;
+      });
+      return;
+    }
+
+    try {
+      final dealer = await _apiService.fetchDealerById(result.id!);
+
+      if (!mounted) return;
+
+      setState(() {
+        _selectedDealer = dealer;
+      });
+    } catch (e) {
+      debugPrint("Dealer fetch failed: $e");
+
+      setState(() {
+        _selectedDealer = result;
+      });
     }
   }
 
@@ -210,7 +230,11 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingOb
 
       // Extract and check for nulls safely
       final Position? pos = results[0] as Position?;
-      if (pos == null) throw Exception("Could not lock GPS location. Ensure location services are ON.");
+      if (pos == null) {
+        throw Exception(
+          "Could not lock GPS location. Ensure location services are ON.",
+        );
+      }
 
       // 🛡️ PROTECTED UI UPDATE
       if (mounted && _isAppInForeground) {
@@ -233,6 +257,51 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingOb
         setState(() => _isUploadingImage = false);
       }
     }
+  }
+
+  Map<String, dynamic> _buildDealerPatch(Position location) {
+    if (_selectedDealer == null) return {};
+
+    final patch = <String, dynamic>{};
+
+    final totalPotential = double.tryParse(
+      "${_formData['dealerTotalPotential']}",
+    );
+
+    if (totalPotential != null &&
+        totalPotential != _selectedDealer!.totalPotential) {
+      patch['totalPotential'] = totalPotential;
+    }
+
+    final bestPotential = double.tryParse(
+      "${_formData['dealerBestPotential']}",
+    );
+
+    if (bestPotential != null &&
+        bestPotential != _selectedDealer!.bestPotential) {
+      patch['bestPotential'] = bestPotential;
+    }
+
+    final phone = _formData['contactPersonPhoneNo'];
+
+    if (phone != null && phone != _selectedDealer!.phoneNo) {
+      patch['phoneNo'] = phone;
+    }
+
+    if (_formData['brandSelling'] != null &&
+        _formData['brandSelling'] != _selectedDealer!.brandSelling) {
+      patch['brandSelling'] = _formData['brandSelling'];
+    }
+
+    if (_selectedDealer!.latitude != location.latitude) {
+      patch['latitude'] = location.latitude;
+    }
+
+    if (_selectedDealer!.longitude != location.longitude) {
+      patch['longitude'] = location.longitude;
+    }
+
+    return patch;
   }
 
   /// ------------------------------------------------
@@ -264,10 +333,10 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingOb
       );
 
       if (outImagePath == null) {
-         setState(() => _isSubmitting = false);
-         return; 
+        setState(() => _isSubmitting = false);
+        return;
       }
-      
+
       _outImagePathLocal = outImagePath;
 
       /// DEALER MAPPING BASED ON TOGGLE
@@ -300,29 +369,34 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingOb
         latitude: _checkInLocation!.latitude,
         longitude: _checkInLocation!.longitude,
         visitType: _formData['visitType'] ?? 'PLANNED',
-        dealerTotalPotential: double.tryParse("${_formData['dealerTotalPotential']}") ?? 0,
-        dealerBestPotential: double.tryParse("${_formData['dealerBestPotential']}") ?? 0,
+        dealerTotalPotential:
+            double.tryParse("${_formData['dealerTotalPotential']}") ?? 0,
+        dealerBestPotential:
+            double.tryParse("${_formData['dealerBestPotential']}") ?? 0,
         brandSelling: (_formData['brandSelling'] as List<String>?) ?? [],
         contactPerson: _formData['contactPerson'],
         contactPersonPhoneNo: _formData['contactPersonPhoneNo'],
         todayOrderMt: double.tryParse("${_formData['todayOrderMt']}") ?? 0,
-        todayCollectionRupees: double.tryParse("${_formData['todayCollectionRupees']}") ?? 0,
+        todayCollectionRupees:
+            double.tryParse("${_formData['todayCollectionRupees']}") ?? 0,
         feedbacks: "${_formData['feedbacks'] ?? ""}",
         solutionBySalesperson: _formData['solutionBySalesperson'],
         anyRemarks: _formData['anyRemarks'],
         checkInTime: _checkInTime!,
         checkOutTime: DateTime.now(),
-        inTimeImageUrl: _inTimeImageUrl, 
-        outTimeImageUrl: null, // 🚀 LEFT NULL! The background worker handles the upload.
+        inTimeImageUrl: _inTimeImageUrl,
+        outTimeImageUrl:
+            null, // 🚀 LEFT NULL! The background worker handles the upload.
         pjpId: widget.pjp?.id,
       );
 
       // 🚀 FIRE AND FORGET THE DEALER GPS UPDATE (Non-blocking)
       if (_enableDealerUpdateOnSubmit && finalDealerId != null) {
-        _apiService.updateDealer(finalDealerId, {
-          'latitude': _checkInLocation!.latitude,
-          'longitude': _checkInLocation!.longitude,
-        });
+        final patch = _buildDealerPatch(_checkInLocation!);
+
+        if (patch.isNotEmpty) {
+          _apiService.updateDealer(finalDealerId, patch);
+        }
       }
 
       // ⚡ O(1) TIME COMPLEXITY: Hand off to the Background Worker instantly!
@@ -339,13 +413,16 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingOb
       if (mounted && _isAppInForeground) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("DVR Queued & Submitted!", style: TextStyle(fontWeight: FontWeight.bold)),
+            content: Text(
+              "DVR Queued & Submitted!",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             backgroundColor: Colors.green,
           ),
         );
         setState(() {
-           _showSummary = true;
-           _isSubmitting = false;
+          _showSummary = true;
+          _isSubmitting = false;
         });
       }
     } catch (e) {
@@ -353,7 +430,10 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingOb
       if (mounted && _isAppInForeground) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Failed to queue DVR", style: TextStyle(fontWeight: FontWeight.bold)),
+            content: Text(
+              "Failed to queue DVR",
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -373,15 +453,17 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingOb
         title: const Text(
           "Daily Visit Report",
           style: TextStyle(
-            fontWeight: FontWeight.w900, 
+            fontWeight: FontWeight.w900,
             letterSpacing: -0.5,
-            color: Colors.white, 
+            color: Colors.white,
           ),
         ),
         backgroundColor: _cardNavy,
         foregroundColor: Colors.white,
         elevation: 0,
-        leading: _showSummary ? const SizedBox.shrink() : null,
+        leading: _showSummary
+            ? const SizedBox.shrink()
+            : const BackButton(color: Colors.white),
       ),
       // 🚀 GPU-ACCELERATED VIEW SWITCHING
       body: AnimatedSwitcher(
@@ -667,8 +749,10 @@ class _CreateDvrScreenState extends State<CreateDvrScreen> with WidgetsBindingOb
       );
     }
     return DvrDealerFormWidget(
+      key: ValueKey(_selectedDealer?.id),
       formKey: _dynamicFormKey,
       onDataChanged: (data) => _formData = data,
+      initialDealer: _selectedDealer,
     );
   }
 
