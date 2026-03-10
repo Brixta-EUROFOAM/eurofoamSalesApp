@@ -437,6 +437,10 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
   late Future<List<DailyTask>> _pjpFuture;
   String _selectedFilter = 'All';
 
+  final Map<DateTime, List<DailyTask>> grouped = {};
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _searchQuery = "";
+
   @override
   void initState() {
     super.initState();
@@ -454,6 +458,27 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
     return Column(
       children: [
         _buildFilterBar(),
+
+        // searchbox
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: TextField(
+            controller: _searchCtrl,
+            decoration: const InputDecoration(
+              hintText: "Search route / zone / objective",
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
+            ),
+            onChanged: (v) {
+              setState(() {
+                _searchQuery = v.toLowerCase();
+              });
+            },
+          ),
+        ),
+
+        const SizedBox(height: 10),
+
         Expanded(
           child: FutureBuilder<List<DailyTask>>(
             future: _pjpFuture,
@@ -465,6 +490,19 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
               }
 
               var list = snapshot.data ?? [];
+
+              if (_searchQuery.isNotEmpty) {
+                list = list.where((t) {
+                  final route = (t.route ?? "").toLowerCase();
+                  final zone = (t.zone ?? "").toLowerCase();
+                  final obj = (t.objective ?? "").toLowerCase();
+
+                  return route.contains(_searchQuery) ||
+                      zone.contains(_searchQuery) ||
+                      obj.contains(_searchQuery);
+                }).toList();
+              }
+
               if (_selectedFilter != 'All') {
                 list = list
                     .where(
@@ -477,14 +515,84 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
 
               if (list.isEmpty) return _buildEmptyState();
 
+              // Clear and rebuild the grouped map correctly inside the builder
+              grouped.clear();
+              for (var task in list) {
+                final d = DateTime(
+                  task.taskDate.year,
+                  task.taskDate.month,
+                  task.taskDate.day,
+                );
+                grouped.putIfAbsent(d, () => []).add(task);
+              }
+
+              final groupedEntries = grouped.entries.toList();
+
               return RefreshIndicator(
                 onRefresh: () async => _refreshPjps(),
-                child: ListView.separated(
+                child: ListView.builder(
                   padding: const EdgeInsets.all(20),
-                  itemCount: list.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 16),
-                  itemBuilder: (context, index) =>
-                      _buildPjpCard(list[index], index),
+                  itemCount: groupedEntries.length,
+                  itemBuilder: (context, index) {
+                    final entry = groupedEntries[index];
+                    final date = entry.key;
+                    final tasks = entry.value;
+
+                    final hasPending = tasks.any(
+                      (t) => t.status.toLowerCase() == 'pending',
+                    );
+
+                    return Card(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      child: ExpansionTile(
+                        title: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  DateFormat('dd MMM yyyy').format(date),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                Text("${tasks.length} visits"),
+                              ],
+                            ),
+
+                            ElevatedButton(
+                              onPressed: hasPending
+                                  ? () => _approveAll(tasks)
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: hasPending
+                                    ? Colors.green
+                                    : Colors.grey.shade400,
+                              ),
+                              child: const Text(
+                                "Approve All",
+                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ),
+                            ),
+                          ],
+                        ),
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: tasks.length,
+                              itemBuilder: (context, i) {
+                                return _buildPjpCard(tasks[i], i);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               );
             },
@@ -596,9 +704,7 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
                     ),
                   ),
                 ),
-
                 const SizedBox(width: 12),
-
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () => _handleApprove(task),
@@ -664,14 +770,34 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
     }
   }
 
+  void _approveAll(List<DailyTask> tasks) async {
+    try {
+      for (var t in tasks) {
+        if (t.status.toLowerCase() == 'pending') {
+          await widget.apiService.updateDailyTask(t.id!, {
+            'status': 'Approved',
+          });
+        }
+      }
+
+      _refreshPjps();
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("All visits approved")));
+    } catch (e) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Bulk approval failed")));
+    }
+  }
+
   void _openEditPlan(DailyTask task) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => EditPjpWizardScreen(
-          employee: widget.member,
-          taskId: task.id!,
-        ),
+        builder: (_) =>
+            EditPjpWizardScreen(employee: widget.member, taskId: task.id!),
       ),
     ).then((_) => _refreshPjps());
   }

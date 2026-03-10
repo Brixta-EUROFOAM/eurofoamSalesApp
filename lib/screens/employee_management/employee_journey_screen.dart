@@ -62,7 +62,7 @@ class EmployeeJourneyScreen extends StatefulWidget {
 
 class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
   //HARDWARE ACCELERATION
-  final bool _useHardwareAcceleration = false;
+  final bool _useHardwareAcceleration = true;
   //HARDWARE ACCELERATION
   DateTime _lastPolylineUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   late SalesJourneyController _controller;
