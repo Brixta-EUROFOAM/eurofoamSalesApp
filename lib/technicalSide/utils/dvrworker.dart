@@ -1,15 +1,37 @@
-// lib/utils/dvrworker.dart
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/models/daily_visit_report_model.dart';
+import 'package:salesmanapp/database/app_database.dart'; // 🚀 Added Drift DB
 
 class DvrBackgroundWorker {
-  // --- 🚀 PUBLIC ENTRY POINT (The "Fire & Forget" Trigger) ---
+  // --- 🛡️ 1. FILE DURABILITY (Prevents OS from deleting photos) ---
+  static bool _isSyncing = false;
+
+  static Future<String?> _saveFilePermanently(String? tempPath) async {
+    if (tempPath == null) return null;
+    final tempFile = File(tempPath);
+    if (!await tempFile.exists()) return null;
+
+    final docDir = await getApplicationDocumentsDirectory();
+    final permanentDir = Directory(p.join(docDir.path, 'offline_dvr_media'));
+    if (!await permanentDir.exists()) {
+      await permanentDir.create(recursive: true);
+    }
+
+    final fileName = p.basename(tempPath);
+    final permanentFile = await tempFile.copy(
+      p.join(permanentDir.path, fileName),
+    );
+    return permanentFile.path;
+  }
+
   static Future<void> processAndSubmit({
     required ApiService apiService,
     required DailyVisitReport dvrPayload,
@@ -18,136 +40,185 @@ class DvrBackgroundWorker {
     required List<File> evidenceFiles,
     required bool clearDrafts,
   }) async {
-    // 1. Generate Unique ID for the Queue
-    final String queueId = "dvr_${DateTime.now().millisecondsSinceEpoch}";
+    if (clearDrafts) _clearUiDrafts();
 
-    // 2. 💾 INSTANT DISK SAVE (The "Safety Box")
-    final backupData = {
-      'id': queueId,
-      'payload': dvrPayload.toJson(),
-      'inTimePath': inTimeFile?.path,
-      'outTimePath': outTimeFile.path,
-      'evidencePaths': evidenceFiles.map((f) => f.path).toList(),
-      'timestamp': DateTime.now().toIso8601String(),
-    };
+    final permIn = await _saveFilePermanently(inTimeFile?.path);
+    final permOut = await _saveFilePermanently(outTimeFile.path);
 
-    await _saveToSafetyBox(queueId, backupData);
+    final Map<String, dynamic> payload = dvrPayload.toJson();
+    payload['local_in_image'] = permIn;
+    payload['local_out_image'] = permOut;
+    payload['reportDate'] = dvrPayload.reportDate.toIso8601String();
+    payload['checkInTime'] = dvrPayload.checkInTime.toIso8601String();
+    payload['checkOutTime'] = dvrPayload.checkOutTime?.toIso8601String();
 
-    // 3. 🧹 Clear UI Drafts (Fire and forget, doesn't block UI thread)
-    if (clearDrafts) {
-      _clearUiDrafts();
-    }
+    List<String> filesToUpload = [];
+    if (permIn != null) filesToUpload.add(permIn);
+    if (permOut != null) filesToUpload.add(permOut);
 
-    // 4. ⚡ START UPLOAD IN BACKGROUND (O(1) Space Complexity, removed deep copy)
-    _executeUploadTask(queueId, backupData, apiService).then((success) {
-      if (success) {
-        retryStuckQueue(apiService);
-      }
+    await AppDatabase.instance.enqueueOfflineTask(
+      entityType: 'DVR',
+      payload: payload,
+      filePaths: filesToUpload.isNotEmpty ? filesToUpload : null,
+    );
+
+    debugPrint("📦 [DVR Worker] Payload safely locked in SQLite Vault.");
+
+    retryStuckQueue(apiService).catchError((e) {
+      debugPrint("⚠️ [DVR Worker] Offline. Sync paused and queued.");
     });
   }
 
-  // --- ⚙️ INTERNAL WORKER (The Heavy Lifter) ---
-  static Future<bool> _executeUploadTask(
-    String queueId,
-    Map<String, dynamic> data,
+  // --- 🔄 3. THE "FLUSH" SYSTEM (Chunked Processor) ---
+  static Future<void> retryStuckQueue(
+    ApiService apiService, {
+    BuildContext? context,
+  }) async {
+    // 🛡️ THE LOCK: If we are already uploading, abort this trigger!
+    if (_isSyncing) {
+      debugPrint(
+        "⏳ [DVR Worker] Sync already in progress. Ignoring duplicate trigger.",
+      );
+      return;
+    }
+
+    final db = AppDatabase.instance;
+    final pendingTasks = await db.getPendingSyncTasks(limit: 5);
+
+    if (pendingTasks.isEmpty) {
+      return;
+    }
+
+    // 🔒 LOCK ENGAGED
+    _isSyncing = true;
+    debugPrint(
+      "🔄 [DVR Worker] Network restored! Processing ${pendingTasks.length} queued tasks...",
+    );
+
+    // 📢 UI NOTIFICATION: Tell the user the engine is running
+    if (context != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              Icon(Icons.sync, color: Colors.white),
+              SizedBox(width: 10),
+              Text("Network Restored: Syncing offline data..."),
+            ],
+          ),
+          backgroundColor: Colors.blueAccent,
+          duration: Duration(seconds: 3),
+        ),
+      );
+    }
+
+    int successCount = 0;
+
+    for (final task in pendingTasks) {
+      bool success = false;
+      try {
+        if (task.entityType == 'DVR') {
+          success = await _executeDvrUploadTask(task, apiService);
+        } else if (task.entityType == 'DEALER_PATCH') {
+          success = true;
+        }
+
+        if (success) {
+          await db.markSyncTaskComplete(task.id);
+          successCount++;
+          debugPrint(
+            "✅ [DVR Worker] Task ${task.id} SYNCED & Removed from Queue.",
+          );
+        } else {
+          await db.markSyncTaskFailed(task.id, task.retryCount);
+        }
+      } catch (e) {
+        debugPrint("🔴 [DVR Worker] Task ${task.id} CRASHED: $e");
+        await db.markSyncTaskFailed(task.id, task.retryCount);
+      }
+    }
+
+    // 🔓 LOCK RELEASED
+    _isSyncing = false;
+
+    // 📢 UI NOTIFICATION: Tell the user it finished
+    if (successCount > 0 && context != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("✅ Successfully synced $successCount offline items!"),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+
+    // ♻️ RECURSIVE FLUSH
+    if (pendingTasks.length == 5) {
+      await retryStuckQueue(apiService, context: context);
+    }
+  }
+
+  // --- ⚙️ 4. INTERNAL WORKER (The Heavy Lifter) ---
+  static Future<bool> _executeDvrUploadTask(
+    SyncQueueData task,
     ApiService apiService,
   ) async {
-    debugPrint("🚀 [DVR Worker] Processing Task: $queueId");
+    final Map<String, dynamic> payload = jsonDecode(task.payload);
+    String? inUrl;
+    String? outUrl;
 
-    try {
-      DailyVisitReport payload = DailyVisitReport.fromJson(data['payload']);
-
-      final File? inTimeFile = data['inTimePath'] != null ? File(data['inTimePath']) : null;
-      final File outTimeFile = File(data['outTimePath']);
-
-      // 🚀 SPEED OPTIMIZATION: PARALLEL NETWORK PIPELINE
-      // Upload both images concurrently instead of sequentially
-      Future<String?> uploadInTime() async {
-        if (payload.inTimeImageUrl == null && inTimeFile != null && await inTimeFile.exists()) {
-          return await apiService.uploadImageToR2(inTimeFile);
-        }
-        return payload.inTimeImageUrl;
+    Future<String?> uploadImage(String? localPath) async {
+      if (localPath == null) return null;
+      final file = File(localPath);
+      if (await file.exists()) {
+        return await apiService.uploadImageToR2(file);
       }
-
-      Future<String?> uploadOutTime() async {
-        if (payload.outTimeImageUrl == null && await outTimeFile.exists()) {
-          return await apiService.uploadImageToR2(outTimeFile);
-        }
-        return payload.outTimeImageUrl;
-      }
-
-      // Execute network requests simultaneously
-      final results = await Future.wait([uploadInTime(), uploadOutTime()]);
-
-      payload = payload.copyWith(
-        inTimeImageUrl: results[0],
-        outTimeImageUrl: results[1],
-      );
-
-      // 3. Final Submission
-      await apiService.createDvr(payload);
-
-      // 4. ✅ SUCCESS: DESTROY DISK BACKUP
-      await _removeFromSafetyBox(queueId);
-      debugPrint("✅ [DVR Worker] Task $queueId COMPLETE & Removed from Queue.");
-      return true;
-    } catch (e) {
-      debugPrint("🔴 [DVR Worker] Task $queueId FAILED: $e");
-      return false;
+      return null;
     }
-  }
 
-  // --- 🔄 THE "FLUSH" SYSTEM ---
-  static Future<void> retryStuckQueue(ApiService apiService) async {
-    final prefs = await SharedPreferences.getInstance();
-    final keys = prefs.getKeys().where((k) => k.startsWith('queue_dvr_')).toList();
+    final results = await Future.wait([
+      uploadImage(payload['local_in_image']),
+      uploadImage(payload['local_out_image']),
+    ]);
 
-    if (keys.isEmpty) return;
+    inUrl = results[0];
+    outUrl = results[1];
 
-    debugPrint("🔄 [DVR Worker] Found ${keys.length} stuck items. Flushing...");
+    payload.remove('local_in_image');
+    payload.remove('local_out_image');
 
-    // 🚀 BATTERY OPTIMIZATION: Parallel batch execution
-    // Doing this concurrently allows the phone's radio to sleep faster.
-    final futures = keys.map((key) async {
-      final jsonStr = prefs.getString(key);
-      if (jsonStr == null) return;
+    DailyVisitReport dvr = DailyVisitReport.fromJson(payload);
+    dvr = dvr.copyWith(
+      inTimeImageUrl: inUrl ?? dvr.inTimeImageUrl,
+      outTimeImageUrl: outUrl ?? dvr.outTimeImageUrl,
+    );
 
-      final data = jsonDecode(jsonStr);
-      final queueId = data['id'];
+    await apiService.createDvr(dvr);
 
-      await _executeUploadTask(queueId, data, apiService);
-    });
+    final inPath = jsonDecode(task.payload)['local_in_image'];
+    final outPath = jsonDecode(task.payload)['local_out_image'];
+    if (inPath != null)
+      try {
+        await File(inPath).delete();
+      } catch (_) {}
+    if (outPath != null)
+      try {
+        await File(outPath).delete();
+      } catch (_) {}
 
-    await Future.wait(futures);
-  }
-
-  // --- 💾 DISK HELPERS ---
-  static Future<void> _saveToSafetyBox(String id, Map<String, dynamic> data) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('queue_dvr_$id', jsonEncode(data));
-  }
-
-  static Future<void> _removeFromSafetyBox(String id) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('queue_dvr_$id');
+    return true;
   }
 
   static Future<void> _clearUiDrafts() async {
     final prefs = await SharedPreferences.getInstance();
     final allKeys = prefs.getKeys();
-    
-    // 🚀 DISK I/O OPTIMIZATION: Batch removal to prevent thread blocking
     final futures = <Future<bool>>[];
-    
     for (String key in allKeys) {
       if (key.startsWith('dvr_ctrl_') || key.startsWith('dvr_val_')) {
         futures.add(prefs.remove(key));
       }
     }
-    
-    if (futures.isNotEmpty) {
-      await Future.wait(futures);
-    }
+    if (futures.isNotEmpty) await Future.wait(futures);
   }
 }
 
@@ -164,6 +235,8 @@ extension DvrCopyWith on DailyVisitReport {
   }) {
     return DailyVisitReport(
       id: id,
+      idempotencyKey: idempotencyKey, // 🚀 Keep the fingerprint
+      dailyTaskId: dailyTaskId,
       userId: userId,
       dealerId: dealerId,
       subDealerId: subDealerId,

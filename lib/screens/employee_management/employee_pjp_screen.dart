@@ -106,16 +106,17 @@ class EmployeePJPScreenState extends State<EmployeePJPScreen>
           _isLoading = false;
         });
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error loading tasks: $e'),
-            backgroundColor: _dangerRed,
-          ),
-        );
-      }
+    } 
+    catch (e) {
+      // if (mounted) {
+      //   setState(() => _isLoading = false);
+      //   ScaffoldMessenger.of(context).showSnackBar(
+      //     SnackBar(
+      //       content: Text('Error loading tasks: $e'),
+      //       backgroundColor: _dangerRed,
+      //     ),
+      //   );
+      // }
     }
   }
 

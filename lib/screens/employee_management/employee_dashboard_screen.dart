@@ -10,11 +10,17 @@ import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/core/feature_flags/sales_flags.dart';
 
+
 import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
 import 'package:salesmanapp/screens/forms/create_dvr.dart';
 import 'package:salesmanapp/screens/forms/create_competition_form.dart';
 import 'package:salesmanapp/screens/employee_management/employee_salesorder_screen.dart';
 import 'package:salesmanapp/screens/employee_management/team_view_list_screen.dart';
+import 'dart:async'; // 🚀 Added for StreamSubscription
+// 🚀 Added for Network Detection
+import 'package:salesmanapp/technicalSide/utils/dvrworker.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:salesmanapp/api/auth_service.dart';
 
 // ---------------------------------------------------------------------------
 // 🟢 INLINE CAMERA (LOCAL COPY - SALES SIDE)
@@ -203,10 +209,13 @@ class EmployeeDashboardScreen extends StatefulWidget {
 class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     with WidgetsBindingObserver {
   final ApiService _apiService = ApiService();
+  final AuthService _authService = AuthService();
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   bool _isCheckingIn = false;
   bool _isCheckingOut = false;
   bool _isCheckedIn = false;
+  bool _isOffline = false;
   DateTime? _lastCheckInTime;
   String _greeting = 'Good Morning';
 
@@ -223,6 +232,21 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     WidgetsBinding.instance.addObserver(this);
     _setGreeting();
     refreshData();
+
+    // 🚀 THE OFFLINE RECOVERY WATCHDOG
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      List<ConnectivityResult> results,
+    ) {
+      final isDisconnected = results.contains(ConnectivityResult.none);
+      if (mounted) {
+        setState(() => _isOffline = isDisconnected);
+      }
+
+      if (!isDisconnected) {
+        // We have internet! Fire the engine safely.
+        DvrBackgroundWorker.retryStuckQueue(_apiService, context: context);
+      }
+    });
   }
 
   @override
@@ -234,6 +258,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     if (mounted) {
       _setGreeting();
       _checkAttendanceStatus();
+      _authService.syncDealersForOffline(widget.employee);
     }
   }
 
@@ -257,6 +282,8 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // 🚀 CLEAN UP THE LISTENER TO PREVENT MEMORY LEAKS
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 
@@ -514,8 +541,9 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
       // 🚀 SPEED OPTIMIZATION 3: AWAIT PRE-WARMED GPS
       final Position? position = await locationFuture;
-      if (position == null)
+      if (position == null) {
         throw Exception("Location verification failed. Please enable GPS.");
+      }
 
       // 🚀 SPEED OPTIMIZATION 4: PARALLEL NETWORK PIPELINE
       final results = await Future.wait([
@@ -566,9 +594,29 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
         ),
       );
     } catch (e) {
-      scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
+      // 🛡️ MASK THE UGLY SOCKET ERRORS
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('socket') ||
+          errorStr.contains('host lookup') ||
+          errorStr.contains('timeout') ||
+          errorStr.contains('connection refused')) {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.cloud_off, color: Colors.white),
+                SizedBox(width: 10),
+                Text("Saved Offline. Will sync when connected!"),
+              ],
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } else {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        );
+      }
     } finally {
       if (mounted) {
         setState(
@@ -653,155 +701,188 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
           ],
         ),
       ),
-      body: RefreshIndicator(
-        onRefresh: () async => refreshData(),
-        child: ListView(
-          padding: EdgeInsets.fromLTRB(
-            20,
-            20,
-            20,
-            MediaQuery.of(context).padding.bottom + 110,
+      body: Column(
+        children: [
+          // 🚀 THE OFFLINE BANNER
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeOutCubic,
+            height: _isOffline ? 40 : 0,
+            width: double.infinity,
+            color: Colors.orange.shade700,
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.wifi_off_rounded, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Text(
+                  "Offline Mode - Data saved locally",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
           ),
-          children: [
-            // --- 1. HERO ATTENDANCE CARD ---
-            Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: _cardNavy,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _cardNavy.withOpacity(0.4),
-                        blurRadius: 16,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            "Attendance Status",
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
-                              fontSize: 14,
+
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async => refreshData(),
+              child: ListView(
+                padding: EdgeInsets.fromLTRB(
+                  20,
+                  20,
+                  20,
+                  MediaQuery.of(context).padding.bottom + 110,
+                ),
+                children: [
+                  // --- 1. HERO ATTENDANCE CARD ---
+                  Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: _cardNavy,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _cardNavy.withOpacity(0.4),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
                             ),
+                          ],
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
-                          const Icon(
-                            Icons.access_time,
-                            color: Colors.white54,
-                            size: 18,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        _isCheckedIn ? "Checked In" : "Ready to Start?",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.location_on,
-                            color: Colors.white.withOpacity(0.7),
-                            size: 14,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Area: $userArea',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.7),
-                              fontSize: 14,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  "Attendance Status",
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.7),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.access_time,
+                                  color: Colors.white54,
+                                  size: 18,
+                                ),
+                              ],
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 32),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildGlassButton(
-                              "CHECK IN",
-                              Icons.login,
-                              _isCheckingIn,
-                              !_isCheckedIn,
-                              _isCheckedIn ? null : _handleCheckIn,
-                              isPulseActive:
-                                  !_isCheckedIn, // Pulsing attention grabber
+                            const SizedBox(height: 24),
+                            Text(
+                              _isCheckedIn ? "Checked In" : "Ready to Start?",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 24,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildGlassButton(
-                              "CHECK OUT",
-                              Icons.logout,
-                              _isCheckingOut,
-                              _isCheckedIn,
-                              !_isCheckedIn ? null : _handleCheckOut,
-                              isPulseActive: false,
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.location_on,
+                                  color: Colors.white.withOpacity(0.7),
+                                  size: 14,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Area: $userArea',
+                                  style: TextStyle(
+                                    color: Colors.white.withOpacity(0.7),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
                             ),
+                            const SizedBox(height: 32),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _buildGlassButton(
+                                    "CHECK IN",
+                                    Icons.login,
+                                    _isCheckingIn,
+                                    !_isCheckedIn,
+                                    _isCheckedIn ? null : _handleCheckIn,
+                                    isPulseActive:
+                                        !_isCheckedIn, // Pulsing attention grabber
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: _buildGlassButton(
+                                    "CHECK OUT",
+                                    Icons.logout,
+                                    _isCheckingOut,
+                                    _isCheckedIn,
+                                    !_isCheckedIn ? null : _handleCheckOut,
+                                    isPulseActive: false,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(duration: 600.ms, curve: Curves.easeOut)
+                      .scale(
+                        begin: const Offset(0.9, 0.9),
+                        curve: Curves.easeOutBack,
+                      )
+                      .shimmer(
+                        delay: 800.ms,
+                        duration: 1500.ms,
+                        color: Colors.white24,
+                      ), // Premium Sheen Effect
+
+                  const SizedBox(height: 32),
+
+                  if (showSalesOpsCard) ...[
+                    Text(
+                          "Operations",
+                          style: TextStyle(
+                            color: _textDark,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
-                )
-                .animate()
-                .fadeIn(duration: 600.ms, curve: Curves.easeOut)
-                .scale(begin: const Offset(0.9, 0.9), curve: Curves.easeOutBack)
-                .shimmer(
-                  delay: 800.ms,
-                  duration: 1500.ms,
-                  color: Colors.white24,
-                ), // Premium Sheen Effect
+                        )
+                        .animate()
+                        .fadeIn(delay: 400.ms)
+                        .slideX(begin: -0.1, curve: Curves.easeOut),
+                    const SizedBox(height: 16),
 
-            const SizedBox(height: 32),
-
-            if (showSalesOpsCard) ...[
-              Text(
-                    "Operations",
-                    style: TextStyle(
-                      color: _textDark,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  )
-                  .animate()
-                  .fadeIn(delay: 400.ms)
-                  .slideX(begin: -0.1, curve: Curves.easeOut),
-              const SizedBox(height: 16),
-
-              // --- 2. SALES OPS TRIGGER ---
-              _buildFintechCard(
-                    title: "Sales Operations",
-                    subtitle: "Dealers, DVRs, Competition",
-                    icon: Icons.business_center_outlined,
-                    iconColor: Colors.blueAccent,
-                    iconBg: const Color(0xFFEFF6FF),
-                    onTap: () => _showSalesmanOps(context),
-                  )
-                  .animate()
-                  .fadeIn(delay: 500.ms, duration: 500.ms)
-                  .scale(
-                    begin: const Offset(0.95, 0.95),
-                    curve: Curves.easeOutBack,
-                  ),
-            ],
-          ],
-        ),
+                    // --- 2. SALES OPS TRIGGER ---
+                    _buildFintechCard(
+                          title: "Sales Operations",
+                          subtitle: "Dealers, DVRs, Competition",
+                          icon: Icons.business_center_outlined,
+                          iconColor: Colors.blueAccent,
+                          iconBg: const Color(0xFFEFF6FF),
+                          onTap: () => _showSalesmanOps(context),
+                        )
+                        .animate()
+                        .fadeIn(delay: 500.ms, duration: 500.ms)
+                        .scale(
+                          begin: const Offset(0.95, 0.95),
+                          curve: Curves.easeOutBack,
+                        ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

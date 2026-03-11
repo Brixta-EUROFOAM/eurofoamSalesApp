@@ -1,13 +1,20 @@
 // lib/screens/create_dvr_screen.dart
 
 import 'dart:async';
+import 'package:flutter/scheduler.dart';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:developer' as dev; // 🚀 ADDED FOR LOGGING
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // 🔥 ADDED FOR HAPTICS
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
+import 'package:uuid/uuid.dart'; // 🚀 ADDED FOR IDEMPOTENCY KEY
+
+import 'package:salesmanapp/services/dvrTimerFgTaskHandler/dvr_timer_foreground_service.dart';
 
 import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/database/app_database.dart'; // 🚀 ADDED FOR OFFLINE VAULT
 import 'package:salesmanapp/models/daily_visit_report_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
 import 'package:salesmanapp/models/employee_model.dart';
@@ -28,6 +35,7 @@ class CreateDvrScreen extends StatefulWidget {
   final Pjp? pjp;
   final Dealer? dealer;
   final DateTime? initialCheckInTime;
+  final String? dailyTaskId;
 
   /// 🔥 NEW: Callback to cleanly handle Dashboard routing
   final VoidCallback? onReturnToDashboard;
@@ -36,6 +44,7 @@ class CreateDvrScreen extends StatefulWidget {
     super.key,
     required this.employee,
     this.pjp,
+    this.dailyTaskId,
     this.dealer,
     this.initialCheckInTime,
     this.onReturnToDashboard,
@@ -47,7 +56,7 @@ class CreateDvrScreen extends StatefulWidget {
 
 // 🚀 ADDED WidgetsBindingObserver TO PREVENT CRASHES ON MINIMIZE
 class _CreateDvrScreenState extends State<CreateDvrScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   // 🛡️ Tracks if app is minimized
   bool _isAppInForeground = true;
 
@@ -58,6 +67,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
 
   // 🚀 Feature Toggle for Dealer Updates
   final bool _enableDealerUpdateOnSubmit = true;
+  String _elapsedTime = "00:00:00";
 
   final ApiService _apiService = ApiService();
 
@@ -76,7 +86,8 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
   Dealer? _selectedParentDealer;
 
   DateTime? _checkInTime;
-  String? _inTimeImageUrl;
+  //String? _inTimeImageUrl;
+  String? _inImagePathLocal; // 🚀 ADDED: Offline local path for check-in
   Position? _checkInLocation;
 
   /// 🎨 THEME
@@ -92,20 +103,48 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
     'NonTrade',
     // 'Ground MIS',
   ];
+  late final Ticker _uiTicker;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // 🚀 START WATCHING LIFECYCLE
+    WidgetsBinding.instance.addObserver(this);
+
+    // 3. Initialize the Ticker
+    _uiTicker = createTicker((_) => _updateLiveTimer());
+
     if (widget.dealer != null) {
       _selectedDealer = widget.dealer;
       _selectedCustomerType = 'Dealer';
     }
   }
 
+  // 4. The ultra-efficient time calculator
+  void _updateLiveTimer() {
+    if (_checkInTime == null) return;
+
+    // Calculates exact time difference. If the phone slept for an hour,
+    // it will instantly be accurate the millisecond the screen turns on.
+    final elapsed = DateTime.now().difference(_checkInTime!);
+
+    String twoDigits(int n) => n.toString().padLeft(2, "0");
+    final hours = twoDigits(elapsed.inHours);
+    final minutes = twoDigits(elapsed.inMinutes.remainder(60));
+    final seconds = twoDigits(elapsed.inSeconds.remainder(60));
+
+    final newTime = "$hours:$minutes:$seconds";
+
+    // Only rebuild if the second actually changed
+    if (_elapsedTime != newTime && mounted) {
+      setState(() => _elapsedTime = newTime);
+    }
+  }
+
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // 🚀 STOP WATCHING LIFECYCLE
+    WidgetsBinding.instance.removeObserver(this);
+    _uiTicker.dispose(); // 🚀 Prevent Memory Leaks
+    DvrTimerForegroundService.stop();
     super.dispose();
   }
 
@@ -121,7 +160,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
     HapticFeedback.selectionClick();
     final result = await showDialog<Dealer>(
       context: context,
-      builder: (context) => _ServerDealerSearchDialog(api: _apiService),
+      builder: (context) => _ServerDealerSearchDialog(),
     );
 
     if (result == null) return;
@@ -153,13 +192,14 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
     HapticFeedback.selectionClick();
     final result = await showDialog<Dealer>(
       context: context,
-      builder: (context) => _ServerDealerSearchDialog(api: _apiService),
+      builder: (context) => _ServerDealerSearchDialog(),
     );
 
     if (result != null) {
       setState(() => _selectedParentDealer = result);
     }
   }
+
 
   /// ------------------------------------------------
   /// 📸 INLINE CAMERA CHECK-IN (Null-Safe Optimized)
@@ -220,16 +260,9 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
         return;
       }
 
-      final File imageFile = File(imagePath);
+      // 🚀 OFFLINE FIX: WAIT FOR GPS ONLY! NO API CALLS!
+      final pos = await locationFuture;
 
-      // 🚀 SPEED OPTIMIZATION 3: O(max(T)) Parallel Execution
-      final results = await Future.wait([
-        locationFuture,
-        _apiService.uploadImageToR2(imageFile),
-      ]);
-
-      // Extract and check for nulls safely
-      final Position? pos = results[0] as Position?;
       if (pos == null) {
         throw Exception(
           "Could not lock GPS location. Ensure location services are ON.",
@@ -241,9 +274,25 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
         setState(() {
           _checkInTime = DateTime.now();
           _checkInLocation = pos;
-          _inTimeImageUrl = results[1] as String;
+          _inImagePathLocal = imagePath; // 🚀 STORE LOCALLY FOR OFFLINE
           _isUploadingImage = false;
         });
+
+        // 🚀 START THE HARDWARE TICKER (VSync GPU Accelerated Timer)
+        _uiTicker.start();
+
+        // 🚀 START THE BACKGROUND TIMER (For sticky notification & OS Keep-Alive ONLY)
+        final displayName = _selectedCustomerType == 'Dealer'
+            ? (_selectedDealer?.name ?? "Dealer")
+            : "Non-Trade Visit";
+
+        DvrTimerForegroundService.start(
+          title: "Visiting: $displayName",
+          subtitle: "Duration: 00:00:00",
+          checkInTimestampMs: _checkInTime!.millisecondsSinceEpoch,
+        );
+
+        // ❌ Old callback removed: FlutterForegroundTask.addTaskDataCallback(...)
       }
     } catch (e) {
       // 🛡️ PROTECTED ERROR HANDLING
@@ -355,6 +404,8 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
       }
 
       final dvr = DailyVisitReport(
+        idempotencyKey: const Uuid().v4(), // 🚀 IDEMPOTENCY KEY ADDED
+        dailyTaskId: widget.dailyTaskId,
         userId: int.parse(widget.employee.id),
         reportDate: DateTime.now(),
         dealerId: finalDealerId,
@@ -384,38 +435,61 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
         anyRemarks: _formData['anyRemarks'],
         checkInTime: _checkInTime!,
         checkOutTime: DateTime.now(),
-        inTimeImageUrl: _inTimeImageUrl,
-        outTimeImageUrl:
-            null, // 🚀 LEFT NULL! The background worker handles the upload.
+        inTimeImageUrl: null, // 🚀 Handled by worker
+        outTimeImageUrl: null, // 🚀 Handled by worker
         pjpId: widget.pjp?.id,
       );
 
-      // 🚀 FIRE AND FORGET THE DEALER GPS UPDATE (Non-blocking)
+      // 🚀 QUEUE THE DEALER GPS UPDATE FOR OFFLINE SYNC
       if (_enableDealerUpdateOnSubmit && finalDealerId != null) {
         final patch = _buildDealerPatch(_checkInLocation!);
 
         if (patch.isNotEmpty) {
-          _apiService.updateDealer(finalDealerId, patch);
+          dev.log("🚨 Queuing Dealer Patch for Offline Sync...");
+          await AppDatabase.instance.enqueueOfflineTask(
+            entityType: 'DEALER_PATCH',
+            payload: {'dealerId': finalDealerId, 'patch': patch},
+          );
         }
       }
 
-      // ⚡ O(1) TIME COMPLEXITY: Hand off to the Background Worker instantly!
+      // ⚡ Hand off to the Background Worker instantly!
       await DvrBackgroundWorker.processAndSubmit(
         apiService: _apiService,
         dvrPayload: dvr,
-        inTimeFile: null, // Already uploaded during check-in
+        inTimeFile: _inImagePathLocal != null ? File(_inImagePathLocal!) : null,
         outTimeFile: File(outImagePath),
         evidenceFiles: [],
         clearDrafts: true,
       );
 
+      // 🚀 Save Local UI History for Offline Dashboard viewing
+      try {
+        final Map<String, dynamic> jsonPayload = dvr.toJson();
+        jsonPayload['reportDate'] = dvr.reportDate.toIso8601String();
+        jsonPayload['checkInTime'] = dvr.checkInTime.toIso8601String();
+        jsonPayload['checkOutTime'] = dvr.checkOutTime?.toIso8601String();
+        jsonPayload['expectedActivationDate'] = dvr.expectedActivationDate
+            ?.toIso8601String();
+        jsonPayload['brandSelling'] = dvr.brandSelling;
+        jsonPayload['inTimeImageUrl'] = _inImagePathLocal; // Local History
+        jsonPayload['outTimeImageUrl'] = _outImagePathLocal; // Local History
+
+        await AppDatabase.instance.createLocalDvr(jsonPayload);
+      } catch (e) {
+        dev.log("Local History Save Skipped: $e");
+      }
+
       // 🛡️ PROTECTED UI UPDATE: Instantly show success without waiting for uploads!
       if (mounted && _isAppInForeground) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              "DVR Queued & Submitted!",
-              style: TextStyle(fontWeight: FontWeight.bold),
+            content: Row(
+              children: [
+                Icon(Icons.cloud_upload, color: Colors.white),
+                SizedBox(width: 10),
+                Text("Saved Offline & Uploading..."),
+              ],
             ),
             backgroundColor: Colors.green,
           ),
@@ -428,6 +502,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
     } catch (e) {
       debugPrint("DVR Error $e");
       if (mounted && _isAppInForeground) {
+        DvrTimerForegroundService.stop();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -766,6 +841,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
       ),
       child: Row(
         children: [
+          // 1. Checkmark Icon
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
@@ -782,6 +858,8 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
             ),
           ),
           const SizedBox(width: 16),
+
+          // 2. Titles (Expanded pushes the timer to the right)
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -806,6 +884,31 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
               ],
             ),
           ),
+
+          // 3. The Live Timer Badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: _cardNavy,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.timer_outlined, color: Colors.white, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  _elapsedTime,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontFeatures: [
+                      ui.FontFeature.tabularFigures(),
+                    ], // Keeps numbers from jumping!
+                  ),
+                ),
+              ],
+            ),
+          ).animate().fadeIn(duration: 400.ms),
         ],
       ),
     );
@@ -923,16 +1026,22 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
                   Row(
                     children: [
                       Expanded(
-                        child: _buildImageTile("Check-In", _inTimeImageUrl)
-                            .animate()
-                            .scale(delay: 550.ms, curve: Curves.easeOutBack),
+                        child:
+                            _buildImageTile(
+                              "Check-In",
+                              _inImagePathLocal, // 🚀 Uses local file
+                              isLocal: true,
+                            ).animate().scale(
+                              delay: 550.ms,
+                              curve: Curves.easeOutBack,
+                            ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
                         child:
                             _buildImageTile(
                               "Check-Out",
-                              _outImagePathLocal,
+                              _outImagePathLocal, // 🚀 Uses local file
                               isLocal: true,
                             ).animate().scale(
                               delay: 600.ms,
@@ -1149,8 +1258,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
 /// 🔎 DEALER SEARCH DIALOG (Memory Leak Fixed)
 /// ------------------------------------------------------------
 class _ServerDealerSearchDialog extends StatefulWidget {
-  final ApiService api;
-  const _ServerDealerSearchDialog({required this.api});
+  const _ServerDealerSearchDialog();
   @override
   State<_ServerDealerSearchDialog> createState() =>
       _ServerDealerSearchDialogState();
@@ -1184,8 +1292,42 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
 
   Future<void> _performSearch(String query) async {
     setState(() => _isLoading = true);
+
     try {
-      final results = await widget.api.fetchDealers(search: query, limit: 20);
+      // 🔍 OFFLINE SQLITE SEARCH
+      final localDealers = await AppDatabase.instance.searchLocalDealers(query);
+
+      // 📊 LOG COUNT
+      dev.log("Dealer search query: $query");
+      dev.log("Dealers returned: ${localDealers.length}");
+
+      // 👀 LOG FIRST FEW RESULTS (debug sanity check)
+      for (var d in localDealers.take(5)) {
+        dev.log("Dealer → ${d.name} | ${d.region} | ${d.area} ");
+      }
+
+      // Convert Drift model → UI model
+      final results = localDealers.map((ld) {
+        return Dealer(
+          id: ld.id,
+          name: ld.name,
+          nameOfFirm: ld.nameOfFirm,
+          region: ld.region,
+          area: ld.area,
+          address: ld.address,
+          phoneNo: ld.phoneNo,
+          latitude: ld.latitude,
+          longitude: ld.longitude,
+          totalPotential: ld.totalPotential,
+          bestPotential: ld.bestPotential,
+          brandSelling: ld.brandSelling != null
+              ? List<String>.from(jsonDecode(ld.brandSelling!))
+              : [],
+          type: ld.type,
+          feedbacks: '',
+        );
+      }).toList();
+
       if (mounted) {
         setState(() {
           _dealers = results;
@@ -1193,7 +1335,11 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      dev.log("Offline search error: $e");
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 

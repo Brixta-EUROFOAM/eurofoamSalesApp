@@ -47,6 +47,7 @@ class ApiService {
   static String baseUrl = 'http://65.0.208.126'; //aws
   //static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
   //static String baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
+  //static String baseUrl = 'http://122.176.219.242:55000';
 
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();

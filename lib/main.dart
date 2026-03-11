@@ -36,6 +36,7 @@ import 'package:salesmanapp/features/JourneyModeController/journey_mode_capabili
 import 'package:salesmanapp/features/journey_bootstrap/journey_bootstrap_controller.dart';
 import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_capabilities.dart';
 import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_controller.dart';
+import 'package:salesmanapp/services/dvrTimerFgTaskHandler/dvr_timer_foreground_service.dart';
 import 'package:salesmanapp/services/journeyFgTaskHandler/journey_foreground_service.dart';
 import 'package:salesmanapp/features/salesJourney/sales_journey_controller.dart';
 import 'package:salesmanapp/features/salesJourney/sales_journey_capabilities.dart';
@@ -61,7 +62,8 @@ import 'package:firebase_core/firebase_core.dart';
 //REMOTE CONFIG STUFF
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/foundation.dart';
-
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 // 1. DEFINE GLOBAL KEY FOR NAVIGATOR
 // We'll use this to get a BuildContext that's always under MaterialApp.
@@ -70,30 +72,58 @@ final GlobalKey<NavigatorState> globalNavigatorKey =
 
 Future<void> setupRemoteConfig() async {
   try {
+    debugPrint("🔍 Connecting to Firebase Remote Config...");
     final remoteConfig = FirebaseRemoteConfig.instance;
 
-    await remoteConfig.setConfigSettings(RemoteConfigSettings(
-      fetchTimeout: const Duration(minutes: 1),
-      // Set to 0 in debug mode so changes reflect instantly
-      minimumFetchInterval: kDebugMode ? const Duration(seconds: 0) : const Duration(hours: 1),
-    ));
+    // 1. Ensure Firebase doesn't cache for too long during this phase
+    await remoteConfig.setConfigSettings(
+      RemoteConfigSettings(
+        fetchTimeout: const Duration(seconds: 10),
+        minimumFetchInterval: const Duration(minutes: 15),
+      ),
+    );
 
-    // Fallback just in case they open the app with no internet
-    await remoteConfig.setDefaults(const {
-      "api_base_url": "http://65.0.208.126",
-    });
-
+    // 2. Fetch the dynamic URL from Firebase FIRST
     await remoteConfig.fetchAndActivate();
-
     final String fetchedUrl = remoteConfig.getString("api_base_url");
 
-    if (fetchedUrl.isNotEmpty) {
-      ApiService.baseUrl = fetchedUrl;
-      AuthService.baseUrl = fetchedUrl;
-      debugPrint("✅ Firebase Remote Config: Base URL set to $fetchedUrl");
+    if (fetchedUrl.isEmpty) {
+      debugPrint("⚠️ Firebase returned empty URL. Using default.");
+      return;
+    }
+
+    debugPrint("📡 Firebase provided URL: $fetchedUrl. Pinging to verify...");
+
+    // 3. Ping the FETCHED URL to ensure it is actually alive and yours
+    final response = await http
+        .get(Uri.parse('$fetchedUrl/api'))
+        .timeout(const Duration(seconds: 10));
+
+    if (response.statusCode == 200) {
+      final jsonResponse = jsonDecode(response.body);
+      final message = jsonResponse['message'];
+
+      // 4. The Strict Condition: Only apply it if it's genuinely your backend
+      if (message == "Welcome to the Field Force Management API!") {
+        ApiService.baseUrl = fetchedUrl;
+        AuthService.baseUrl = fetchedUrl;
+        debugPrint("✅ SUCCESS: Base URL safely updated to $fetchedUrl");
+      } else {
+        debugPrint(
+          "⚠️ Server at $fetchedUrl responded, but message mismatched. Ignored.",
+        );
+      }
+    } else {
+      debugPrint(
+        "⚠️ Server at $fetchedUrl returned ${response.statusCode}. Ignored.",
+      );
     }
   } catch (e) {
-    debugPrint("⚠️ Failed to fetch Remote Config: $e");
+    // 🛡️ OFFLINE SAFETY NET
+    // If there is no internet, Firebase is down, or the fetched server is dead,
+    // this silently catches the error. The app will just use the default
+    // URLs defined in ApiService/AuthService and rely on your new Offline Engine!
+    debugPrint("⚠️ Remote Config bypass triggered (Network/Server down): $e");
   }
 }
 
@@ -200,7 +230,7 @@ Future<void> main() async {
 
   // ------- SALES SIDE FLAGS ---------
   kernel.registerIf<SalesJourneyController>(
-    flags.journey, 
+    flags.journey,
     () => SalesJourneyController(
       caps: SalesJourneyCapabilities.fromFlags(salesFlags),
     ),
@@ -212,6 +242,8 @@ Future<void> main() async {
   await JourneyForegroundService.init();
   debugPrint("NOTIFICATIONS INITIALIZED.");
 
+  await DvrTimerForegroundService.init();
+
   await dotenv.load(fileName: ".env");
 
   final radarPublishableKey = dotenv.env['RADAR_API_KEY'];
@@ -221,7 +253,6 @@ Future<void> main() async {
   } else {
     debugPrint("ERROR: RADAR_PUBLISHABLE_KEY not found in .env file.");
   }
-
 
   runApp(
     MultiProvider(

@@ -1,4 +1,3 @@
-// lib/models/daily_visit_report_model.dart
 import 'dart:convert';
 
 DailyVisitReport dailyVisitReportFromJson(String str) =>
@@ -8,6 +7,8 @@ String dailyVisitReportToJson(DailyVisitReport data) =>
 
 class DailyVisitReport {
   final String? id;
+  final String? idempotencyKey; // 🚀 ADDED HERE
+  final String? dailyTaskId; // 🚀 1. ADD THIS
   final int userId;
   final String? dealerId;
   final String? subDealerId;
@@ -48,10 +49,12 @@ class DailyVisitReport {
 
   DailyVisitReport({
     this.id,
+    this.idempotencyKey, // 🚀 ADDED HERE
     required this.userId,
     this.dealerId,
     this.subDealerId,
     required this.reportDate,
+    this.dailyTaskId,
     required this.dealerType,
     this.dealerName,
     this.subDealerName,
@@ -103,6 +106,8 @@ class DailyVisitReport {
 
     return DailyVisitReport(
       id: json['id']?.toString(),
+      idempotencyKey: json['idempotencyKey']?.toString(), // 🚀 ADDED HERE
+      dailyTaskId: json['dailyTaskId']?.toString(),
       userId: json['userId'] ?? 0,
       dealerId: json['dealerId']?.toString(),
       subDealerId: json['subDealerId']?.toString(),
@@ -153,6 +158,8 @@ class DailyVisitReport {
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = {
+      'idempotencyKey': idempotencyKey, // 🚀 ADDED HERE
+      'dailyTaskId': dailyTaskId, // 🚀 4. ADD THIS
       'userId': userId,
       'dealerId': dealerId,
       'subDealerId': subDealerId,
