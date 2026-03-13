@@ -832,6 +832,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
     if (mounted) {
       final completedDealer = _activeDealer;
+      final completedTaskId = _taskId;
 
       setState(() {
         _isJourneyActive = false;
@@ -930,7 +931,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                             MaterialPageRoute(
                               builder: (_) => CreateDvrScreen(
                                 employee: widget.employee,
-                                dealer: completedDealer, // may be null
+                                dealer: completedDealer,
+                                dailyTaskId: completedTaskId,
                               ),
                             ),
                           );
