@@ -50,7 +50,7 @@ class DailyVisitReport {
   DailyVisitReport({
     this.id,
     this.idempotencyKey, // 🚀 ADDED HERE
-    required this.userId,
+    required this.userId,//fdfdsfkfjrkejg
     this.dealerId,
     this.subDealerId,
     required this.reportDate,
