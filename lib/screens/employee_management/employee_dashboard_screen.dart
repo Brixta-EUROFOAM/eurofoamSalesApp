@@ -258,7 +258,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     if (mounted) {
       _setGreeting();
       _checkAttendanceStatus();
-      _authService.syncDealersForOffline(widget.employee);
+      _authService.syncDealersForOffline();
     }
   }
 

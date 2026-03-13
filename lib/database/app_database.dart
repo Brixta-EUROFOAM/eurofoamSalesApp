@@ -475,6 +475,10 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
+  Future<List<LocalDealer>> getInitialDealers({int limit = 50}) {
+    return (select(localDealers)..limit(limit)).get();
+  }
+
   // ---------------------------------------------------------------------------
   // 🚀 NEW OFFLINE SYNC METHODS (OUTBOX PATTERN)
   // ---------------------------------------------------------------------------

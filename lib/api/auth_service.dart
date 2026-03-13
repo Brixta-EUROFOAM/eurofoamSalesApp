@@ -8,7 +8,7 @@ import 'package:http/http.dart' as http;
 import '../models/employee_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/database/app_database.dart';
-import 'package:geolocator/geolocator.dart';
+// import 'package:geolocator/geolocator.dart';
 import 'api_service.dart';
 
 class AuthService {
@@ -105,147 +105,38 @@ class AuthService {
   /// 🚀 The "Fire and Forget" Background Missile
   /// Silently downloads and caches all dealers without blocking the UI
   // 🚀 Pass the current logged-in Employee object here
-  Future<void> syncDealersForOffline(Employee employee) async {
-    try {
+ Future<void> syncDealersForOffline() async {
+  try {
+    dev.log('🔄 Starting dealer cache sync...', name: 'AuthService');
+
+    final api = ApiService();
+
+    int page = 1;
+    const int limit = 500;   // fetch in chunks
+    List<dynamic> allDealers = [];
+
+    while (true) {
+      final dealers = await api.fetchDealers(page: page, limit: limit);
+
+      if (dealers.isEmpty) break;
+
+      allDealers.addAll(dealers.map((d) => d.toJson()));
+      page++;
+    }
+
+    if (allDealers.isNotEmpty) {
+      await AppDatabase.instance.syncDealersToLocal(allDealers);
       dev.log(
-        '🚀 Firing DUAL-SYNC missile: Profile Region & Live Proximity...',
+        '✅ Dealer cache updated: ${allDealers.length} dealers stored locally',
         name: 'AuthService',
       );
-
-      final token = await _getToken();
-      if (token == null) return;
-
-      // We will store all raw JSON dealers here, and use a Set to prevent duplicates
-      List<dynamic> allFetchedDealers = [];
-      Set<String> processedDealerIds = {};
-
-      // =========================================================
-      // FETCH 1: BY USER PROFILE REGION (Database Territory)
-      // =========================================================
-      if (employee.region != null && employee.region!.isNotEmpty) {
-        final String safeRegion = Uri.encodeComponent(employee.region!);
-        final url1 = Uri.parse(
-          '$baseUrl/api/dealers?region=$safeRegion&limit=500',
-        );
-
-        final response1 = await http
-            .get(
-              url1,
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer $token',
-              },
-            )
-            .timeout(const Duration(seconds: 15));
-
-        if (response1.statusCode == 200) {
-          final data1 = jsonDecode(response1.body)['data'] ?? [];
-          for (var d in data1) {
-            if (!processedDealerIds.contains(d['id'])) {
-              allFetchedDealers.add(d);
-              processedDealerIds.add(d['id']);
-            }
-          }
-          dev.log(
-            '✅ Fetched ${data1.length} dealers from Profile Region: ${employee.region}',
-            name: 'AuthService',
-          );
-        }
-      }
-
-      // =========================================================
-      // FETCH 2: BY LIVE GPS LOCATION (Proximity / Current Region)
-      // =========================================================
-      try {
-        // 1. Grab current location fast
-        Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        ).timeout(const Duration(seconds: 5));
-
-        // 2. Use your ApiService to reverse geocode and find the current region
-        final ApiService apiService = ApiService();
-        final geoData = await apiService.reverseGeocodeWithRadar(
-          latitude: position.latitude,
-          longitude: position.longitude,
-        );
-
-        final currentRegion = geoData['region'];
-
-        // 3. If the rep traveled to a new region, fetch those dealers too!
-        if (currentRegion != null &&
-            currentRegion.isNotEmpty &&
-            currentRegion != employee.region) {
-          dev.log(
-            '📍 User crossed into new region: $currentRegion. Fetching proximity dealers...',
-            name: 'AuthService',
-          );
-
-          final String safeCurrentRegion = Uri.encodeComponent(currentRegion);
-          final url2 = Uri.parse(
-            '$baseUrl/api/dealers?region=$safeCurrentRegion&limit=500',
-          );
-
-          final response2 = await http
-              .get(
-                url2,
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': 'Bearer $token',
-                },
-              )
-              .timeout(const Duration(seconds: 15));
-
-          if (response2.statusCode == 200) {
-            final data2 = jsonDecode(response2.body)['data'] ?? [];
-            int newDealersAdded = 0;
-
-            for (var d in data2) {
-              if (!processedDealerIds.contains(d['id'])) {
-                allFetchedDealers.add(d);
-                processedDealerIds.add(d['id']);
-                newDealersAdded++;
-              }
-            }
-            dev.log(
-              '✅ Added $newDealersAdded NEW dealers from GPS proximity.',
-              name: 'AuthService',
-            );
-          }
-        } else {
-          dev.log(
-            '📍 GPS region matches profile region. No extra proximity fetch needed.',
-            name: 'AuthService',
-          );
-        }
-      } catch (gpsError) {
-        // Soft fail: If GPS is off or Radar times out, we still have the Profile Region dealers
-        dev.log(
-          '⚠️ Proximity sync skipped (GPS or Radar error): $gpsError',
-          name: 'AuthService',
-        );
-      }
-
-      // =========================================================
-      // FINAL STEP: BATCH SAVE TO SQLITE CACHE
-      // =========================================================
-      if (allFetchedDealers.isNotEmpty) {
-        // Feed the unified list to your Drift database
-        await AppDatabase.instance.syncDealersToLocal(allFetchedDealers);
-        dev.log(
-          '🎯 DUAL-SYNC COMPLETE: ${allFetchedDealers.length} total unique dealers cached offline!',
-          name: 'AuthService',
-        );
-      } else {
-        dev.log(
-          '⚠️ No dealers found for profile or proximity.',
-          name: 'AuthService',
-        );
-      }
-    } catch (e) {
-      dev.log('🔥 Background sync crashed: $e', name: 'AuthService');
+    } else {
+      dev.log('⚠️ No dealers returned from server', name: 'AuthService');
     }
+  } catch (e) {
+    dev.log('🔥 Dealer sync failed: $e', name: 'AuthService');
   }
-
+}
   /// Fetches the user profile from the protected /api/users/:id endpoint.
   /// It now requires a token to be sent in the headers.
   /// Fetches the user profile and CACHES it for offline use.
@@ -269,7 +160,7 @@ class AuthService {
           // ✅ SUCCESS: Cache the profile data for future offline use
           await _cacheUserProfile(data['data']);
           final currentEmployee = Employee.fromJson(data['data']);
-          syncDealersForOffline(currentEmployee);
+          syncDealersForOffline();
 
           return currentEmployee;
         } else {

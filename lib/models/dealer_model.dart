@@ -1,5 +1,7 @@
+import 'dart:convert';
+
 class Dealer {
-  final String? id; 
+  final String? id;
   final int? userId;
   final String type;
   final String? parentDealerId;
@@ -18,7 +20,7 @@ class Dealer {
   final List<String> brandSelling;
   final String feedbacks;
   final String? remarks;
-  
+
   final String? dealerDevelopmentStatus;
   final String? dealerDevelopmentObstacle;
   final double? salesGrowthPercentage;
@@ -147,22 +149,31 @@ class Dealer {
   });
 
   // Helper to safely parse dates
-  static DateTime? _parseDate(String? dateStr) {
-    if (dateStr == null) return null;
-    return DateTime.tryParse(dateStr);
+  // 🚀 BULLETPROOF DATE PARSER (Handles both API Strings and SQLite Ints)
+  static DateTime? _parseDate(dynamic val) {
+    if (val == null) return null;
+    if (val is DateTime) return val;
+    if (val is int) {
+      // SQLite saves dates as Unix timestamps (seconds)
+      return DateTime.fromMillisecondsSinceEpoch(val * 1000);
+    }
+    return DateTime.tryParse(val.toString());
   }
-  
-  // Helper to safely parse doubles/ints from various inputs
+
+  // Helper to safely parse doubles
   static double? _parseDouble(dynamic val) {
     if (val == null) return null;
     return double.tryParse(val.toString());
   }
-  
-  static int? _parseInt(dynamic val) {
-     if (val == null) return null;
-     return int.tryParse(val.toString());
-  }
 
+  // 🚀 BULLETPROOF INT PARSER (Handles API sending "6.0" instead of "6")
+  static int? _parseInt(dynamic val) {
+    if (val == null) return null;
+    if (val is int) return val;
+    if (val is double) return val.toInt();
+    return int.tryParse(val.toString()) ??
+        double.tryParse(val.toString())?.toInt();
+  }
 
   factory Dealer.fromJson(Map<String, dynamic> json) {
     return Dealer(
@@ -182,19 +193,35 @@ class Dealer {
       anniversaryDate: _parseDate(json['anniversaryDate']),
       totalPotential: _parseDouble(json['totalPotential']) ?? 0.0,
       bestPotential: _parseDouble(json['bestPotential']) ?? 0.0,
-      brandSelling: List<String>.from(json['brandSelling'] ?? []),
+
+      // 🚀 HERE IS THE SAFE PARSER FOR BRAND SELLING
+      brandSelling: () {
+        final val = json['brandSelling'];
+        if (val == null) return <String>[];
+        if (val is List) return val.map((e) => e.toString()).toList();
+        if (val is String) {
+          try {
+            final decoded = jsonDecode(val);
+            if (decoded is List)
+              return decoded.map((e) => e.toString()).toList();
+          } catch (_) {}
+          return val.split(',').map((e) => e.trim()).toList();
+        }
+        return <String>[];
+      }(),
+
       feedbacks: json['feedbacks'] ?? '',
       remarks: json['remarks'],
       createdAt: _parseDate(json['createdAt']),
       updatedAt: _parseDate(json['updatedAt']),
-      
+
       dealerDevelopmentStatus: json['dealerDevelopmentStatus'],
       dealerDevelopmentObstacle: json['dealerDevelopmentObstacle'],
       salesGrowthPercentage: _parseDouble(json['salesGrowthPercentage']),
       noOfPJP: _parseInt(json['noOfPJP']),
       nameOfFirm: json['nameOfFirm'],
       underSalesPromoterName: json['underSalesPromoterName'],
-      
+
       verificationStatus: json['verificationStatus'],
       whatsappNo: json['whatsappNo'],
       emailId: json['emailId'],
@@ -226,7 +253,9 @@ class Dealer {
       monthlySaleMT: _parseDouble(json['monthlySaleMT']),
       noOfDealers: _parseInt(json['noOfDealers']),
       areaCovered: json['areaCovered'],
-      projectedMonthlySalesBestCementMT: _parseDouble(json['projectedMonthlySalesBestCementMT']),
+      projectedMonthlySalesBestCementMT: _parseDouble(
+        json['projectedMonthlySalesBestCementMT'],
+      ),
       noOfEmployeesInSales: _parseInt(json['noOfEmployeesInSales']),
       declarationName: json['declarationName'],
       declarationPlace: json['declarationPlace'],
@@ -241,9 +270,11 @@ class Dealer {
 
   Map<String, dynamic> toJson() {
     // Helper to send null for empty strings
-    String? _nullIfEmpty(String? s) => (s == null || s.trim().isEmpty) ? null : s.trim();
+    String? _nullIfEmpty(String? s) =>
+        (s == null || s.trim().isEmpty) ? null : s.trim();
 
     return {
+      'id': id,
       'userId': userId,
       'type': type,
       'parentDealerId': _nullIfEmpty(parentDealerId),
@@ -253,18 +284,20 @@ class Dealer {
       'phoneNo': phoneNo,
       'address': address,
       'pinCode': _nullIfEmpty(pinCode),
-      'latitude': latitude, 
+      'latitude': latitude,
       'longitude': longitude,
-      'dateOfBirth': dateOfBirth?.toIso8601String().split('T')[0], // Send as YYYY-MM-DD
+      'dateOfBirth': dateOfBirth?.toIso8601String().split(
+        'T',
+      )[0], // Send as YYYY-MM-DD
       'anniversaryDate': anniversaryDate?.toIso8601String().split('T')[0],
       'totalPotential': totalPotential,
       'bestPotential': bestPotential,
       'brandSelling': brandSelling,
       'feedbacks': feedbacks,
       'remarks': _nullIfEmpty(remarks),
+
       // 'createdAt': createdAt?.toIso8601String(), // <-- REMOVED
       // 'updatedAt': updatedAt?.toIso8601String(), // <-- REMOVED
-
       'dealerDevelopmentStatus': _nullIfEmpty(dealerDevelopmentStatus),
       'dealerDevelopmentObstacle': _nullIfEmpty(dealerDevelopmentObstacle),
       'salesGrowthPercentage': salesGrowthPercentage,
@@ -316,4 +349,3 @@ class Dealer {
     };
   }
 }
-

@@ -171,11 +171,23 @@ class DvrBackgroundWorker {
       if (localPath == null) return null;
       final file = File(localPath);
       if (await file.exists()) {
-        return await apiService.uploadImageToR2(file);
+        // 🚀 CRITICAL FIX: Wrap in a try-catch that explicitly throws
+        try {
+          return await apiService.uploadImageToR2(file);
+        } catch (e) {
+          debugPrint("⚠️ Image upload failed: $e");
+          // Throwing an exception here acts as an emergency brake.
+          // It aborts the entire _executeDvrUploadTask, keeping the task in the
+          // SQLite queue to retry later, saving your photos from being deleted!
+          throw Exception(
+            "Network too weak to upload image. Aborting task for retry.",
+          );
+        }
       }
       return null;
     }
 
+    // 1. Upload both images concurrently. If either fails, it throws and stops here.
     final results = await Future.wait([
       uploadImage(payload['local_in_image']),
       uploadImage(payload['local_out_image']),
@@ -184,6 +196,7 @@ class DvrBackgroundWorker {
     inUrl = results[0];
     outUrl = results[1];
 
+    // 2. Remove local paths from payload before sending to API
     payload.remove('local_in_image');
     payload.remove('local_out_image');
 
@@ -193,20 +206,24 @@ class DvrBackgroundWorker {
       outTimeImageUrl: outUrl ?? dvr.outTimeImageUrl,
     );
 
+    // 3. Submit the final DVR to the server. (If this fails, it throws and stops here)
     await apiService.createDvr(dvr);
 
+    // 4. CLEANUP: This ONLY runs if BOTH images AND the DVR API call were 100% successful.
     final inPath = jsonDecode(task.payload)['local_in_image'];
     final outPath = jsonDecode(task.payload)['local_out_image'];
-    if (inPath != null)
+    if (inPath != null) {
       try {
         await File(inPath).delete();
       } catch (_) {}
-    if (outPath != null)
+    }
+    if (outPath != null) {
       try {
         await File(outPath).delete();
       } catch (_) {}
+    }
 
-    return true;
+    return true; // Tells the worker to permanently remove this task from the SQLite queue
   }
 
   static Future<void> _clearUiDrafts() async {

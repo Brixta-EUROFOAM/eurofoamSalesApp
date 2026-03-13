@@ -2,7 +2,6 @@
 
 import 'dart:async';
 import 'package:flutter/scheduler.dart';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:developer' as dev; // 🚀 ADDED FOR LOGGING
 import 'package:flutter/material.dart';
@@ -108,6 +107,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
   @override
   void initState() {
     super.initState();
+
     WidgetsBinding.instance.addObserver(this);
 
     // 3. Initialize the Ticker
@@ -158,48 +158,58 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
   /// ------------------------------------------------
   Future<void> _openDealerSearch() async {
     HapticFeedback.selectionClick();
+
     final result = await showDialog<Dealer>(
       context: context,
       builder: (context) => _ServerDealerSearchDialog(),
     );
 
     if (result == null) return;
-    if (result.id == null) {
-      setState(() {
-        _selectedDealer = result;
-      });
-      return;
+
+    Dealer dealer = result;
+
+    // Try refreshing dealer from server (optional)
+    if (result.id != null) {
+      try {
+        dealer = await _apiService.fetchDealerById(result.id!);
+      } catch (e) {
+        debugPrint("Dealer refresh skipped (offline): $e");
+      }
     }
 
-    try {
-      final dealer = await _apiService.fetchDealerById(result.id!);
+    if (!mounted) return;
 
-      if (!mounted) return;
-
-      setState(() {
-        _selectedDealer = dealer;
-      });
-    } catch (e) {
-      debugPrint("Dealer fetch failed: $e");
-
-      setState(() {
-        _selectedDealer = result;
-      });
-    }
+    setState(() {
+      _selectedDealer = dealer;
+    });
   }
 
   Future<void> _openParentDealerSearch() async {
     HapticFeedback.selectionClick();
+
     final result = await showDialog<Dealer>(
       context: context,
       builder: (context) => _ServerDealerSearchDialog(),
     );
 
-    if (result != null) {
-      setState(() => _selectedParentDealer = result);
-    }
-  }
+    if (result == null) return;
 
+    Dealer dealer = result;
+
+    if (result.id != null) {
+      try {
+        dealer = await _apiService.fetchDealerById(result.id!);
+      } catch (e) {
+        debugPrint("Parent dealer refresh skipped (offline): $e");
+      }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _selectedParentDealer = dealer;
+    });
+  }
 
   /// ------------------------------------------------
   /// 📸 INLINE CAMERA CHECK-IN (Null-Safe Optimized)
@@ -1272,7 +1282,12 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   @override
   void initState() {
     super.initState();
-    _performSearch("");
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future.delayed(const Duration(milliseconds: 200), () {
+        _performSearch("");
+      });
+    });
   }
 
   // 🚀 CRITICAL FIX: Prevent Memory Leaks
@@ -1294,52 +1309,74 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
     setState(() => _isLoading = true);
 
     try {
-      // 🔍 OFFLINE SQLITE SEARCH
-      final localDealers = await AppDatabase.instance.searchLocalDealers(query);
+      final cleanQuery = query.trim();
 
-      // 📊 LOG COUNT
-      dev.log("Dealer search query: $query");
-      dev.log("Dealers returned: ${localDealers.length}");
-
-      // 👀 LOG FIRST FEW RESULTS (debug sanity check)
-      for (var d in localDealers.take(5)) {
-        dev.log("Dealer → ${d.name} | ${d.region} | ${d.area} ");
-      }
-
-      // Convert Drift model → UI model
-      final results = localDealers.map((ld) {
-        return Dealer(
-          id: ld.id,
-          name: ld.name,
-          nameOfFirm: ld.nameOfFirm,
-          region: ld.region,
-          area: ld.area,
-          address: ld.address,
-          phoneNo: ld.phoneNo,
-          latitude: ld.latitude,
-          longitude: ld.longitude,
-          totalPotential: ld.totalPotential,
-          bestPotential: ld.bestPotential,
-          brandSelling: ld.brandSelling != null
-              ? List<String>.from(jsonDecode(ld.brandSelling!))
-              : [],
-          type: ld.type,
-          feedbacks: '',
+      // 🛑 BLOCK 1: INITIAL LOAD (When dialog first opens)
+      if (cleanQuery.isEmpty) {
+        final initialDealers = await AppDatabase.instance.getInitialDealers(
+          limit: 50,
         );
-      }).toList();
+        dev.log("🚨 SQLITE VAULT HAS ${initialDealers.length} DEALERS");
 
-      if (mounted) {
+        List<Dealer> results = [];
+        for (var d in initialDealers) {
+          try {
+            results.add(Dealer.fromJson(d.toJson()));
+          } catch (e) {
+            dev.log(
+              "⚠️ CRASH ON INITIAL DEALER ${d.id}: $e",
+            ); // <-- You will see this now
+          }
+        }
+
         setState(() {
           _dealers = results;
           _isLoading = false;
         });
+        return;
       }
-    } catch (e) {
-      dev.log("Offline search error: $e");
 
-      if (mounted) {
-        setState(() => _isLoading = false);
+      // 🛑 BLOCK 2: TYPING SEARCH
+      final localDealers = await AppDatabase.instance.searchLocalDealers(
+        cleanQuery,
+      );
+
+      if (localDealers.isNotEmpty) {
+        List<Dealer> results = [];
+        for (var d in localDealers) {
+          try {
+            results.add(Dealer.fromJson(d.toJson()));
+          } catch (e) {
+            dev.log("⚠️ CRASH ON SEARCHED DEALER ${d.id}: $e");
+          }
+        }
+
+        setState(() {
+          _dealers = results;
+          _isLoading = false;
+        });
+        return;
       }
+
+      // 3️⃣ Fallback to API search
+      List<Dealer> onlineResults = await ApiService().fetchDealers(
+        search: cleanQuery,
+        limit: 50,
+      );
+
+      if (onlineResults.isNotEmpty) {
+        await AppDatabase.instance.syncDealersToLocal(
+          onlineResults.map((d) => d.toJson()).toList(),
+        );
+      }
+
+      setState(() {
+        _dealers = onlineResults;
+        _isLoading = false;
+      });
+    } catch (e) {
+      dev.log("🚨 FATAL SEARCH ERROR: $e");
+      setState(() => _isLoading = false);
     }
   }
 
