@@ -469,7 +469,7 @@ class AppDatabase extends _$AppDatabase {
                 t.address.like(searchTerm) |
                 t.gstinNo.like(
                   searchTerm,
-                ), // 🚀 NEW: Salesmen often search by GSTIN!
+                ), // 🚀 NEW: Salesmen often search by GSTIN
           )
           ..limit(50))
         .get();
