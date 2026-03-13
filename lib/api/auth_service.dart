@@ -7,12 +7,10 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import '../models/employee_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:salesmanapp/database/app_database.dart';
-// import 'package:geolocator/geolocator.dart';
-import 'api_service.dart';
 
 class AuthService {
-  static String baseUrl = 'http://65.0.208.126'; //aws
+  //static String baseUrl = 'http://65.0.208.126'; //aws
+  static String baseUrl = 'https://brixta.site'; // fix24
   //static  String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
   //static String baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
 
@@ -102,41 +100,6 @@ class AuthService {
     }
   }
 
-  /// 🚀 The "Fire and Forget" Background Missile
-  /// Silently downloads and caches all dealers without blocking the UI
-  // 🚀 Pass the current logged-in Employee object here
- Future<void> syncDealersForOffline() async {
-  try {
-    dev.log('🔄 Starting dealer cache sync...', name: 'AuthService');
-
-    final api = ApiService();
-
-    int page = 1;
-    const int limit = 500;   // fetch in chunks
-    List<dynamic> allDealers = [];
-
-    while (true) {
-      final dealers = await api.fetchDealers(page: page, limit: limit);
-
-      if (dealers.isEmpty) break;
-
-      allDealers.addAll(dealers.map((d) => d.toJson()));
-      page++;
-    }
-
-    if (allDealers.isNotEmpty) {
-      await AppDatabase.instance.syncDealersToLocal(allDealers);
-      dev.log(
-        '✅ Dealer cache updated: ${allDealers.length} dealers stored locally',
-        name: 'AuthService',
-      );
-    } else {
-      dev.log('⚠️ No dealers returned from server', name: 'AuthService');
-    }
-  } catch (e) {
-    dev.log('🔥 Dealer sync failed: $e', name: 'AuthService');
-  }
-}
   /// Fetches the user profile from the protected /api/users/:id endpoint.
   /// It now requires a token to be sent in the headers.
   /// Fetches the user profile and CACHES it for offline use.
@@ -160,7 +123,6 @@ class AuthService {
           // ✅ SUCCESS: Cache the profile data for future offline use
           await _cacheUserProfile(data['data']);
           final currentEmployee = Employee.fromJson(data['data']);
-          syncDealersForOffline();
 
           return currentEmployee;
         } else {

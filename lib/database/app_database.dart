@@ -279,9 +279,6 @@ class AppDatabase extends _$AppDatabase {
   // 🚀 DEALER OFFLINE SEARCH ENGINE (NEW)
   // ---------------------------------------------------------------------------
 
-  // 1. FAST BATCH INSERT (Saves all 5000 in < 1 second)
-  // 1. FAST BATCH INSERT (Saves all 5000 in < 1 second with full Prisma/Drizzle parity)
-  // 1. FAST BATCH INSERT (Saves all 5000 in < 1 second with full Prisma/Drizzle parity)
   Future<void> syncDealersToLocal(List<dynamic> serverDealers) async {
     await batch((batch) {
       batch.insertAll(
@@ -458,21 +455,25 @@ class AppDatabase extends _$AppDatabase {
           ..where(
             (t) =>
                 t.name.like(searchTerm) |
-                t.nameOfFirm.like(searchTerm) | // 🚀 NEW: Search by Firm Name
-                t.underSalesPromoterName.like(
-                  searchTerm,
-                ) | // 🚀 NEW: Search by Promoter Name
+                t.nameOfFirm.like(searchTerm) | 
+                t.underSalesPromoterName.like(searchTerm,) | 
                 t.region.like(searchTerm) |
                 t.area.like(searchTerm) |
                 t.phoneNo.like(searchTerm) |
                 t.pinCode.like(searchTerm) |
                 t.address.like(searchTerm) |
-                t.gstinNo.like(
-                  searchTerm,
-                ), // 🚀 NEW: Salesmen often search by GSTIN
+                t.gstinNo.like(searchTerm,),
           )
           ..limit(50))
         .get();
+  }
+
+  // to check dealer count in local db
+  Future<int> getLocalDealersCount() async {
+    final countExp = localDealers.id.count();
+    final query = selectOnly(localDealers)..addColumns([countExp]);
+    final result = await query.getSingle();
+    return result.read(countExp) ?? 0;
   }
 
   Future<List<LocalDealer>> getInitialDealers({int limit = 50}) {

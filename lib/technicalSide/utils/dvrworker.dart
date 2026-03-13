@@ -112,6 +112,28 @@ class DvrBackgroundWorker {
       );
     }
 
+    // --- ⚙️ 5. DEALER PATCH WORKER ---
+  Future<bool> executeDealerPatchTask(
+    SyncQueueData task,
+    ApiService apiService,
+  ) async {
+    final Map<String, dynamic> payload = jsonDecode(task.payload);
+    final String dealerId = payload['dealerId'];
+    final Map<String, dynamic> patchData = payload['patch'];
+
+    try {
+      // 1. Send the patch to the server
+      await apiService.updateDealer(dealerId, patchData);
+      
+      debugPrint("✅ [DVR Worker] Successfully patched dealer: $dealerId");
+      return true; // Tells the worker to remove this task from the SQLite queue
+    } catch (e) {
+      debugPrint("⚠️ [DVR Worker] Dealer patch failed. Aborting task for retry: $e");
+      // Throwing aborts the task so it stays in the queue to try again later
+      throw Exception("Failed to patch dealer: $e");
+    }
+  }
+
     int successCount = 0;
 
     for (final task in pendingTasks) {
@@ -120,7 +142,7 @@ class DvrBackgroundWorker {
         if (task.entityType == 'DVR') {
           success = await _executeDvrUploadTask(task, apiService);
         } else if (task.entityType == 'DEALER_PATCH') {
-          success = true;
+          success = await executeDealerPatchTask(task, apiService);
         }
 
         if (success) {

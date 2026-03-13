@@ -255,6 +255,12 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
       focusedDay: _focusedDay,
       firstDay: DateTime.now(),
       lastDay: DateTime.now().add(const Duration(days: 60)),
+      
+      headerStyle: const HeaderStyle(
+        formatButtonVisible: false, // This hides the "2 weeks" button
+        titleCentered: true,        // Optional: Centers "March 2026" since the button is gone
+      ),
+
       selectedDayPredicate: (day) =>
           _selectedDates.contains(DateTime.utc(day.year, day.month, day.day)),
       onDaySelected: (selectedDay, focusedDay) {

@@ -20,7 +20,7 @@ import 'dart:async'; // 🚀 Added for StreamSubscription
 // 🚀 Added for Network Detection
 import 'package:salesmanapp/technicalSide/utils/dvrworker.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:salesmanapp/api/auth_service.dart';
+//import 'package:salesmanapp/api/auth_service.dart';
 
 // ---------------------------------------------------------------------------
 // 🟢 INLINE CAMERA (LOCAL COPY - SALES SIDE)
@@ -209,7 +209,7 @@ class EmployeeDashboardScreen extends StatefulWidget {
 class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     with WidgetsBindingObserver {
   final ApiService _apiService = ApiService();
-  final AuthService _authService = AuthService();
+  //final AuthService _authService = AuthService();
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
   bool _isCheckingIn = false;
@@ -258,7 +258,6 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     if (mounted) {
       _setGreeting();
       _checkAttendanceStatus();
-      _authService.syncDealersForOffline();
     }
   }
 

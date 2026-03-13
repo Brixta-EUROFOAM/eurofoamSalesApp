@@ -11,6 +11,7 @@ class SalesFlags {
 
   final bool showDbViewer;
   final bool accountSwitcher;
+  final bool offlineSync;
 
   const SalesFlags({
     required this.journey,
@@ -23,6 +24,7 @@ class SalesFlags {
 
     required this.showDbViewer,
     required this.accountSwitcher,
+    required this.offlineSync,
   });
 
   static const SalesFlags dev = SalesFlags(
@@ -34,7 +36,8 @@ class SalesFlags {
     salesOrders: false,
     teamView: true,
 
-    showDbViewer: false,
+    showDbViewer: true,
     accountSwitcher: true,
+    offlineSync: true,
   );
 }

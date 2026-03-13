@@ -14,6 +14,7 @@ import 'package:flutter_animate/flutter_animate.dart'; // 🚀 Premium Animation
 import 'package:salesmanapp/models/attendance_model.dart';
 import 'package:salesmanapp/models/daily_task_model.dart';
 import 'package:salesmanapp/models/daily_visit_report_model.dart';
+import 'package:flutter/services.dart';
 
 // Screens for navigation
 import 'package:salesmanapp/screens/employee_management/all_dvr_list_screen.dart';
@@ -54,10 +55,10 @@ class EmployeeProfileScreen extends StatefulWidget {
   const EmployeeProfileScreen({super.key, required this.employee});
 
   @override
-  State<EmployeeProfileScreen> createState() => _EmployeeProfileScreenState();
+  State<EmployeeProfileScreen> createState() => EmployeeProfileScreenState();
 }
 
-class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
+class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   final ApiService _apiService = ApiService();
   late Future<SalesProfileStats> _statsFuture;
 
@@ -176,6 +177,108 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Could not open the form. Please contact support.'),
+          ),
+        );
+      }
+    }
+  }
+
+  // --- 🚀 MASS PAGINATED DEALER SYNC ---
+  Future<void> syncOfflineDealers() async {
+    try {
+      int page = 1;
+      int totalSynced = 0;
+      bool hasMore = true;
+      const int batchSize = 500; // fetch 500 at a time since backend GET() caps at 500
+
+      // 1. Initial Loading UI
+      ScaffoldMessenger.of(context).clearSnackBars();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: const [
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  color: Colors.white,
+                  strokeWidth: 2,
+                ),
+              ),
+              SizedBox(width: 16),
+              Expanded(child: Text("Starting offline dealer sync...")),
+            ],
+          ),
+          duration: const Duration(days: 1), // Stays open while we loop
+          backgroundColor: const Color(0xFF0F172A),
+        ),
+      );
+
+      // 2. The Pagination Loop
+      while (hasMore) {
+        final batch = await _apiService.fetchDealers(
+          search: "",
+          limit: batchSize,
+          page: page,
+        );
+
+        if (batch.isEmpty) {
+          hasMore = false; // We've reached the end!
+        } else {
+          // Push batch to Drift
+          final List<Map<String, dynamic>> dealerJsonList = batch
+              .map((d) => d.toJson())
+              .toList();
+
+          await AppDatabase.instance.syncDealersToLocal(dealerJsonList);
+
+          totalSynced += batch.length;
+          page++;
+
+          // Live UI Update 
+          if (mounted) {
+            ScaffoldMessenger.of(context).clearSnackBars();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  "Downloading... $totalSynced dealers saved locally.",
+                ),
+                duration: const Duration(days: 1),
+                backgroundColor: const Color(0xFF0F172A),
+              ),
+            );
+          }
+
+          // If the server returned less than the batch size, it was the last page
+          if (batch.length < batchSize) {
+            hasMore = false;
+          }
+        }
+      }
+
+      final count = await AppDatabase.instance.getLocalDealersCount();
+
+      // 3. Success UI
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "✅ Sync Complete! Downloaded $totalSynced. Total in Vault: $count",
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("🚨 SYNC ERROR: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Sync stopped at error: $e"),
+            backgroundColor: Colors.red,
           ),
         );
       }
@@ -595,6 +698,77 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                         duration: 2500.ms,
                         color: const Color(0xFF0F766E).withOpacity(0.1),
                       ),
+                ],
+
+                if (flags.offlineSync) ...[
+                  const SizedBox(height: 32),
+                  Text(
+                    "Offline Data",
+                    style: TextStyle(
+                      color: _textDark,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ).animate().fadeIn(delay: 780.ms).slideX(begin: -0.1),
+                  const SizedBox(height: 16),
+
+                  Container(
+                        decoration: BoxDecoration(
+                          color: _surfaceWhite,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: Colors.blueAccent.withOpacity(0.3),
+                            width: 1.5,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.06),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                          leading: Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(
+                                0xFFEFF6FF,
+                              ), // Light blue background
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.cloud_download_rounded,
+                              color: Colors.blueAccent,
+                              size: 26,
+                            ),
+                          ),
+                          title: const Text(
+                            "Sync Offline Dealers",
+                            style: TextStyle(
+                              color: Colors.blueAccent,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                            ),
+                          ),
+                          trailing: const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 16,
+                            color: Colors.blueAccent,
+                          ),
+                          onTap: () async {
+                            HapticFeedback.mediumImpact();
+                            await syncOfflineDealers();
+                          },
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(delay: 800.ms)
+                      .slideY(begin: 0.1, curve: Curves.easeOutCubic),
                 ],
 
                 const SizedBox(height: 32),

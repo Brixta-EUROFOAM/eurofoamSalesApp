@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart'; // 🚀 Premium Animation
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/database/app_database.dart';
 
 class AddDealerForm extends StatefulWidget {
   final Employee employee;
@@ -192,7 +193,23 @@ class _AddDealerFormState extends State<AddDealerForm> {
       );
 
       const double radius = 50.0;
-      await _apiService.createDealer(newDealer, radius: radius);
+      // 1. Send to Neon (Server)
+      final createdDealer = await _apiService.createDealer(newDealer, radius: radius);
+
+      // 2. Instantly save to Drift (Local Vault)
+      try {
+         // The backend might only return the ID, so we take the EXACT 
+         // data the user just typed and inject the new Server ID into it.
+         final localPayload = newDealer.toJson();
+         
+         // Attach the ID that Neon just generated
+         localPayload['id'] = createdDealer.id ?? ''; 
+         
+         await AppDatabase.instance.syncDealersToLocal([localPayload]);
+         debugPrint("✅ New dealer instantly cached to local vault with name: ${localPayload['name']}");
+      } catch (e) {
+         debugPrint("Could not cache new dealer locally: $e");
+      }
 
       scaffoldMessenger.showSnackBar(
         const SnackBar(

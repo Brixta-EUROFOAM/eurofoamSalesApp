@@ -274,7 +274,6 @@ class Dealer {
         (s == null || s.trim().isEmpty) ? null : s.trim();
 
     return {
-      'id': id,
       'userId': userId,
       'type': type,
       'parentDealerId': _nullIfEmpty(parentDealerId),
