@@ -551,6 +551,113 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     }
   }
 
+  void _showUnplannedTypeSelector() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Select Journey Type",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F172A), // _cardNavy
+                  minimumSize: const Size.fromHeight(54),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.storefront, color: Colors.white),
+                label: const Text(
+                  "Select Dealer",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openDealerSearch();
+                },
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(54),
+                  side: const BorderSide(color: Color(0xFF0F172A), width: 1.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.map, color: Color(0xFF0F172A)),
+                label: const Text(
+                  "Select Route on Map",
+                  style: TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                onPressed: () async {
+                  Navigator.pop(context);
+                  setState(() {
+                    _isSelectionMode = true;
+                  });
+                  if (_currentUserLocation != null) {
+                    try {
+                      final controller = await _controllerCompleter.future;
+                      controller.animateCamera(
+                        CameraUpdate.newLatLngZoom(_currentUserLocation!, 16),
+                      );
+                    } catch (_) {}
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms),
+    );
+  }
+
+  Future<void> _openDealerSearch() async {
+    final result = await showDialog<Dealer>(
+      context: context,
+      builder: (context) => _ServerDealerSearchDialog(api: ApiService()),
+    );
+
+    if (result != null) {
+      // Fallback to current location if dealer coordinates are missing
+      LatLng target = (result.latitude != null && result.longitude != null)
+          ? LatLng(result.latitude!, result.longitude!)
+          : (_currentUserLocation ?? const LatLng(26.1445, 91.7362));
+
+      await _loadUnplannedJourney(
+        UnplannedJourneyResult(
+          destination: target,
+          displayName: result.name, // DEALER NAME SAVED HERE
+          type: UnplannedEntityType.dealer, // Differentiates from map route
+        ),
+      );
+
+      // Save dealer specific data for the API call
+      setState(() {
+        _dealerId = result.id;
+        _activeDealer = result;
+      });
+    }
+  }
+
   Future<void> _checkActiveSession() async {
     if (_restoreChecked) return;
     _restoreChecked = true;
@@ -655,7 +762,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     }
 
     if (_journeyMode == JourneyMode.unplanned && _destinationLocation == null) {
-      _showError("Select a destination for the unplanned visit.");
+      _showError(
+        "Select a dealer or route destination for the unplanned visit.",
+      );
       return;
     }
 
@@ -1409,24 +1518,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
             child: TextField(
               controller: _destinationController,
               readOnly: true,
-              onTap: !isPlanned && _destinationController.text.isEmpty
-                  ? () async {
-                      setState(() {
-                        _isSelectionMode = true;
-                      });
-                      if (_currentUserLocation != null) {
-                        try {
-                          final controller = await _controllerCompleter.future;
-                          controller.animateCamera(
-                            CameraUpdate.newLatLngZoom(
-                              _currentUserLocation!,
-                              16,
-                            ),
-                          );
-                        } catch (_) {}
-                      }
-                    }
-                  : null,
+              onTap: !isPlanned ? _showUnplannedTypeSelector : null,
               style: TextStyle(
                 color: _destinationController.text.isEmpty
                     ? _textGrey
@@ -1490,23 +1582,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                onPressed: () async {
-                                  setState(() {
-                                    _isSelectionMode = true;
-                                  });
-                                  if (_currentUserLocation != null) {
-                                    try {
-                                      final controller =
-                                          await _controllerCompleter.future;
-                                      controller.animateCamera(
-                                        CameraUpdate.newLatLngZoom(
-                                          _currentUserLocation!,
-                                          16,
-                                        ),
-                                      );
-                                    } catch (_) {}
-                                  }
-                                },
+                                onPressed: _showUnplannedTypeSelector,
                                 child: const Text(
                                   "SET",
                                   style: TextStyle(
@@ -1594,5 +1670,180 @@ class _StartJourneySlider extends StatelessWidget {
       ),
       child: sliderWidget,
     );
+  }
+}
+
+class _ServerDealerSearchDialog extends StatefulWidget {
+  final ApiService api;
+  const _ServerDealerSearchDialog({required this.api});
+  @override
+  State<_ServerDealerSearchDialog> createState() =>
+      _ServerDealerSearchDialogState();
+}
+
+class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
+  List<Dealer> _dealers = [];
+  bool _isLoading = false;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _performSearch("");
+  }
+
+  // 🚀 CRITICAL FIX: Prevent memory leak and crash if dialog closes while typing
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  void _onSearchChanged(String query) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      _performSearch(query);
+    });
+  }
+
+  Future<void> _performSearch(String query) async {
+    setState(() => _isLoading = true);
+    try {
+      final results = await widget.api.fetchDealers(search: query, limit: 20);
+      if (mounted) {
+        setState(() {
+          _dealers = results;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text(
+        "Select Dealer",
+        style: TextStyle(fontWeight: FontWeight.w900),
+      ),
+      contentPadding: const EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 10,
+        bottom: 0,
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        height: MediaQuery.of(context).size.height * 0.5,
+        child: Column(
+          children: [
+            TextField(
+              onChanged: _onSearchChanged,
+              decoration: InputDecoration(
+                hintText: "Search by name or zone...",
+                prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
+                filled: true,
+                fillColor: const Color(0xFFF9FAFB),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF0F172A),
+                      ),
+                    )
+                  : _dealers.isEmpty
+                  ? const Center(
+                      child: Text(
+                        "No dealers found.",
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: _dealers.length,
+                      separatorBuilder: (context, index) =>
+                          Divider(color: Colors.grey.shade200, height: 1),
+                      itemBuilder: (context, index) {
+                        final dealer = _dealers[index];
+                        final String displayZone = dealer.region.isNotEmpty
+                            ? dealer.region
+                            : "Unknown Zone";
+
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 4,
+                            horizontal: 0,
+                          ),
+                          leading: const CircleAvatar(
+                            backgroundColor: Color(0xFFEFF6FF),
+                            child: Icon(
+                              Icons.storefront,
+                              color: Colors.blueAccent,
+                              size: 20,
+                            ),
+                          ),
+                          title: Text(
+                            dealer.name,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                          // 🚀 MINIMALIST & HIGH PERFORMANCE: Removed heavy nested Rows & Containers
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 6.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  "Zone: $displayZone",
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF4B5563), // Clean dark grey
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  dealer.address,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF9CA3AF), // Subtle grey
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          onTap: () => Navigator.pop(context, dealer),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text(
+            "CANCEL",
+            style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
+    ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms);
   }
 }
