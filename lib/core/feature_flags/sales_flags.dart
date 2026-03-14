@@ -36,8 +36,8 @@ class SalesFlags {
     salesOrders: false,
     teamView: true,
 
-    showDbViewer: true,
+    showDbViewer: false,
     accountSwitcher: true,
-    offlineSync: true,
+    offlineSync: false,
   );
 }

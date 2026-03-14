@@ -467,26 +467,26 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
 
       // 1. Initial Loading UI
       ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: const [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              ),
-              SizedBox(width: 16),
-              Expanded(child: Text("Starting offline dealer sync...")),
-            ],
-          ),
-          duration: const Duration(days: 1), // Stays open while we loop
-          backgroundColor: const Color(0xFF0F172A),
-        ),
-      );
+      // ScaffoldMessenger.of(context).showSnackBar(
+      //   SnackBar(
+      //     content: Row(
+      //       children: const [
+      //         SizedBox(
+      //           width: 20,
+      //           height: 20,
+      //           child: CircularProgressIndicator(
+      //             color: Colors.white,
+      //             strokeWidth: 2,
+      //           ),
+      //         ),
+      //         SizedBox(width: 16),
+      //         Expanded(child: Text("Starting offline dealer sync...")),
+      //       ],
+      //     ),
+      //     duration: const Duration(days: 1), // Stays open while we loop
+      //     backgroundColor: const Color(0xFF0F172A),
+      //   ),
+      // );
 
       // 2. The Pagination Loop
       while (hasMore) {
@@ -510,18 +510,18 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
           page++;
 
           // Live UI Update 
-          if (mounted) {
-            ScaffoldMessenger.of(context).clearSnackBars();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  "Downloading... $totalSynced dealers saved locally.",
-                ),
-                duration: const Duration(days: 1),
-                backgroundColor: const Color(0xFF0F172A),
-              ),
-            );
-          }
+          // if (mounted) {
+          //   ScaffoldMessenger.of(context).clearSnackBars();
+          //   ScaffoldMessenger.of(context).showSnackBar(
+          //     SnackBar(
+          //       content: Text(
+          //         "Downloading... $totalSynced dealers saved locally.",
+          //       ),
+          //       duration: const Duration(days: 1),
+          //       backgroundColor: const Color(0xFF0F172A),
+          //     ),
+          //   );
+          // }
 
           // If the server returned less than the batch size, it was the last page
           if (batch.length < batchSize) {
@@ -533,29 +533,29 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       final count = await AppDatabase.instance.getLocalDealersCount();
 
       // 3. Success UI
-      if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "✅ Sync Complete! Downloaded $totalSynced. Total in Vault: $count",
-            ),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
+      // if (mounted) {
+      //   ScaffoldMessenger.of(context).clearSnackBars();
+      //   ScaffoldMessenger.of(context).showSnackBar(
+      //     SnackBar(
+      //       content: Text(
+      //         "✅ Sync Complete! Downloaded $totalSynced. Total in Vault: $count",
+      //       ),
+      //       backgroundColor: Colors.green,
+      //       duration: const Duration(seconds: 4),
+      //     ),
+      //   );
+      // }
     } catch (e) {
       debugPrint("🚨 SYNC ERROR: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Sync stopped at error: $e"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      // if (mounted) {
+      //   ScaffoldMessenger.of(context).clearSnackBars();
+      //   ScaffoldMessenger.of(context).showSnackBar(
+      //     SnackBar(
+      //       content: Text("Sync stopped at error: $e"),
+      //       backgroundColor: Colors.red,
+      //     ),
+      //   );
+      // }
     }
   }
 
