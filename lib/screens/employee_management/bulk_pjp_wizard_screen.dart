@@ -98,7 +98,6 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
       'dealerId': null,
       'lat': null, // ADD THIS
       'lng': null, // ADD THIS
-
     };
   }
 
@@ -123,12 +122,12 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
       visit['dealerName'].text = dealer.name;
       visit['dealerMobile'].text = dealer.phoneNo;
       visit['area'].text = dealer.area;
-      visit['lat'] = dealer.latitude;   // ADD THIS (assuming Dealer model has latitude)
+      visit['lat'] =
+          dealer.latitude; // ADD THIS (assuming Dealer model has latitude)
       visit['lng'] = dealer.longitude;
       visit['zone'] = _zones.contains(dealer.region)
           ? dealer.region
           : _zones.first;
-
     });
   }
 
@@ -160,7 +159,7 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
             objective: visit['objective'],
             visitType: visit['type'],
             week: visit['week'],
-            latitude: visit['lat'],  // ADD THIS
+            latitude: visit['lat'], // ADD THIS
             longitude: visit['lng'], // ADD THIS
             requiredVisitCount: int.tryParse(visit['requiredVisitCount'].text),
             createdAt: DateTime.now(),
@@ -214,18 +213,20 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
           elevation: 0,
           type: StepperType.horizontal,
           currentStep: _currentStep,
-          onStepContinue: () {
-            if (_currentStep == 0) {
-              if (_selectedDates.isEmpty) return;
+          onStepContinue: _isSubmitting
+              ? null
+              : () {
+                  if (_currentStep == 0) {
+                    if (_selectedDates.isEmpty) return;
 
-              setState(() {
-                _initializeDailyConfigs();
-                _currentStep++;
-              });
-            } else {
-              _submitBatch();
-            }
-          },
+                    setState(() {
+                      _initializeDailyConfigs();
+                      _currentStep++;
+                    });
+                  } else {
+                    _submitBatch();
+                  }
+                },
           onStepCancel: () => _currentStep > 0
               ? setState(() => _currentStep--)
               : Navigator.pop(context),
@@ -255,10 +256,11 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
       focusedDay: _focusedDay,
       firstDay: DateTime.now(),
       lastDay: DateTime.now().add(const Duration(days: 60)),
-      
+
       headerStyle: const HeaderStyle(
         formatButtonVisible: false, // This hides the "2 weeks" button
-        titleCentered: true,        // Optional: Centers "March 2026" since the button is gone
+        titleCentered:
+            true, // Optional: Centers "March 2026" since the button is gone
       ),
 
       selectedDayPredicate: (day) =>
@@ -363,25 +365,27 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
               ],
             ),
 
-            GestureDetector(
-              onTap: () => _openDealerSearch(visit),
-              child: AbsorbPointer(
-                child: _buildTextField(
-                  "Dealer Name (Search)",
-                  visit['dealerName'],
-                ),
-              ),
-            ),
-            _buildTextField("Dealer Mobile", visit['dealerMobile']),
-            _buildTextField("Area", visit['area']),
-            _buildTextField("Route", visit['route']),
-
             _buildDropdown(
               "Zone",
               visit['zone'],
               _zones,
               (v) => setState(() => visit['zone'] = v),
             ),
+
+            GestureDetector(
+              onTap: () => _showDestinationSelector(visit),
+              child: AbsorbPointer(
+                child: _buildTextField(
+                  "Select Destination",
+                  visit['dealerName'],
+                ),
+              ),
+            ),
+
+            _buildTextField("Dealer Mobile", visit['dealerMobile']),
+            _buildTextField("Area", visit['area']),
+            _buildTextField("Route", visit['route']),
+            _buildTextField("Required Visits", visit['requiredVisitCount']),
 
             _buildDropdown(
               "Objective",
@@ -403,8 +407,6 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
               _weeks,
               (v) => setState(() => visit['week'] = v),
             ),
-
-            _buildTextField("Required Visits", visit['requiredVisitCount']),
           ],
         ),
       ),
@@ -477,6 +479,112 @@ class _BulkPjpWizardScreenState extends State<BulkPjpWizardScreen> {
           icon: const Icon(Icons.arrow_forward_ios),
         ),
       ],
+    );
+  }
+
+  void _showDestinationSelector(Map<String, dynamic> visit) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Select Destination",
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+              ),
+
+              const SizedBox(height: 24),
+
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _cardNavy,
+                  minimumSize: const Size.fromHeight(54),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.storefront, color: Colors.white),
+                label: const Text(
+                  "Select Dealer",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openDealerSearch(visit);
+                },
+              ),
+
+              const SizedBox(height: 12),
+
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(54),
+                  side: const BorderSide(color: _cardNavy, width: 1.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.location_on_outlined, color: _cardNavy),
+                label: const Text(
+                  "Enter Destination Manually",
+                  style: TextStyle(
+                    color: _cardNavy,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openManualDestinationDialog(visit);
+                },
+              ),
+            ],
+          ),
+        ),
+      ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms),
+    );
+  }
+
+  void _openManualDestinationDialog(Map<String, dynamic> visit) {
+    final controller = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Enter Destination"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(hintText: "Type..."),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              setState(() {
+                visit['dealerId'] = null;
+                visit['dealerName'].text = controller.text;
+
+                // clear dealer specific fields
+                visit['dealerMobile'].text = "";
+                visit['lat'] = null;
+                visit['lng'] = null;
+              });
+
+              Navigator.pop(context);
+            },
+            child: const Text("Save"),
+          ),
+        ],
+      ),
     );
   }
 }
