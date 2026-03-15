@@ -42,8 +42,14 @@ class DvrBackgroundWorker {
   }) async {
     if (clearDrafts) _clearUiDrafts();
 
-    final permIn = await _saveFilePermanently(inTimeFile?.path);
-    final permOut = await _saveFilePermanently(outTimeFile.path);
+    // Concurrently save files to permanent storage for extreme speed
+    final savedFiles = await Future.wait([
+      _saveFilePermanently(inTimeFile?.path),
+      _saveFilePermanently(outTimeFile.path),
+    ]);
+
+    final permIn = savedFiles[0];
+    final permOut = savedFiles[1];
 
     final Map<String, dynamic> payload = dvrPayload.toJson();
     payload['local_in_image'] = permIn;
@@ -69,31 +75,19 @@ class DvrBackgroundWorker {
     });
   }
 
-  // --- 🔄 3. THE "FLUSH" SYSTEM (Chunked Processor) ---
+  // --- 🔄 3. THE "FLUSH" SYSTEM (Optimized While-Loop Processor) ---
   static Future<void> retryStuckQueue(
     ApiService apiService, {
     BuildContext? context,
   }) async {
-    // 🛡️ THE LOCK: If we are already uploading, abort this trigger!
-    if (_isSyncing) {
-      debugPrint(
-        "⏳ [DVR Worker] Sync already in progress. Ignoring duplicate trigger.",
-      );
-      return;
-    }
+    // 🛡️ THE LOCK: Abort if already running
+    if (_isSyncing) return;
 
     final db = AppDatabase.instance;
-    final pendingTasks = await db.getPendingSyncTasks(limit: 5);
+    bool hasMoreTasks = true;
+    int totalSuccessCount = 0;
 
-    if (pendingTasks.isEmpty) {
-      return;
-    }
-
-    // 🔒 LOCK ENGAGED
-    _isSyncing = true;
-    debugPrint(
-      "🔄 [DVR Worker] Network restored! Processing ${pendingTasks.length} queued tasks...",
-    );
+    _isSyncing = true; // 🔒 LOCK ENGAGED
 
     // 📢 UI NOTIFICATION: Tell the user the engine is running
     if (context != null && context.mounted) {
@@ -112,71 +106,63 @@ class DvrBackgroundWorker {
       );
     }
 
-    // --- ⚙️ 5. DEALER PATCH WORKER ---
-  Future<bool> executeDealerPatchTask(
-    SyncQueueData task,
-    ApiService apiService,
-  ) async {
-    final Map<String, dynamic> payload = jsonDecode(task.payload);
-    final String dealerId = payload['dealerId'];
-    final Map<String, dynamic> patchData = payload['patch'];
-
     try {
-      // 1. Send the patch to the server
-      await apiService.updateDealer(dealerId, patchData);
-      
-      debugPrint("✅ [DVR Worker] Successfully patched dealer: $dealerId");
-      return true; // Tells the worker to remove this task from the SQLite queue
-    } catch (e) {
-      debugPrint("⚠️ [DVR Worker] Dealer patch failed. Aborting task for retry: $e");
-      // Throwing aborts the task so it stays in the queue to try again later
-      throw Exception("Failed to patch dealer: $e");
-    }
-  }
+      // 🚀 BATTERY SAVER: Replaced recursion with a memory-safe while loop
+      while (hasMoreTasks) {
+        final pendingTasks = await db.getPendingSyncTasks(limit: 5);
 
-    int successCount = 0;
-
-    for (final task in pendingTasks) {
-      bool success = false;
-      try {
-        if (task.entityType == 'DVR') {
-          success = await _executeDvrUploadTask(task, apiService);
-        } else if (task.entityType == 'DEALER_PATCH') {
-          success = await executeDealerPatchTask(task, apiService);
+        if (pendingTasks.isEmpty) {
+          hasMoreTasks = false;
+          break;
         }
 
-        if (success) {
-          await db.markSyncTaskComplete(task.id);
-          successCount++;
-          debugPrint(
-            "✅ [DVR Worker] Task ${task.id} SYNCED & Removed from Queue.",
-          );
-        } else {
-          await db.markSyncTaskFailed(task.id, task.retryCount);
+        debugPrint(
+          "🔄 [DVR Worker] Processing ${pendingTasks.length} queued tasks...",
+        );
+
+        for (final task in pendingTasks) {
+          bool success = false;
+          try {
+            if (task.entityType == 'DVR') {
+              success = await _executeDvrUploadTask(task, apiService);
+            } else if (task.entityType == 'DEALER_PATCH') {
+              success = await _executeDealerPatchTask(task, apiService);
+            }
+
+            if (success) {
+              await db.markSyncTaskComplete(task.id);
+              totalSuccessCount++;
+              debugPrint(
+                "✅ [DVR Worker] Task ${task.id} SYNCED & Removed from Queue.",
+              );
+            } else {
+              await db.markSyncTaskFailed(task.id, task.retryCount);
+            }
+          } catch (e) {
+            debugPrint("🔴 [DVR Worker] Task ${task.id} CRASHED: $e");
+            await db.markSyncTaskFailed(task.id, task.retryCount);
+          }
         }
-      } catch (e) {
-        debugPrint("🔴 [DVR Worker] Task ${task.id} CRASHED: $e");
-        await db.markSyncTaskFailed(task.id, task.retryCount);
+
+        // Give the CPU a 100ms breather to keep the UI smooth at 60fps
+        await Future.delayed(const Duration(milliseconds: 100));
       }
+    } finally {
+      // 🔓 LOCK RELEASED (Always executes, even if loop crashes)
+      _isSyncing = false;
     }
-
-    // 🔓 LOCK RELEASED
-    _isSyncing = false;
 
     // 📢 UI NOTIFICATION: Tell the user it finished
-    if (successCount > 0 && context != null && context.mounted) {
+    if (totalSuccessCount > 0 && context != null && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("✅ Successfully synced $successCount offline items!"),
+          content: Text(
+            "✅ Successfully synced $totalSuccessCount offline items!",
+          ),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 3),
         ),
       );
-    }
-
-    // ♻️ RECURSIVE FLUSH
-    if (pendingTasks.length == 5) {
-      await retryStuckQueue(apiService, context: context);
     }
   }
 
@@ -185,22 +171,21 @@ class DvrBackgroundWorker {
     SyncQueueData task,
     ApiService apiService,
   ) async {
+    // 🚀 TIME/SPACE OPTIMIZATION: Parse EXACTLY ONCE!
     final Map<String, dynamic> payload = jsonDecode(task.payload);
-    String? inUrl;
-    String? outUrl;
+
+    // Cache the local paths BEFORE removing them from the payload
+    final String? localInPath = payload['local_in_image'];
+    final String? localOutPath = payload['local_out_image'];
 
     Future<String?> uploadImage(String? localPath) async {
       if (localPath == null) return null;
       final file = File(localPath);
       if (await file.exists()) {
-        // 🚀 CRITICAL FIX: Wrap in a try-catch that explicitly throws
         try {
           return await apiService.uploadImageToR2(file);
         } catch (e) {
           debugPrint("⚠️ Image upload failed: $e");
-          // Throwing an exception here acts as an emergency brake.
-          // It aborts the entire _executeDvrUploadTask, keeping the task in the
-          // SQLite queue to retry later, saving your photos from being deleted!
           throw Exception(
             "Network too weak to upload image. Aborting task for retry.",
           );
@@ -209,14 +194,11 @@ class DvrBackgroundWorker {
       return null;
     }
 
-    // 1. Upload both images concurrently. If either fails, it throws and stops here.
+    // 1. Upload both images concurrently.
     final results = await Future.wait([
-      uploadImage(payload['local_in_image']),
-      uploadImage(payload['local_out_image']),
+      uploadImage(localInPath),
+      uploadImage(localOutPath),
     ]);
-
-    inUrl = results[0];
-    outUrl = results[1];
 
     // 2. Remove local paths from payload before sending to API
     payload.remove('local_in_image');
@@ -224,28 +206,48 @@ class DvrBackgroundWorker {
 
     DailyVisitReport dvr = DailyVisitReport.fromJson(payload);
     dvr = dvr.copyWith(
-      inTimeImageUrl: inUrl ?? dvr.inTimeImageUrl,
-      outTimeImageUrl: outUrl ?? dvr.outTimeImageUrl,
+      inTimeImageUrl: results[0] ?? dvr.inTimeImageUrl,
+      outTimeImageUrl: results[1] ?? dvr.outTimeImageUrl,
     );
 
-    // 3. Submit the final DVR to the server. (If this fails, it throws and stops here)
+    // 3. Submit the final DVR to the server.
     await apiService.createDvr(dvr);
 
-    // 4. CLEANUP: This ONLY runs if BOTH images AND the DVR API call were 100% successful.
-    final inPath = jsonDecode(task.payload)['local_in_image'];
-    final outPath = jsonDecode(task.payload)['local_out_image'];
-    if (inPath != null) {
+    // 4. CLEANUP: Only runs if API call succeeds. Disk space saver!
+    if (localInPath != null) {
       try {
-        await File(inPath).delete();
+        await File(localInPath).delete();
       } catch (_) {}
     }
-    if (outPath != null) {
+    if (localOutPath != null) {
       try {
-        await File(outPath).delete();
+        await File(localOutPath).delete();
       } catch (_) {}
     }
 
-    return true; // Tells the worker to permanently remove this task from the SQLite queue
+    return true;
+  }
+
+  // --- ⚙️ 5. DEALER PATCH WORKER ---
+  // 🚀 MEMORY FIX: Moved out of the loop so it doesn't allocate memory closures constantly
+  static Future<bool> _executeDealerPatchTask(
+    SyncQueueData task,
+    ApiService apiService,
+  ) async {
+    final Map<String, dynamic> payload = jsonDecode(task.payload);
+    final String dealerId = payload['dealerId'];
+    final Map<String, dynamic> patchData = payload['patch'];
+
+    try {
+      await apiService.updateDealer(dealerId, patchData);
+      debugPrint("✅ [DVR Worker] Successfully patched dealer: $dealerId");
+      return true;
+    } catch (e) {
+      debugPrint(
+        "⚠️ [DVR Worker] Dealer patch failed. Aborting task for retry: $e",
+      );
+      throw Exception("Failed to patch dealer: $e");
+    }
   }
 
   static Future<void> _clearUiDrafts() async {

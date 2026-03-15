@@ -19,7 +19,7 @@ class DvrTimerForegroundService {
         playSound: false,
       ),
       foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.repeat(1000), // Fire every 1 second
+        eventAction: ForegroundTaskEventAction.repeat(1000),
         autoRunOnBoot: false,
         allowWakeLock: true,
       ),
@@ -27,19 +27,34 @@ class DvrTimerForegroundService {
   }
 
   static Future<void> start({
+    required String dvrSessionId, // 🚀 NEW: Link timer to a specific DVR!
     required String title,
     required String subtitle,
     required int checkInTimestampMs,
   }) async {
-    if (await FlutterForegroundTask.isRunningService) {
-      return;
+    final isRunning = await FlutterForegroundTask.isRunningService;
+    final currentSession = await FlutterForegroundTask.getData<String>(
+      key: 'dvrSessionId',
+    );
+
+    if (isRunning && currentSession == dvrSessionId) {
+      return; // Already tracking THIS exact form. Do nothing.
+    } else if (isRunning) {
+      await stop(); // 🚀 ANTI-GLITCH: Kill the old rogue timer before starting the new one!
     }
 
-    // Save the exact check-in time to the background isolate
-    await FlutterForegroundTask.saveData(key: 'checkInTimeMs', value: checkInTimestampMs);
+    // Save the exact check-in time AND the session ID to the background isolate
+    await FlutterForegroundTask.saveData(
+      key: 'dvrSessionId',
+      value: dvrSessionId,
+    );
+    await FlutterForegroundTask.saveData(
+      key: 'checkInTimeMs',
+      value: checkInTimestampMs,
+    );
 
     await FlutterForegroundTask.startService(
-      serviceId: 102, // Different ID than your GPS journey (101)
+      serviceId: 102,
       notificationTitle: title,
       notificationText: subtitle,
       callback: startDvrTimerTaskCallback,
@@ -50,5 +65,7 @@ class DvrTimerForegroundService {
     if (await FlutterForegroundTask.isRunningService) {
       await FlutterForegroundTask.stopService();
     }
+    // 🚀 ANTI-GLITCH: Wipe the memory so the next check-in starts totally fresh
+    await FlutterForegroundTask.clearAllData();
   }
 }

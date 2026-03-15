@@ -9,18 +9,15 @@ import 'package:geocoding/geocoding.dart';
 import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
 import 'package:salesmanapp/core/feature_flags/sales_flags.dart';
-
-
 import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
 import 'package:salesmanapp/screens/forms/create_dvr.dart';
 import 'package:salesmanapp/screens/forms/create_competition_form.dart';
 import 'package:salesmanapp/screens/employee_management/employee_salesorder_screen.dart';
 import 'package:salesmanapp/screens/employee_management/team_view_list_screen.dart';
-import 'dart:async'; // 🚀 Added for StreamSubscription
-// 🚀 Added for Network Detection
+import 'dart:async'; 
 import 'package:salesmanapp/technicalSide/utils/dvrworker.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:salesmanapp/database/app_database.dart';
+// import 'package:salesmanapp/database/app_database.dart';
 //import 'package:salesmanapp/api/auth_service.dart';
 
 // ---------------------------------------------------------------------------
@@ -259,7 +256,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     if (mounted) {
       _setGreeting();
       _checkAttendanceStatus();
-      syncOfflineDealers();
+      // syncOfflineDealers();
     }
   }
 
@@ -458,106 +455,106 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     );
   }
 
-  Future<void> syncOfflineDealers() async {
-    try {
-      int page = 1;
-      int totalSynced = 0;
-      bool hasMore = true;
-      const int batchSize = 500; // fetch 500 at a time since backend GET() caps at 500
+  // Future<void> syncOfflineDealers() async {
+  //   try {
+  //     int page = 1;
+  //     int totalSynced = 0;
+  //     bool hasMore = true;
+  //     const int batchSize = 500; // fetch 500 at a time since backend GET() caps at 500
 
-      // 1. Initial Loading UI
-      ScaffoldMessenger.of(context).clearSnackBars();
-      // ScaffoldMessenger.of(context).showSnackBar(
-      //   SnackBar(
-      //     content: Row(
-      //       children: const [
-      //         SizedBox(
-      //           width: 20,
-      //           height: 20,
-      //           child: CircularProgressIndicator(
-      //             color: Colors.white,
-      //             strokeWidth: 2,
-      //           ),
-      //         ),
-      //         SizedBox(width: 16),
-      //         Expanded(child: Text("Starting offline dealer sync...")),
-      //       ],
-      //     ),
-      //     duration: const Duration(days: 1), // Stays open while we loop
-      //     backgroundColor: const Color(0xFF0F172A),
-      //   ),
-      // );
+  //     // 1. Initial Loading UI
+  //     ScaffoldMessenger.of(context).clearSnackBars();
+  //     // ScaffoldMessenger.of(context).showSnackBar(
+  //     //   SnackBar(
+  //     //     content: Row(
+  //     //       children: const [
+  //     //         SizedBox(
+  //     //           width: 20,
+  //     //           height: 20,
+  //     //           child: CircularProgressIndicator(
+  //     //             color: Colors.white,
+  //     //             strokeWidth: 2,
+  //     //           ),
+  //     //         ),
+  //     //         SizedBox(width: 16),
+  //     //         Expanded(child: Text("Starting offline dealer sync...")),
+  //     //       ],
+  //     //     ),
+  //     //     duration: const Duration(days: 1), // Stays open while we loop
+  //     //     backgroundColor: const Color(0xFF0F172A),
+  //     //   ),
+  //     // );
 
-      // 2. The Pagination Loop
-      while (hasMore) {
-        final batch = await _apiService.fetchDealers(
-          search: "",
-          limit: batchSize,
-          page: page,
-        );
+  //     // 2. The Pagination Loop
+  //     while (hasMore) {
+  //       final batch = await _apiService.fetchDealers(
+  //         search: "",
+  //         limit: batchSize,
+  //         page: page,
+  //       );
 
-        if (batch.isEmpty) {
-          hasMore = false; // We've reached the end!
-        } else {
-          // Push batch to Drift
-          final List<Map<String, dynamic>> dealerJsonList = batch
-              .map((d) => d.toJson())
-              .toList();
+  //       if (batch.isEmpty) {
+  //         hasMore = false; // We've reached the end!
+  //       } else {
+  //         // Push batch to Drift
+  //         final List<Map<String, dynamic>> dealerJsonList = batch
+  //             .map((d) => d.toJson())
+  //             .toList();
 
-          await AppDatabase.instance.syncDealersToLocal(dealerJsonList);
+  //         await AppDatabase.instance.syncDealersToLocal(dealerJsonList);
 
-          totalSynced += batch.length;
-          page++;
+  //         totalSynced += batch.length;
+  //         page++;
 
-          // Live UI Update 
-          // if (mounted) {
-          //   ScaffoldMessenger.of(context).clearSnackBars();
-          //   ScaffoldMessenger.of(context).showSnackBar(
-          //     SnackBar(
-          //       content: Text(
-          //         "Downloading... $totalSynced dealers saved locally.",
-          //       ),
-          //       duration: const Duration(days: 1),
-          //       backgroundColor: const Color(0xFF0F172A),
-          //     ),
-          //   );
-          // }
+  //         // Live UI Update 
+  //         // if (mounted) {
+  //         //   ScaffoldMessenger.of(context).clearSnackBars();
+  //         //   ScaffoldMessenger.of(context).showSnackBar(
+  //         //     SnackBar(
+  //         //       content: Text(
+  //         //         "Downloading... $totalSynced dealers saved locally.",
+  //         //       ),
+  //         //       duration: const Duration(days: 1),
+  //         //       backgroundColor: const Color(0xFF0F172A),
+  //         //     ),
+  //         //   );
+  //         // }
 
-          // If the server returned less than the batch size, it was the last page
-          if (batch.length < batchSize) {
-            hasMore = false;
-          }
-        }
-      }
+  //         // If the server returned less than the batch size, it was the last page
+  //         if (batch.length < batchSize) {
+  //           hasMore = false;
+  //         }
+  //       }
+  //     }
 
-      final count = await AppDatabase.instance.getLocalDealersCount();
+  //     final count = await AppDatabase.instance.getLocalDealersCount();
 
-      // 3. Success UI
-      // if (mounted) {
-      //   ScaffoldMessenger.of(context).clearSnackBars();
-      //   ScaffoldMessenger.of(context).showSnackBar(
-      //     SnackBar(
-      //       content: Text(
-      //         "✅ Sync Complete! Downloaded $totalSynced. Total in Vault: $count",
-      //       ),
-      //       backgroundColor: Colors.green,
-      //       duration: const Duration(seconds: 4),
-      //     ),
-      //   );
-      // }
-    } catch (e) {
-      debugPrint("🚨 SYNC ERROR: $e");
-      // if (mounted) {
-      //   ScaffoldMessenger.of(context).clearSnackBars();
-      //   ScaffoldMessenger.of(context).showSnackBar(
-      //     SnackBar(
-      //       content: Text("Sync stopped at error: $e"),
-      //       backgroundColor: Colors.red,
-      //     ),
-      //   );
-      // }
-    }
-  }
+  //     // 3. Success UI
+  //     // if (mounted) {
+  //     //   ScaffoldMessenger.of(context).clearSnackBars();
+  //     //   ScaffoldMessenger.of(context).showSnackBar(
+  //     //     SnackBar(
+  //     //       content: Text(
+  //     //         "✅ Sync Complete! Downloaded $totalSynced. Total in Vault: $count",
+  //     //       ),
+  //     //       backgroundColor: Colors.green,
+  //     //       duration: const Duration(seconds: 4),
+  //     //     ),
+  //     //   );
+  //     // }
+  //   } catch (e) {
+  //     debugPrint("🚨 SYNC ERROR: $e");
+  //     // if (mounted) {
+  //     //   ScaffoldMessenger.of(context).clearSnackBars();
+  //     //   ScaffoldMessenger.of(context).showSnackBar(
+  //     //     SnackBar(
+  //     //       content: Text("Sync stopped at error: $e"),
+  //     //       backgroundColor: Colors.red,
+  //     //     ),
+  //     //   );
+  //     // }
+  //   }
+  // }
 
   Future<Position?> _getCurrentPosition() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();

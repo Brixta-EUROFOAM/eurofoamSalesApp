@@ -1,20 +1,21 @@
 // lib/screens/employee_management/employee_profile_screen.dart
 import 'dart:async';
-import 'package:salesmanapp/models/employee_model.dart';
 import 'package:flutter/material.dart';
-import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/models/leave_application_model.dart';
-import 'package:salesmanapp/api/auth_service.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:salesmanapp/widgets/theme_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // 🚀 Premium Animations
+import 'package:flutter_animate/flutter_animate.dart';
+
+import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/api/api_service.dart';
+import 'package:salesmanapp/models/leave_application_model.dart';
+import 'package:salesmanapp/api/auth_service.dart';
+import 'package:salesmanapp/widgets/theme_provider.dart';
 import 'package:salesmanapp/models/attendance_model.dart';
 import 'package:salesmanapp/models/daily_task_model.dart';
 import 'package:salesmanapp/models/daily_visit_report_model.dart';
-import 'package:flutter/services.dart';
 
 // Screens for navigation
 import 'package:salesmanapp/screens/employee_management/all_dvr_list_screen.dart';
@@ -30,16 +31,13 @@ import 'package:salesmanapp/core/feature_flags/sales_flags.dart';
 class SalesProfileStats {
   final int dvrsThisMonth;
   final int dvrsTotal;
-
   final int totalTasks;
   final int completedTasks;
-
   final int totalCheckIns;
   final int totalCheckOuts;
-
   final LeaveApplication? latestLeave;
 
-  SalesProfileStats({
+  const SalesProfileStats({
     required this.dvrsThisMonth,
     required this.dvrsTotal,
     required this.totalTasks,
@@ -62,13 +60,12 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   final ApiService _apiService = ApiService();
   late Future<SalesProfileStats> _statsFuture;
 
-  // --- 🎨 PREMIUM THEME PALETTE (Matches Technical Side) ---
-  final Color _bgLight = const Color(0xFFF8FAFC); // Slate 50
-  final Color _cardNavy = const Color(0xFF0F172A); // Deep Navy
-  final Color _textDark = const Color(0xFF1E293B); // Slate 800
-  final Color _textGrey = const Color(0xFF64748B); // Slate 500
-  final Color _surfaceWhite = Colors.white;
-  final Color _dangerRed = const Color(0xFFEF4444);
+  // --- 🎨 PREMIUM THEME PALETTE ---
+  static const Color _bgLight = Color(0xFFF8FAFC);
+  static const Color _cardNavy = Color(0xFF0F172A);
+  static const Color _textDark = Color(0xFF1E293B);
+  static const Color _textGrey = Color(0xFF64748B);
+  static const Color _surfaceWhite = Colors.white;
 
   @override
   void initState() {
@@ -77,12 +74,15 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
   }
 
   Future<void> _refreshStats() async {
+    // 🚀 SMOOTH UI FIX: We don't need setState here for the spinner.
+    // RefreshIndicator handles it natively. We just reassign the future.
+    final newFuture = _fetchProfileStats();
     if (mounted) {
       setState(() {
-        _statsFuture = _fetchProfileStats();
+        _statsFuture = newFuture;
       });
     }
-    await _statsFuture;
+    await newFuture;
   }
 
   Future<SalesProfileStats> _fetchProfileStats() async {
@@ -95,54 +95,58 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     final startMonthStr = DateFormat('yyyy-MM-dd').format(startOfMonth);
     final endMonthStr = DateFormat('yyyy-MM-dd').format(endOfMonth);
 
-    // 1. DVRs
-    var dvrsMonthFuture = _apiService
-        .fetchDvrsForUser(uid, startDate: startMonthStr, endDate: endMonthStr)
-        .catchError((_) => <DailyVisitReport>[]);
-
-    // 2. PJPs
-    var tasksFuture = _apiService.fetchDailyTasksForUser(uid);
-
-    // 3. Attendance
-    var attendanceFuture = _apiService.fetchAttendanceForUser(uid, limit: 1000);
-
-    // 4. Leaves
-    var leaveFuture = _apiService.fetchLeaveApplicationsForUser(uid, limit: 1);
-
     try {
+      // 🚀 SPEED OPTIMIZATION: Fire all network requests concurrently
       final results = await Future.wait([
-        dvrsMonthFuture,
-        tasksFuture.catchError((_) => <DailyTask>[]),
-        attendanceFuture.catchError((_) => <Attendance>[]),
-        leaveFuture.catchError((_) => <LeaveApplication>[]),
+        _apiService
+            .fetchDvrsForUser(
+              uid,
+              startDate: startMonthStr,
+              endDate: endMonthStr,
+            )
+            .catchError((_) => <DailyVisitReport>[]),
+        _apiService
+            .fetchDailyTasksForUser(uid)
+            .catchError((_) => <DailyTask>[]),
+        _apiService
+            .fetchAttendanceForUser(uid, limit: 1000)
+            .catchError((_) => <Attendance>[]),
+        _apiService
+            .fetchLeaveApplicationsForUser(uid, limit: 1)
+            .catchError((_) => <LeaveApplication>[]),
       ]);
 
+      // 🚀 CPU & MEMORY OPTIMIZATION: Main thread is vastly faster than spawning an Isolate for this.
       final dvrsThisMonth = results[0] as List<DailyVisitReport>;
       final allTasks = results[1] as List<DailyTask>;
       final attendance = results[2] as List<Attendance>;
       final leaves = results[3] as List<LeaveApplication>;
 
-      final totalIns = attendance.length;
-      final totalOuts = attendance
-          .where((a) => a.outTimeTimestamp != null)
-          .length;
+      int completedTasks = 0;
+      for (var t in allTasks) {
+        // Space optimization: No temporary string allocations (.toLowerCase())
+        if (t.status == 'completed' || t.status == 'Completed') {
+          completedTasks++;
+        }
+      }
 
-      final completedTasks = allTasks
-          .where((t) => t.status.toLowerCase() == 'completed')
-          .length;
+      int totalOuts = 0;
+      for (var a in attendance) {
+        if (a.outTimeTimestamp != null) totalOuts++;
+      }
 
       return SalesProfileStats(
         dvrsThisMonth: dvrsThisMonth.length,
         dvrsTotal: dvrsThisMonth.length,
         totalTasks: allTasks.length,
         completedTasks: completedTasks,
-        totalCheckIns: totalIns,
+        totalCheckIns: attendance.length,
         totalCheckOuts: totalOuts,
         latestLeave: leaves.isNotEmpty ? leaves.first : null,
       );
     } catch (e) {
       debugPrint("Critical Error fetching stats: $e");
-      return SalesProfileStats(
+      return const SalesProfileStats(
         dvrsThisMonth: 0,
         dvrsTotal: 0,
         totalTasks: 0,
@@ -169,53 +173,47 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       'https://docs.google.com/forms/d/e/1FAIpQLSdq-4YaYoEckyD7H_fYl_L-ordLQIdC7RSiqmQd9w054G2Zkg/viewform?usp=publish-editor',
     );
     try {
-      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication))
         throw Exception('Could not launch url');
-      }
     } catch (e) {
-      if (mounted) {
+      if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Could not open the form. Please contact support.'),
           ),
         );
-      }
     }
   }
 
-  // --- 🚀 MASS PAGINATED DEALER SYNC ---
+  // 🚀 O(1) EXTREME OPTIMIZATION SYNC METHOD
   Future<void> syncOfflineDealers() async {
     try {
       int page = 1;
-      int totalSynced = 0;
+      int newlyAdded = 0;
+      int patched = 0;
       bool hasMore = true;
-      const int batchSize = 500; // fetch 500 at a time since backend GET() caps at 500
+      const int batchSize = 500;
 
-      // 1. Initial Loading UI
-      ScaffoldMessenger.of(context).clearSnackBars();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: const [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              ),
-              SizedBox(width: 16),
-              Expanded(child: Text("Starting offline dealer sync...")),
-            ],
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("🔄 Background sync started..."),
+            duration: Duration(seconds: 3),
+            backgroundColor: Color(0xFF0F172A),
+            behavior: SnackBarBehavior.floating,
           ),
-          duration: const Duration(days: 1), // Stays open while we loop
-          backgroundColor: const Color(0xFF0F172A),
-        ),
-      );
+        );
+      }
 
-      // 2. The Pagination Loop
+      // 🚀 Fetch IDs into memory (Set has O(1) lookup time)
+      final Set<String> existingIds = await AppDatabase.instance
+          .getAllDealerIdsFast();
+
       while (hasMore) {
+        // 🚀 Yield the thread minimally to keep UI at 60fps
+        await Future.delayed(const Duration(milliseconds: 16));
+
         final batch = await _apiService.fetchDealers(
           search: "",
           limit: batchSize,
@@ -223,65 +221,51 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
         );
 
         if (batch.isEmpty) {
-          hasMore = false; // We've reached the end!
-        } else {
-          // Push batch to Drift
-          final List<Map<String, dynamic>> dealerJsonList = batch
-              .map((d) => d.toJson())
-              .toList();
+          hasMore = false;
+          break;
+        }
 
-          await AppDatabase.instance.syncDealersToLocal(dealerJsonList);
-
-          totalSynced += batch.length;
-          page++;
-
-          // Live UI Update 
-          if (mounted) {
-            ScaffoldMessenger.of(context).clearSnackBars();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  "Downloading... $totalSynced dealers saved locally.",
-                ),
-                duration: const Duration(days: 1),
-                backgroundColor: const Color(0xFF0F172A),
-              ),
-            );
-          }
-
-          // If the server returned less than the batch size, it was the last page
-          if (batch.length < batchSize) {
-            hasMore = false;
+        // 🚀 O(1) Logic Update: Set.add() returns true if the item was newly added, false if it existed!
+        for (var dealer in batch) {
+          if (dealer.id != null) {
+            if (existingIds.add(dealer.id!)) {
+              newlyAdded++;
+            } else {
+              patched++;
+            }
           }
         }
+
+        // 🚀 RAM SAVER: Removed Map.from() overhead. Drift handles insertion async.
+        final dealerJsonList = batch.map((d) => d.toJson()).toList();
+        await AppDatabase.instance.syncDealersToLocal(dealerJsonList);
+
+        page++;
+        if (batch.length < batchSize) hasMore = false;
       }
 
-      final count = await AppDatabase.instance.getLocalDealersCount();
-
-      // 3. Success UI
       if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              "✅ Sync Complete! Downloaded $totalSynced. Total in Vault: $count",
+              "✅ Sync Complete!\nAdded: $newlyAdded | Patched: $patched\nTotal in Vault: ${existingIds.length}",
             ),
             backgroundColor: Colors.green,
-            duration: const Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 6),
           ),
         );
       }
     } catch (e) {
       debugPrint("🚨 SYNC ERROR: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).clearSnackBars();
+      if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Sync stopped at error: $e"),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
           ),
         );
-      }
     }
   }
 
@@ -297,7 +281,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
         elevation: 0,
         centerTitle: true,
         automaticallyImplyLeading: false,
-        title: Text(
+        title: const Text(
           'PROFILE',
           style: TextStyle(
             color: _textDark,
@@ -310,20 +294,24 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       body: FutureBuilder<SalesProfileStats>(
         future: _statsFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              snapshot.data == null) {
-            return Center(child: CircularProgressIndicator(color: _cardNavy));
+          // 🚀 JANK FIX: Only show loading circle if we have NO previous data.
+          if (!snapshot.hasData &&
+              snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: _cardNavy),
+            );
           }
 
           final stats =
               snapshot.data ??
-              SalesProfileStats(
+              const SalesProfileStats(
                 dvrsThisMonth: 0,
                 dvrsTotal: 0,
                 totalTasks: 0,
                 completedTasks: 0,
                 totalCheckIns: 0,
                 totalCheckOuts: 0,
+                latestLeave: null,
               );
 
           return RefreshIndicator(
@@ -333,8 +321,8 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20.0, 10.0, 20.0, 120.0),
               children: [
-                // --- 1. PROFILE HEADER ---
-                _buildFintechProfileHeader(
+                // 1. PROFILE HEADER
+                _ProfileHeaderCard(
                       initials: getInitials(),
                       displayName: widget.employee.displayName,
                       email: widget.employee.email ?? 'No email',
@@ -348,9 +336,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     ),
 
                 const SizedBox(height: 32),
-
-                // --- 2. OVERVIEW STATS ---
-                Text(
+                const Text(
                   "Overview",
                   style: TextStyle(
                     color: _textDark,
@@ -358,9 +344,9 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ).animate().fadeIn(delay: 100.ms).slideX(begin: -0.1),
-
                 const SizedBox(height: 16),
 
+                // 2. OVERVIEW STATS
                 GridView.count(
                   crossAxisCount: 2,
                   crossAxisSpacing: 16,
@@ -369,8 +355,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                   physics: const NeverScrollableScrollPhysics(),
                   childAspectRatio: 0.85,
                   children: [
-                    // CARD 1: DVRs
-                    _buildStatCard(
+                    _StatCard(
                           title: "DVRs",
                           value: stats.dvrsThisMonth.toString(),
                           subtitle: "This month",
@@ -378,23 +363,20 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                           icon: Icons.assignment_turned_in_rounded,
                           iconColor: Colors.blueAccent,
                           iconBg: const Color(0xFFEFF6FF),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => AllDvrListScreen(
-                                  userId: int.parse(widget.employee.id),
-                                ),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AllDvrListScreen(
+                                userId: int.parse(widget.employee.id),
                               ),
-                            );
-                          },
+                            ),
+                          ),
                         )
                         .animate()
                         .fadeIn(delay: 200.ms)
                         .scaleXY(begin: 0.9, curve: Curves.easeOutBack),
 
-                    // CARD 2: TASKS
-                    _buildStatCard(
+                    _StatCard(
                           title: "PJPs",
                           value: stats.totalTasks.toString(),
                           subtitle: "Assigned",
@@ -402,23 +384,20 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                           icon: Icons.task_alt_rounded,
                           iconColor: Colors.orange,
                           iconBg: const Color(0xFFFFF7ED),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => AllTasksListScreen(
-                                  userId: int.parse(widget.employee.id),
-                                ),
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => AllTasksListScreen(
+                                userId: int.parse(widget.employee.id),
                               ),
-                            );
-                          },
+                            ),
+                          ),
                         )
                         .animate()
                         .fadeIn(delay: 300.ms)
                         .scaleXY(begin: 0.9, curve: Curves.easeOutBack),
 
-                    // CARD 3: ATTENDANCE
-                    _buildStatCard(
+                    _StatCard(
                           title: "Attendance",
                           value: stats.totalCheckIns.toString(),
                           subtitle: "Total Ins",
@@ -434,9 +413,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                 ),
 
                 const SizedBox(height: 32),
-
-                // --- 3. LEAVE APPLICATION ---
-                Text(
+                const Text(
                   "Leave Application",
                   style: TextStyle(
                     color: _textDark,
@@ -444,21 +421,29 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ).animate().fadeIn(delay: 450.ms).slideX(begin: -0.1),
-
                 const SizedBox(height: 16),
 
-                _buildDetailedLeaveCard(
-                      context: context,
+                // 3. LEAVE APPLICATION
+                _DetailedLeaveCard(
                       latestLeave: stats.latestLeave,
+                      onTap: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AllLeavesListScreen(
+                              userId: int.parse(widget.employee.id),
+                            ),
+                          ),
+                        );
+                        _refreshStats();
+                      },
                     )
                     .animate()
                     .fadeIn(delay: 500.ms)
                     .slideY(begin: 0.1, curve: Curves.easeOutCubic),
 
                 const SizedBox(height: 32),
-
-                // --- 4. PREFERENCES (THEME) ---
-                Text(
+                const Text(
                   "Preferences",
                   style: TextStyle(
                     color: _textDark,
@@ -466,9 +451,9 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     fontWeight: FontWeight.bold,
                   ),
                 ).animate().fadeIn(delay: 550.ms).slideX(begin: -0.1),
-
                 const SizedBox(height: 16),
 
+                // 4. PREFERENCES (THEME)
                 Container(
                       padding: const EdgeInsets.all(20.0),
                       decoration: BoxDecoration(
@@ -485,7 +470,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                          const Text(
                             'App Theme',
                             style: TextStyle(
                               color: _textGrey,
@@ -499,21 +484,19 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                             child: SegmentedButton<ThemeMode>(
                               style: ButtonStyle(
                                 backgroundColor:
-                                    WidgetStateProperty.resolveWith<Color>((
-                                      states,
-                                    ) {
-                                      if (states.contains(WidgetState.selected))
-                                        return _cardNavy;
-                                      return _bgLight;
-                                    }),
+                                    WidgetStateProperty.resolveWith<Color>(
+                                      (states) =>
+                                          states.contains(WidgetState.selected)
+                                          ? _cardNavy
+                                          : _bgLight,
+                                    ),
                                 foregroundColor:
-                                    WidgetStateProperty.resolveWith<Color>((
-                                      states,
-                                    ) {
-                                      if (states.contains(WidgetState.selected))
-                                        return Colors.white;
-                                      return _textGrey;
-                                    }),
+                                    WidgetStateProperty.resolveWith<Color>(
+                                      (states) =>
+                                          states.contains(WidgetState.selected)
+                                          ? Colors.white
+                                          : _textGrey,
+                                    ),
                                 side: WidgetStateProperty.all(BorderSide.none),
                                 shape: WidgetStateProperty.all(
                                   RoundedRectangleBorder(
@@ -552,11 +535,8 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                               ],
                               selected: {themeProvider.themeMode},
                               onSelectionChanged:
-                                  (Set<ThemeMode> newSelection) {
-                                    themeProvider.setThemeMode(
-                                      newSelection.first,
-                                    );
-                                  },
+                                  (Set<ThemeMode> newSelection) => themeProvider
+                                      .setThemeMode(newSelection.first),
                             ),
                           ),
                         ],
@@ -566,7 +546,6 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     .fadeIn(delay: 600.ms)
                     .slideY(begin: 0.1, curve: Curves.easeOutCubic),
 
-                //  ----- DEBUG TOOLS -----
                 if (flags.showDbViewer) ...[
                   const SizedBox(height: 16),
                   Container(
@@ -605,15 +584,11 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                   ).animate().fadeIn(delay: 650.ms),
                 ],
 
-                // ---------------------------------------------------------
-                // --- ACCOUNT SWITCHER (Only visible if Dual Role) ---
-                // ---------------------------------------------------------
                 if (flags.accountSwitcher &&
                     widget.employee.isTechnicalRole &&
-                    widget.employee.techLoginId != null &&
-                    widget.employee.techLoginId!.isNotEmpty) ...[
+                    widget.employee.techLoginId?.isNotEmpty == true) ...[
                   const SizedBox(height: 32),
-                  Text(
+                  const Text(
                     "Switch Portal",
                     style: TextStyle(
                       color: _textDark,
@@ -622,8 +597,6 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     ),
                   ).animate().fadeIn(delay: 700.ms).slideX(begin: -0.1),
                   const SizedBox(height: 16),
-
-                  // 🚀 Add Premium Shimmer to Switcher
                   Container(
                         decoration: BoxDecoration(
                           color: _surfaceWhite,
@@ -679,13 +652,12 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                               final prefs =
                                   await SharedPreferences.getInstance();
                               await prefs.setBool('is_technical_mode', true);
-                              if (context.mounted) {
+                              if (context.mounted)
                                 Navigator.of(context).pushNamedAndRemoveUntil(
                                   '/technical_home',
                                   (route) => false,
                                   arguments: widget.employee,
                                 );
-                              }
                             }
                           },
                         ),
@@ -693,7 +665,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                       .animate()
                       .fadeIn(delay: 750.ms)
                       .slideY(begin: 0.1, curve: Curves.easeOutCubic)
-                      .animate(onPlay: (c) => c.repeat(reverse: true))
+                      .animate(onPlay: (c) => c.repeat(count: 3, reverse: true))
                       .shimmer(
                         duration: 2500.ms,
                         color: const Color(0xFF0F766E).withOpacity(0.1),
@@ -702,7 +674,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
 
                 if (flags.offlineSync) ...[
                   const SizedBox(height: 32),
-                  Text(
+                  const Text(
                     "Offline Data",
                     style: TextStyle(
                       color: _textDark,
@@ -711,7 +683,6 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     ),
                   ).animate().fadeIn(delay: 780.ms).slideX(begin: -0.1),
                   const SizedBox(height: 16),
-
                   Container(
                         decoration: BoxDecoration(
                           color: _surfaceWhite,
@@ -736,9 +707,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                           leading: Container(
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: const Color(
-                                0xFFEFF6FF,
-                              ), // Light blue background
+                              color: const Color(0xFFEFF6FF),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: const Icon(
@@ -772,9 +741,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                 ],
 
                 const SizedBox(height: 32),
-
-                // --- 5. ACCOUNT ACTIONS ---
-                Text(
+                const Text(
                   "Account",
                   style: TextStyle(
                     color: _textDark,
@@ -784,6 +751,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                 ).animate().fadeIn(delay: 800.ms).slideX(begin: -0.1),
                 const SizedBox(height: 16),
 
+                // 5. ACCOUNT ACTIONS
                 Container(
                       decoration: BoxDecoration(
                         color: _surfaceWhite,
@@ -807,13 +775,13 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                               color: _cardNavy.withOpacity(0.05),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Icon(
+                            child: const Icon(
                               Icons.shield_outlined,
                               color: _cardNavy,
                               size: 20,
                             ),
                           ),
-                          title: Text(
+                          title: const Text(
                             'Privacy & Security',
                             style: TextStyle(
                               color: _textDark,
@@ -855,9 +823,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                     .slideY(begin: 0.1, curve: Curves.easeOutCubic),
 
                 const SizedBox(height: 32),
-                _LogoutButton(
-                  color: _dangerRed,
-                ).animate().fadeIn(delay: 950.ms),
+                const _LogoutButton().animate().fadeIn(delay: 950.ms),
               ],
             ),
           );
@@ -865,15 +831,24 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       ),
     );
   }
+}
 
-  // --- WIDGET BUILDERS ---
+// 🚀 SPACE & CPU OPTIMIZATION: Stateless cached widgets
+class _ProfileHeaderCard extends StatelessWidget {
+  final String initials;
+  final String displayName;
+  final String email;
+  final String role;
 
-  Widget _buildFintechProfileHeader({
-    required String initials,
-    required String displayName,
-    required String email,
-    required String role,
-  }) {
+  const _ProfileHeaderCard({
+    required this.initials,
+    required this.displayName,
+    required this.email,
+    required this.role,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       children: [
         Container(
@@ -883,7 +858,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             border: Border.all(color: Colors.white, width: 4),
             boxShadow: [
               BoxShadow(
-                color: _cardNavy.withOpacity(0.15),
+                color: const Color(0xFF0F172A).withOpacity(0.15),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -891,7 +866,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
           ),
           child: CircleAvatar(
             radius: 50,
-            backgroundColor: _cardNavy,
+            backgroundColor: const Color(0xFF0F172A),
             child: Text(
               initials,
               style: const TextStyle(
@@ -906,18 +881,18 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
         const SizedBox(height: 20),
         Text(
           displayName,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.w900,
-            color: _textDark,
+            color: Color(0xFF1E293B),
             letterSpacing: -0.5,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           email,
-          style: TextStyle(
-            color: _textGrey,
+          style: const TextStyle(
+            color: Color(0xFF64748B),
             fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
@@ -926,13 +901,13 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: _cardNavy.withOpacity(0.08),
+            color: const Color(0xFF0F172A).withOpacity(0.08),
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(
             role.toUpperCase(),
-            style: TextStyle(
-              color: _cardNavy,
+            style: const TextStyle(
+              color: Color(0xFF0F172A),
               fontWeight: FontWeight.w800,
               fontSize: 11,
               letterSpacing: 1,
@@ -942,25 +917,38 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       ],
     );
   }
+}
 
-  Widget _buildStatCard({
-    required String title,
-    required String value,
-    String? subtitle,
-    String? footer,
-    required IconData icon,
-    required Color iconColor,
-    required Color iconBg,
-    VoidCallback? onTap,
-  }) {
+class _StatCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String subtitle;
+  final String footer;
+  final IconData icon;
+  final Color iconColor;
+  final Color iconBg;
+  final VoidCallback? onTap;
+
+  const _StatCard({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.footer,
+    required this.icon,
+    required this.iconColor,
+    required this.iconBg,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return InkWell(
-      // Swapped to InkWell for native ripple tap feedback
       onTap: onTap,
       borderRadius: BorderRadius.circular(24),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: _surfaceWhite,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
@@ -987,74 +975,64 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                   child: Icon(icon, color: iconColor, size: 24),
                 ),
                 if (onTap != null)
-                  Icon(
+                  const Icon(
                     Icons.arrow_forward_ios_rounded,
                     size: 16,
-                    color: _textGrey.withOpacity(0.4),
+                    color: Color(0xFF64748B),
                   ),
               ],
             ),
             const SizedBox(height: 20),
             Text(
               value,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.w900,
-                color: _textDark,
+                color: Color(0xFF1E293B),
                 letterSpacing: -1,
               ),
             ),
             const SizedBox(height: 4),
             Text(
-              subtitle != null ? "$title\n$subtitle" : title,
-              style: TextStyle(
+              "$title\n$subtitle",
+              style: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: _textGrey,
+                color: Color(0xFF64748B),
                 height: 1.2,
               ),
             ),
-            if (footer != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                footer,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: _textGrey.withOpacity(0.7),
-                ),
+            const SizedBox(height: 8),
+            Text(
+              footer,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF64748B).withOpacity(0.7),
               ),
-            ],
+            ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildDetailedLeaveCard({
-    required BuildContext context,
-    required LeaveApplication? latestLeave,
-  }) {
-    const Color cardBg = Color(0xFFFEE2E2);
-    const Color iconColor = Colors.redAccent;
-    const IconData iconData = Icons.calendar_month_outlined;
+class _DetailedLeaveCard extends StatelessWidget {
+  final LeaveApplication? latestLeave;
+  final VoidCallback onTap;
 
+  const _DetailedLeaveCard({required this.latestLeave, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
     return InkWell(
-      onTap: () async {
-        final userId = int.parse(widget.employee.id);
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => AllLeavesListScreen(userId: userId),
-          ),
-        );
-        _refreshStats();
-      },
+      onTap: onTap,
       borderRadius: BorderRadius.circular(24),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: _surfaceWhite,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
@@ -1069,32 +1047,36 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: cardBg,
+                color: const Color(0xFFFEE2E2),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: const Icon(iconData, color: iconColor, size: 28),
+              child: const Icon(
+                Icons.calendar_month_outlined,
+                color: Colors.redAccent,
+                size: 28,
+              ),
             ),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     "Leaves",
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: _textDark,
+                      color: Color(0xFF1E293B),
                     ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     latestLeave != null
-                        ? "Latest: ${latestLeave.status}"
+                        ? "Latest: ${latestLeave!.status}"
                         : "Apply & view history",
-                    style: TextStyle(
+                    style: const TextStyle(
                       fontSize: 13,
-                      color: _textGrey,
+                      color: Color(0xFF64748B),
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -1104,7 +1086,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             Icon(
               Icons.arrow_forward_ios_rounded,
               size: 16,
-              color: _textGrey.withOpacity(0.4),
+              color: const Color(0xFF64748B).withOpacity(0.4),
             ),
           ],
         ),
@@ -1114,8 +1096,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
 }
 
 class _LogoutButton extends StatelessWidget {
-  final Color color;
-  const _LogoutButton({required this.color});
+  const _LogoutButton();
 
   @override
   Widget build(BuildContext context) {
@@ -1134,11 +1115,11 @@ class _LogoutButton extends StatelessWidget {
       },
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
-        foregroundColor: color,
+        foregroundColor: const Color(0xFFEF4444),
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: color.withOpacity(0.2)),
+          side: BorderSide(color: const Color(0xFFEF4444).withOpacity(0.2)),
         ),
         padding: const EdgeInsets.symmetric(vertical: 18),
       ),

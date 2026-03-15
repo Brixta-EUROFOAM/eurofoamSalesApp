@@ -1,33 +1,78 @@
 // lib/screens/create_dvr_screen.dart
 
 import 'dart:async';
-import 'package:flutter/scheduler.dart';
 import 'dart:io';
-import 'dart:developer' as dev; // 🚀 ADDED FOR LOGGING
+import 'dart:isolate';
+import 'dart:ui' as ui;
+import 'dart:developer' as dev;
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 🔥 ADDED FOR HAPTICS
+import 'package:flutter/services.dart';
+import 'package:flutter/rendering.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
-import 'package:uuid/uuid.dart'; // 🚀 ADDED FOR IDEMPOTENCY KEY
-
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:uuid/uuid.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:salesmanapp/services/dvrTimerFgTaskHandler/dvr_timer_foreground_service.dart';
-
 import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/database/app_database.dart'; // 🚀 ADDED FOR OFFLINE VAULT
+import 'package:salesmanapp/database/app_database.dart';
 import 'package:salesmanapp/models/daily_visit_report_model.dart';
 import 'package:salesmanapp/models/dealer_model.dart';
 import 'package:salesmanapp/models/employee_model.dart';
 import 'package:salesmanapp/models/pjp_model.dart';
-import 'package:salesmanapp/technicalSide/utils/dvrworker.dart'; // 🚀 IMPORTED BACKGROUND WORKER
+import 'package:salesmanapp/technicalSide/utils/dvrworker.dart';
 
 import 'package:salesmanapp/screens/dvrwidgets/dvr_dealer_form.dart';
 import 'package:salesmanapp/screens/dvrwidgets/dvr_nontrade_form.dart';
-//import 'package:salesmanapp/screens/dvrwidgets/dvr_mis_form.dart'; //MIS form on hold
 import 'package:salesmanapp/screens/dvrwidgets/dvr_camera.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:flutter/rendering.dart';
-import 'package:path_provider/path_provider.dart';
-import 'dart:ui' as ui;
+
+/// 🚀 THE BACKGROUND ISOLATE WORKER (100% Main-Thread Safe)
+/// Placed outside the class so the Isolate can access it without closure context bloat.
+Future<List<Dealer>> _parseDealersInBackground(
+  List<Map<String, dynamic>> rawData,
+) async {
+  return await Isolate.run(() {
+    List<Dealer> parsedDealers = [];
+    for (var d in rawData) {
+      try {
+        // Create a strict copy to PREVENT ConcurrentModificationError
+        Map<String, dynamic> safeMap = Map<String, dynamic>.from(d);
+
+        d.forEach((key, value) {
+          if (value is int &&
+              (key.toLowerCase().contains('date') ||
+                  key.toLowerCase().contains('time') ||
+                  key == 'createdAt' ||
+                  key == 'updatedAt')) {
+            safeMap[key] = DateTime.fromMillisecondsSinceEpoch(
+              value * 1000,
+            ).toIso8601String();
+          }
+        });
+
+        if (safeMap['brandSelling'] != null &&
+            safeMap['brandSelling'] is String) {
+          try {
+            safeMap['brandSelling'] = jsonDecode(safeMap['brandSelling']);
+          } catch (_) {
+            safeMap['brandSelling'] = [];
+          }
+        }
+
+        safeMap['id'] = safeMap['id']?.toString();
+        safeMap['phoneNo'] = safeMap['phoneNo']?.toString();
+        safeMap['type'] = safeMap['type']?.toString() ?? 'Dealer';
+
+        parsedDealers.add(Dealer.fromJson(safeMap));
+      } catch (e) {
+        // Fails silently for one bad apple, saves the rest of the list
+        dev.log("Isolate parsing skipped a corrupted row: $e");
+      }
+    }
+    return parsedDealers;
+  });
+}
 
 class CreateDvrScreen extends StatefulWidget {
   final Employee employee;
@@ -35,8 +80,6 @@ class CreateDvrScreen extends StatefulWidget {
   final Dealer? dealer;
   final DateTime? initialCheckInTime;
   final String? dailyTaskId;
-
-  /// 🔥 NEW: Callback to cleanly handle Dashboard routing
   final VoidCallback? onReturnToDashboard;
 
   const CreateDvrScreen({
@@ -53,23 +96,18 @@ class CreateDvrScreen extends StatefulWidget {
   State<CreateDvrScreen> createState() => _CreateDvrScreenState();
 }
 
-// 🚀 ADDED WidgetsBindingObserver TO PREVENT CRASHES ON MINIMIZE
 class _CreateDvrScreenState extends State<CreateDvrScreen>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  // 🛡️ Tracks if app is minimized
+    with WidgetsBindingObserver {
   bool _isAppInForeground = true;
 
   final _formKey = GlobalKey<FormState>();
   final _dynamicFormKey = GlobalKey<FormState>();
-  // 🚀 Added for UI Screenshot Sharing
   final GlobalKey _summaryCardKey = GlobalKey();
 
-  // 🚀 Feature Toggle for Dealer Updates
   final bool _enableDealerUpdateOnSubmit = true;
   String _elapsedTime = "00:00:00";
 
   final ApiService _apiService = ApiService();
-
   Map<String, dynamic> _formData = {};
 
   bool _isSubmitting = false;
@@ -77,7 +115,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
   bool _showSummary = false;
   String? _outImagePathLocal;
 
-  /// 🔥 FLOW CONTROL
   String? _selectedCustomerType;
   bool _isSubDealerVisit = false;
 
@@ -85,11 +122,9 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
   Dealer? _selectedParentDealer;
 
   DateTime? _checkInTime;
-  //String? _inTimeImageUrl;
-  String? _inImagePathLocal; // 🚀 ADDED: Offline local path for check-in
+  String? _inImagePathLocal;
   Position? _checkInLocation;
 
-  /// 🎨 THEME
   static const Color _surfaceWhite = Colors.white;
   static const Color _textDark = Color(0xFF111827);
   static const Color _textGrey = Color(0xFF6B7280);
@@ -97,44 +132,48 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
   static const Color _inputFill = Color(0xFFF9FAFB);
   static const Color _accentGreen = Color(0xFF10B981);
 
-  final List<String> _customerTypeOptions = [
-    'Dealer',
-    'NonTrade',
-    // 'Ground MIS',
-  ];
-  late final Ticker _uiTicker;
+  final List<String> _customerTypeOptions = const ['Dealer', 'NonTrade'];
+
+  // 🚀 REPLACED TICKER WITH EFFICIENT TIMER
+  Timer? _clockTimer;
 
   @override
   void initState() {
     super.initState();
-
     WidgetsBinding.instance.addObserver(this);
-
-    // 3. Initialize the Ticker
-    _uiTicker = createTicker((_) => _updateLiveTimer());
 
     if (widget.dealer != null) {
       _selectedDealer = widget.dealer;
       _selectedCustomerType = 'Dealer';
     }
+
+    if (widget.initialCheckInTime != null) {
+      _checkInTime = widget.initialCheckInTime;
+      _startEfficientClock();
+    }
   }
 
-  // 4. The ultra-efficient time calculator
-  void _updateLiveTimer() {
-    if (_checkInTime == null) return;
+  // 🚀 EFFICIENT CLOCK: Runs 1 time per second instead of 60 times a second
+  void _startEfficientClock() {
+    _clockTimer?.cancel();
+    _clockTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _updateLiveTimer(),
+    );
+  }
 
-    // Calculates exact time difference. If the phone slept for an hour,
-    // it will instantly be accurate the millisecond the screen turns on.
+  void _updateLiveTimer() {
+    if (_checkInTime == null || !_isAppInForeground) return;
+
     final elapsed = DateTime.now().difference(_checkInTime!);
 
-    String twoDigits(int n) => n.toString().padLeft(2, "0");
-    final hours = twoDigits(elapsed.inHours);
-    final minutes = twoDigits(elapsed.inMinutes.remainder(60));
-    final seconds = twoDigits(elapsed.inSeconds.remainder(60));
+    // Optimized string allocation
+    final h = elapsed.inHours.toString().padLeft(2, '0');
+    final m = elapsed.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = elapsed.inSeconds.remainder(60).toString().padLeft(2, '0');
 
-    final newTime = "$hours:$minutes:$seconds";
+    final newTime = "$h:$m:$s";
 
-    // Only rebuild if the second actually changed
     if (_elapsedTime != newTime && mounted) {
       setState(() => _elapsedTime = newTime);
     }
@@ -143,7 +182,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _uiTicker.dispose(); // 🚀 Prevent Memory Leaks
+    _clockTimer?.cancel(); // Kill the timer
     DvrTimerForegroundService.stop();
     super.dispose();
   }
@@ -151,87 +190,35 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _isAppInForeground = (state == AppLifecycleState.resumed);
+    // Timer naturally pauses logic when !_isAppInForeground via the return statement above
   }
 
-  /// ------------------------------------------------
-  /// 🔎 DEALER SEARCH
-  /// ------------------------------------------------
   Future<void> _openDealerSearch() async {
     HapticFeedback.selectionClick();
-
     final result = await showDialog<Dealer>(
       context: context,
-      builder: (context) => _ServerDealerSearchDialog(),
+      builder: (context) => const _ServerDealerSearchDialog(),
     );
-
-    if (result == null) return;
-
-    Dealer dealer = result;
-
-    // Try refreshing dealer from server (optional)
-    if (result.id != null) {
-      try {
-        dealer = await _apiService.fetchDealerById(result.id!);
-      } catch (e) {
-        debugPrint("Dealer refresh skipped (offline): $e");
-      }
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      _selectedDealer = dealer;
-    });
+    if (result != null && mounted) setState(() => _selectedDealer = result);
   }
 
   Future<void> _openParentDealerSearch() async {
     HapticFeedback.selectionClick();
-
     final result = await showDialog<Dealer>(
       context: context,
-      builder: (context) => _ServerDealerSearchDialog(),
+      builder: (context) => const _ServerDealerSearchDialog(),
     );
-
-    if (result == null) return;
-
-    Dealer dealer = result;
-
-    if (result.id != null) {
-      try {
-        dealer = await _apiService.fetchDealerById(result.id!);
-      } catch (e) {
-        debugPrint("Parent dealer refresh skipped (offline): $e");
-      }
-    }
-
-    if (!mounted) return;
-
-    setState(() {
-      _selectedParentDealer = dealer;
-    });
+    if (result != null && mounted)
+      setState(() => _selectedParentDealer = result);
   }
 
-  /// ------------------------------------------------
-  /// 📸 INLINE CAMERA CHECK-IN (Null-Safe Optimized)
-  /// ------------------------------------------------
   Future<void> _handleCheckIn() async {
-    if (_selectedCustomerType == null) {
+    if (_selectedCustomerType == null ||
+        (_selectedCustomerType == 'Dealer' && _selectedDealer == null)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            "Please select a Customer Type first",
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-        ),
-      );
-      return;
-    }
-
-    if (_selectedCustomerType == 'Dealer' && _selectedDealer == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            "Select dealer first",
+            "Please make necessary selections first",
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
         ),
@@ -243,75 +230,54 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
     setState(() => _isUploadingImage = true);
 
     try {
-      // 🚀 THE FIX: Smart wrapper to handle Dart's strict null-safety and timeout exceptions gracefully
-      Future<Position?> fetchLocationSmartly() async {
-        try {
-          return await Geolocator.getCurrentPosition(
-            desiredAccuracy: LocationAccuracy.high,
-          ).timeout(const Duration(seconds: 10));
-        } on TimeoutException {
-          debugPrint("GPS Timeout! Falling back to last known position...");
-          return await Geolocator.getLastKnownPosition();
-        }
-      }
-
-      // Pre-warm the smart GPS fetcher
-      Future<Position?> locationFuture = fetchLocationSmartly();
-
-      // 📸 OPEN CAMERA
       final imagePath = await Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const DvrCameraScreen()),
       );
-
-      // 🚀 SPEED OPTIMIZATION 2: Quiet Cancel
       if (imagePath == null) {
         setState(() => _isUploadingImage = false);
         return;
       }
 
-      // 🚀 OFFLINE FIX: WAIT FOR GPS ONLY! NO API CALLS!
-      final pos = await locationFuture;
-
-      if (pos == null) {
-        throw Exception(
-          "Could not lock GPS location. Ensure location services are ON.",
-        );
+      Position? pos;
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        ).timeout(const Duration(seconds: 10));
+      } on TimeoutException {
+        pos = await Geolocator.getLastKnownPosition();
       }
 
-      // 🛡️ PROTECTED UI UPDATE
-      if (mounted && _isAppInForeground) {
+      if (pos == null) throw Exception("Could not lock GPS location.");
+
+      if (mounted) {
         setState(() {
           _checkInTime = DateTime.now();
           _checkInLocation = pos;
-          _inImagePathLocal = imagePath; // 🚀 STORE LOCALLY FOR OFFLINE
+          _inImagePathLocal = imagePath;
           _isUploadingImage = false;
         });
 
-        // 🚀 START THE HARDWARE TICKER (VSync GPU Accelerated Timer)
-        _uiTicker.start();
+        _startEfficientClock(); // Start battery-friendly clock
 
-        // 🚀 START THE BACKGROUND TIMER (For sticky notification & OS Keep-Alive ONLY)
         final displayName = _selectedCustomerType == 'Dealer'
             ? (_selectedDealer?.name ?? "Dealer")
             : "Non-Trade Visit";
+        final uniqueSessionId = _selectedCustomerType == 'Dealer'
+            ? (_selectedDealer?.id ?? "unknown")
+            : "nontrade_${_checkInTime!.millisecondsSinceEpoch}";
 
         DvrTimerForegroundService.start(
+          dvrSessionId: uniqueSessionId,
           title: "Visiting: $displayName",
           subtitle: "Duration: 00:00:00",
           checkInTimestampMs: _checkInTime!.millisecondsSinceEpoch,
         );
-
-        // ❌ Old callback removed: FlutterForegroundTask.addTaskDataCallback(...)
       }
     } catch (e) {
-      // 🛡️ PROTECTED ERROR HANDLING
-      if (mounted && _isAppInForeground) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Check-In Error: $e"),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red),
         );
         setState(() => _isUploadingImage = false);
       }
@@ -320,62 +286,37 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
 
   Map<String, dynamic> _buildDealerPatch(Position location) {
     if (_selectedDealer == null) return {};
-
     final patch = <String, dynamic>{};
 
-    final totalPotential = double.tryParse(
-      "${_formData['dealerTotalPotential']}",
-    );
+    final tp = double.tryParse("${_formData['dealerTotalPotential']}");
+    if (tp != null && tp != _selectedDealer!.totalPotential)
+      patch['totalPotential'] = tp;
 
-    if (totalPotential != null &&
-        totalPotential != _selectedDealer!.totalPotential) {
-      patch['totalPotential'] = totalPotential;
-    }
-
-    final bestPotential = double.tryParse(
-      "${_formData['dealerBestPotential']}",
-    );
-
-    if (bestPotential != null &&
-        bestPotential != _selectedDealer!.bestPotential) {
-      patch['bestPotential'] = bestPotential;
-    }
+    final bp = double.tryParse("${_formData['dealerBestPotential']}");
+    if (bp != null && bp != _selectedDealer!.bestPotential)
+      patch['bestPotential'] = bp;
 
     final phone = _formData['contactPersonPhoneNo'];
-
-    if (phone != null && phone != _selectedDealer!.phoneNo) {
+    if (phone != null && phone != _selectedDealer!.phoneNo)
       patch['phoneNo'] = phone;
-    }
 
     if (_formData['brandSelling'] != null &&
-        _formData['brandSelling'] != _selectedDealer!.brandSelling) {
+        _formData['brandSelling'] != _selectedDealer!.brandSelling)
       patch['brandSelling'] = _formData['brandSelling'];
-    }
-
-    if (_selectedDealer!.latitude != location.latitude) {
+    if (_selectedDealer!.latitude != location.latitude)
       patch['latitude'] = location.latitude;
-    }
-
-    if (_selectedDealer!.longitude != location.longitude) {
+    if (_selectedDealer!.longitude != location.longitude)
       patch['longitude'] = location.longitude;
-    }
 
     return patch;
   }
 
-  /// ------------------------------------------------
-  /// 🚀 SUBMIT DVR (O(1) BACKGROUND WORKER)
-  /// ------------------------------------------------
   Future<void> _submitDvr() async {
     if (_checkInTime == null || _checkInLocation == null) return;
-
     if (!_dynamicFormKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            "Please fill all required fields",
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
+          content: Text("Please fill all required fields"),
           backgroundColor: Colors.orange,
         ),
       );
@@ -390,31 +331,26 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
         context,
         MaterialPageRoute(builder: (_) => const DvrCameraScreen()),
       );
-
       if (outImagePath == null) {
         setState(() => _isSubmitting = false);
         return;
       }
-
       _outImagePathLocal = outImagePath;
 
-      /// DEALER MAPPING BASED ON TOGGLE
       String? finalDealerId;
       String? finalSubDealerId;
       String locationAddress = "Location fetched via GPS";
 
       if (_selectedCustomerType == 'Dealer') {
-        if (_isSubDealerVisit) {
-          finalSubDealerId = _selectedDealer?.id;
-          finalDealerId = _selectedParentDealer?.id;
-        } else {
-          finalDealerId = _selectedDealer?.id;
-        }
+        finalSubDealerId = _isSubDealerVisit ? _selectedDealer?.id : null;
+        finalDealerId = _isSubDealerVisit
+            ? _selectedParentDealer?.id
+            : _selectedDealer?.id;
         locationAddress = _selectedDealer?.address ?? "Unknown";
       }
 
       final dvr = DailyVisitReport(
-        idempotencyKey: const Uuid().v4(), // 🚀 IDEMPOTENCY KEY ADDED
+        idempotencyKey: const Uuid().v4(),
         dailyTaskId: widget.dailyTaskId,
         userId: int.parse(widget.employee.id),
         reportDate: DateTime.now(),
@@ -445,26 +381,20 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
         anyRemarks: _formData['anyRemarks'],
         checkInTime: _checkInTime!,
         checkOutTime: DateTime.now(),
-        inTimeImageUrl: null, // 🚀 Handled by worker
-        outTimeImageUrl: null, // 🚀 Handled by worker
         pjpId: widget.pjp?.id,
       );
 
-      // 🚀 QUEUE THE DEALER GPS UPDATE FOR OFFLINE SYNC
       if (_enableDealerUpdateOnSubmit && finalDealerId != null) {
         final patch = _buildDealerPatch(_checkInLocation!);
-
         if (patch.isNotEmpty) {
-          dev.log("🚨 Queuing Dealer Patch for Offline Sync...");
-          await AppDatabase.instance.enqueueOfflineTask(
+          AppDatabase.instance.enqueueOfflineTask(
             entityType: 'DEALER_PATCH',
             payload: {'dealerId': finalDealerId, 'patch': patch},
           );
         }
       }
 
-      // ⚡ Hand off to the Background Worker instantly!
-      await DvrBackgroundWorker.processAndSubmit(
+      DvrBackgroundWorker.processAndSubmit(
         apiService: _apiService,
         dvrPayload: dvr,
         inTimeFile: _inImagePathLocal != null ? File(_inImagePathLocal!) : null,
@@ -473,34 +403,24 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
         clearDrafts: true,
       );
 
-      // 🚀 Save Local UI History for Offline Dashboard viewing
       try {
-        final Map<String, dynamic> jsonPayload = dvr.toJson();
+        final jsonPayload = dvr.toJson();
         jsonPayload['reportDate'] = dvr.reportDate.toIso8601String();
         jsonPayload['checkInTime'] = dvr.checkInTime.toIso8601String();
         jsonPayload['checkOutTime'] = dvr.checkOutTime?.toIso8601String();
         jsonPayload['expectedActivationDate'] = dvr.expectedActivationDate
             ?.toIso8601String();
         jsonPayload['brandSelling'] = dvr.brandSelling;
-        jsonPayload['inTimeImageUrl'] = _inImagePathLocal; // Local History
-        jsonPayload['outTimeImageUrl'] = _outImagePathLocal; // Local History
-
+        jsonPayload['inTimeImageUrl'] = _inImagePathLocal;
+        jsonPayload['outTimeImageUrl'] = _outImagePathLocal;
         await AppDatabase.instance.createLocalDvr(jsonPayload);
-      } catch (e) {
-        dev.log("Local History Save Skipped: $e");
-      }
+      } catch (_) {}
 
-      // 🛡️ PROTECTED UI UPDATE: Instantly show success without waiting for uploads!
-      if (mounted && _isAppInForeground) {
+      if (mounted) {
+        _clockTimer?.cancel();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.cloud_upload, color: Colors.white),
-                SizedBox(width: 10),
-                Text("Saved Offline & Uploading..."),
-              ],
-            ),
+            content: Text("Saved Offline & Uploading..."),
             backgroundColor: Colors.green,
           ),
         );
@@ -510,15 +430,10 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
         });
       }
     } catch (e) {
-      debugPrint("DVR Error $e");
-      if (mounted && _isAppInForeground) {
-        DvrTimerForegroundService.stop();
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              "Failed to queue DVR",
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
+            content: Text("Failed to queue DVR"),
             backgroundColor: Colors.red,
           ),
         );
@@ -527,9 +442,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
     }
   }
 
-  /// ------------------------------------------------
-  /// 🎨 MAIN BUILD METHOD
-  /// ------------------------------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -550,11 +462,8 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
             ? const SizedBox.shrink()
             : const BackButton(color: Colors.white),
       ),
-      // 🚀 GPU-ACCELERATED VIEW SWITCHING
       body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 600),
-        switchInCurve: Curves.easeOutCubic,
-        switchOutCurve: Curves.easeInCubic,
+        duration: const Duration(milliseconds: 400),
         child: _showSummary
             ? _buildSummaryView(key: const ValueKey('summary'))
             : _buildFormView(key: const ValueKey('form')),
@@ -562,9 +471,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
     );
   }
 
-  /// ------------------------------------------------
-  /// 📝 THE FORM VIEW
-  /// ------------------------------------------------
   Widget _buildFormView({Key? key}) {
     return SingleChildScrollView(
       key: key,
@@ -574,227 +480,187 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            /// STEP 1 — CHECK IN CARD
             if (_checkInTime == null) ...[
               Card(
-                    elevation: 4,
-                    shadowColor: Colors.black.withOpacity(0.1),
-                    color: _surfaceWhite,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(24.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            "Select Visit Type *",
+                elevation: 4,
+                color: _surfaceWhite,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(24.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Select Visit Type *",
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: _textDark,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _inputFill,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedCustomerType,
+                            isExpanded: true,
+                            hint: const Text(
+                              "Select Customer Type",
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: _textGrey,
+                              ),
+                            ),
+                            items: _customerTypeOptions
+                                .map(
+                                  (e) => DropdownMenuItem(
+                                    value: e,
+                                    child: Text(
+                                      e,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) {
+                              HapticFeedback.selectionClick();
+                              setState(() {
+                                _selectedCustomerType = v;
+                                _selectedDealer = null;
+                                _selectedParentDealer = null;
+                                _isSubDealerVisit = false;
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      if (_selectedCustomerType == 'Dealer') ...[
+                        SwitchListTile(
+                          value: _isSubDealerVisit,
+                          activeColor: _cardNavy,
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text(
+                            "Sub Dealer Visit",
                             style: TextStyle(
                               fontWeight: FontWeight.w800,
                               color: _textDark,
-                              fontSize: 13,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _inputFill,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.grey.shade200),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
-                                value: _selectedCustomerType,
-                                isExpanded: true,
-                                hint: const Text(
-                                  "Select Customer Type",
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: _textGrey,
-                                  ),
-                                ),
-                                icon: const Icon(
-                                  Icons.expand_more_rounded,
-                                  color: _textGrey,
-                                ),
-                                items: _customerTypeOptions
-                                    .map(
-                                      (e) => DropdownMenuItem(
-                                        value: e,
-                                        child: Text(
-                                          e,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ),
-                                    )
-                                    .toList(),
-                                onChanged: (v) {
-                                  HapticFeedback.selectionClick();
-                                  setState(() {
-                                    _selectedCustomerType = v;
-                                    _selectedDealer = null;
-                                    _selectedParentDealer = null;
-                                    _isSubDealerVisit = false;
-                                  });
-                                },
-                              ),
-                            ),
+                          onChanged: (v) {
+                            HapticFeedback.lightImpact();
+                            setState(() {
+                              _isSubDealerVisit = v;
+                              _selectedDealer = null;
+                              _selectedParentDealer = null;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        InkWell(
+                          onTap: _openDealerSearch,
+                          borderRadius: BorderRadius.circular(12),
+                          child: _buildSelector(
+                            _selectedDealer?.name ??
+                                (_isSubDealerVisit
+                                    ? "Select Sub Dealer"
+                                    : "Select Dealer"),
                           ),
-                          const SizedBox(height: 24),
-
-                          if (_selectedCustomerType == 'Dealer') ...[
-                            SwitchListTile(
-                                  value: _isSubDealerVisit,
-                                  activeColor: _cardNavy,
-                                  contentPadding: EdgeInsets.zero,
-                                  title: const Text(
-                                    "Sub Dealer Visit",
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      color: _textDark,
-                                    ),
-                                  ),
-                                  onChanged: (v) {
-                                    HapticFeedback.lightImpact();
-                                    setState(() {
-                                      _isSubDealerVisit = v;
-                                      _selectedDealer = null;
-                                      _selectedParentDealer = null;
-                                    });
-                                  },
-                                )
-                                .animate()
-                                .fadeIn(duration: 300.ms)
-                                .slideX(begin: 0.05),
-                            const SizedBox(height: 16),
-
-                            InkWell(
-                                  onTap: _openDealerSearch,
-                                  borderRadius: BorderRadius.circular(12),
-                                  child: _buildSelector(
-                                    _selectedDealer?.name ??
-                                        (_isSubDealerVisit
-                                            ? "Select Sub Dealer"
-                                            : "Select Dealer"),
-                                  ),
-                                )
-                                .animate()
-                                .fadeIn(delay: 50.ms, duration: 300.ms)
-                                .slideX(begin: 0.05),
-
-                            if (_isSubDealerVisit) ...[
-                              const SizedBox(height: 16),
-                              InkWell(
-                                    onTap: _openParentDealerSearch,
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: _buildSelector(
-                                      _selectedParentDealer?.name ??
-                                          "Select Parent Dealer",
-                                    ),
-                                  )
-                                  .animate()
-                                  .fadeIn(delay: 100.ms, duration: 300.ms)
-                                  .slideX(begin: 0.05),
-                            ],
-                            const SizedBox(height: 24),
-                          ],
-
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: _isUploadingImage
-                                  ? null
-                                  : _handleCheckIn,
-                              icon: _isUploadingImage
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        color: Colors.white,
-                                        strokeWidth: 3,
-                                      ),
-                                    )
-                                  : const Icon(Icons.camera_alt_rounded),
-                              label: Text(
-                                _isUploadingImage
-                                    ? "CHECKING IN..."
-                                    : "CHECK-IN WITH PHOTO",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 1.0,
-                                ),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _cardNavy,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 18,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                elevation: 8,
-                                shadowColor: _cardNavy.withOpacity(0.4),
-                              ),
+                        ),
+                        if (_isSubDealerVisit) ...[
+                          const SizedBox(height: 16),
+                          InkWell(
+                            onTap: _openParentDealerSearch,
+                            borderRadius: BorderRadius.circular(12),
+                            child: _buildSelector(
+                              _selectedParentDealer?.name ??
+                                  "Select Parent Dealer",
                             ),
-                          ).animate().scale(
-                            delay: 200.ms,
-                            curve: Curves.easeOutBack,
                           ),
                         ],
-                      ),
-                    ),
-                  )
-                  .animate()
-                  .fadeIn(duration: 400.ms)
-                  .slideY(begin: 0.1, curve: Curves.easeOutCubic),
-            ]
-            /// STEP 2 — FORM DETAILS
-            else ...[
-              _buildVisitSummary()
-                  .animate()
-                  .fadeIn(duration: 400.ms)
-                  .slideY(begin: -0.1),
-              const SizedBox(height: 20),
-
-              // 🚀 O(1) HARDWARE ACCELERATED FORM SWAPPING
-              AnimatedSwitcher(
-                duration: const Duration(milliseconds: 400),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                child: Container(
-                  key: ValueKey(_selectedCustomerType ?? 'none'),
-                  decoration: BoxDecoration(
-                    color: _surfaceWhite,
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
+                        const SizedBox(height: 24),
+                      ],
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: _isUploadingImage ? null : _handleCheckIn,
+                          icon: _isUploadingImage
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 3,
+                                  ),
+                                )
+                              : const Icon(Icons.camera_alt_rounded),
+                          label: Text(
+                            _isUploadingImage
+                                ? "CHECKING IN..."
+                                : "CHECK-IN WITH PHOTO",
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _cardNavy,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 18),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                  padding: const EdgeInsets.all(24),
-                  child: _buildDynamicFormSwitcher(),
                 ),
+              ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.1),
+            ] else ...[
+              _buildVisitSummary().animate().fadeIn(duration: 400.ms),
+              const SizedBox(height: 20),
+              Container(
+                decoration: BoxDecoration(
+                  color: _surfaceWhite,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(24),
+                child: _selectedCustomerType == 'NonTrade'
+                    ? DvrNonTradeFormWidget(
+                        formKey: _dynamicFormKey,
+                        onDataChanged: (data) => _formData = data,
+                      )
+                    : DvrDealerFormWidget(
+                        key: ValueKey(_selectedDealer?.id),
+                        formKey: _dynamicFormKey,
+                        onDataChanged: (data) => _formData = data,
+                        initialDealer: _selectedDealer,
+                      ),
               ),
-
               const SizedBox(height: 30),
               ElevatedButton(
                 onPressed: _isSubmitting ? null : _submitDvr,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _accentGreen,
                   foregroundColor: Colors.white,
-                  elevation: 8,
-                  shadowColor: _accentGreen.withOpacity(0.4),
                   padding: const EdgeInsets.symmetric(vertical: 20),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
@@ -817,27 +683,12 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
                           letterSpacing: 1.1,
                         ),
                       ),
-              ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.2),
+              ),
               const SizedBox(height: 40),
             ],
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildDynamicFormSwitcher() {
-    if (_selectedCustomerType == 'NonTrade') {
-      return DvrNonTradeFormWidget(
-        formKey: _dynamicFormKey,
-        onDataChanged: (data) => _formData = data,
-      );
-    }
-    return DvrDealerFormWidget(
-      key: ValueKey(_selectedDealer?.id),
-      formKey: _dynamicFormKey,
-      onDataChanged: (data) => _formData = data,
-      initialDealer: _selectedDealer,
     );
   }
 
@@ -851,15 +702,11 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
       ),
       child: Row(
         children: [
-          // 1. Checkmark Icon
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: Colors.white,
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(color: _accentGreen.withOpacity(0.2), blurRadius: 8),
-              ],
             ),
             child: const Icon(
               Icons.check_circle_rounded,
@@ -868,8 +715,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
             ),
           ),
           const SizedBox(width: 16),
-
-          // 2. Titles (Expanded pushes the timer to the right)
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -882,7 +727,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
                     fontSize: 15,
                   ),
                 ),
-                const SizedBox(height: 2),
                 Text(
                   "$_selectedCustomerType Visit Active",
                   style: TextStyle(
@@ -894,8 +738,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
               ],
             ),
           ),
-
-          // 3. The Live Timer Badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
@@ -911,14 +753,12 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
-                    fontFeatures: [
-                      ui.FontFeature.tabularFigures(),
-                    ], // Keeps numbers from jumping!
+                    fontFeatures: [ui.FontFeature.tabularFigures()],
                   ),
                 ),
               ],
             ),
-          ).animate().fadeIn(duration: 400.ms),
+          ),
         ],
       ),
     );
@@ -952,9 +792,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
     );
   }
 
-  /// ------------------------------------------------
-  /// 🎉 THE SUMMARY & WHATSAPP VIEW
-  /// ------------------------------------------------
   Widget _buildSummaryView({Key? key}) {
     return Center(
       key: key,
@@ -964,7 +801,6 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
           key: _summaryCardKey,
           child: Card(
             elevation: 8,
-            shadowColor: Colors.black.withOpacity(0.1),
             color: _surfaceWhite,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(24),
@@ -978,50 +814,39 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
                     Icons.check_circle_rounded,
                     color: _accentGreen,
                     size: 80,
-                  ).animate().scale(
-                    curve: Curves.easeOutBack,
-                    duration: 600.ms,
                   ),
                   const SizedBox(height: 16),
                   const Text(
-                        "Visit Completed!",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w900,
-                          color: _cardNavy,
-                          letterSpacing: -0.5,
-                        ),
-                      )
-                      .animate()
-                      .fadeIn(delay: 200.ms)
-                      .slideY(begin: 0.2, curve: Curves.easeOut),
+                    "Visit Completed!",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                      color: _cardNavy,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Divider(height: 1),
                   ),
-
-                  _buildSummaryRow(
-                    "Type",
-                    _selectedCustomerType ?? "N/A",
-                  ).animate().fadeIn(delay: 300.ms).slideX(begin: -0.05),
+                  _buildSummaryRow("Type", _selectedCustomerType ?? "N/A"),
                   _buildSummaryRow(
                     "Dealer/Party",
                     _selectedCustomerType == 'Dealer'
                         ? (_selectedDealer?.name ?? "N/A")
                         : (_formData['nameOfParty'] ?? "N/A"),
-                  ).animate().fadeIn(delay: 350.ms).slideX(begin: -0.05),
+                  ),
                   if (_selectedCustomerType == 'Dealer') ...[
                     _buildSummaryRow(
                       "Order Given",
                       "${_formData['todayOrderMt'] ?? 0} MT",
-                    ).animate().fadeIn(delay: 400.ms).slideX(begin: -0.05),
+                    ),
                     _buildSummaryRow(
                       "Collection",
                       "₹${_formData['todayCollectionRupees'] ?? 0}",
-                    ).animate().fadeIn(delay: 450.ms).slideX(begin: -0.05),
+                    ),
                   ],
-
                   const SizedBox(height: 32),
                   const Text(
                     "Photos Captured",
@@ -1030,76 +855,52 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
                       color: _textDark,
                       fontSize: 16,
                     ),
-                  ).animate().fadeIn(delay: 500.ms),
+                  ),
                   const SizedBox(height: 12),
-
                   Row(
                     children: [
                       Expanded(
-                        child:
-                            _buildImageTile(
-                              "Check-In",
-                              _inImagePathLocal, // 🚀 Uses local file
-                              isLocal: true,
-                            ).animate().scale(
-                              delay: 550.ms,
-                              curve: Curves.easeOutBack,
-                            ),
+                        child: _buildImageTile(
+                          "Check-In",
+                          _inImagePathLocal,
+                          isLocal: true,
+                        ),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
-                        child:
-                            _buildImageTile(
-                              "Check-Out",
-                              _outImagePathLocal, // 🚀 Uses local file
-                              isLocal: true,
-                            ).animate().scale(
-                              delay: 600.ms,
-                              curve: Curves.easeOutBack,
-                            ),
+                        child: _buildImageTile(
+                          "Check-Out",
+                          _outImagePathLocal,
+                          isLocal: true,
+                        ),
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 40),
                   ElevatedButton.icon(
-                        onPressed: _shareToWhatsApp,
-                        icon: const Icon(
-                          Icons.share_rounded,
-                          color: Colors.white,
-                        ),
-                        label: const Text(
-                          "SHARE TO WHATSAPP",
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.0,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF25D366),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 18),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 4,
-                        ),
-                      )
-                      .animate()
-                      .fadeIn(delay: 700.ms)
-                      .scaleXY(begin: 0.9)
-                      .then()
-                      .shimmer(duration: 2500.ms, color: Colors.white24)
-                      .animate(onPlay: (c) => c.repeat()),
-
+                    onPressed: _shareToWhatsApp,
+                    icon: const Icon(Icons.share_rounded, color: Colors.white),
+                    label: const Text(
+                      "SHARE TO WHATSAPP",
+                      style: TextStyle(
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF25D366),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 16),
-
                   TextButton(
                     onPressed: () {
                       Navigator.pop(context);
-                      if (widget.onReturnToDashboard != null) {
-                        widget.onReturnToDashboard!();
-                      }
+                      widget.onReturnToDashboard?.call();
                     },
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
@@ -1111,7 +912,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                  ).animate().fadeIn(delay: 800.ms),
+                  ),
                 ],
               ),
             ),
@@ -1123,7 +924,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
 
   Widget _buildSummaryRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1162,33 +963,21 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
     if (pathOrUrl == null) return const SizedBox.shrink();
     return Column(
       children: [
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: isLocal
-                ? Image.file(
-                    File(pathOrUrl),
-                    height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  )
-                : Image.network(
-                    pathOrUrl,
-                    height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-          ),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: isLocal
+              ? Image.file(
+                  File(pathOrUrl),
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                )
+              : Image.network(
+                  pathOrUrl,
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
         ),
         const SizedBox(height: 10),
         Container(
@@ -1213,59 +1002,46 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
 
   Future<void> _shareToWhatsApp() async {
     HapticFeedback.heavyImpact();
-
     final isDealer = _selectedCustomerType == 'Dealer';
     final name = isDealer
         ? (_selectedDealer?.name ?? 'N/A')
         : (_formData['nameOfParty'] ?? 'N/A');
     final type = _formData['visitType'] ?? 'N/A';
 
-    String text = '*DVR Summary Report* 📊\n';
-    text += '*Type:* $_selectedCustomerType Visit\n';
-    text += '*Name:* $name\n';
-    text += '*Visit Objective:* $type\n';
-    if (isDealer) {
-      text += '*Order:* ${_formData['todayOrderMt'] ?? '0'} MT\n';
-      text += '*Collection:* ₹${_formData['todayCollectionRupees'] ?? '0'}\n';
-    }
+    String text =
+        '*DVR Summary Report* 📊\n*Type:* $_selectedCustomerType Visit\n*Name:* $name\n*Visit Objective:* $type\n';
+    if (isDealer)
+      text +=
+          '*Order:* ${_formData['todayOrderMt'] ?? '0'} MT\n*Collection:* ₹${_formData['todayCollectionRupees'] ?? '0'}\n';
     text +=
         '*Feedback:* ${_formData['feedbacks'] ?? 'None'}\n\n_Generated via Sales App_';
 
     try {
-      // 🚀 GPU-LEVEL SCREENSHOT: Grab the pixels directly from the RepaintBoundary
       RenderRepaintBoundary boundary =
           _summaryCardKey.currentContext!.findRenderObject()
               as RenderRepaintBoundary;
-      ui.Image image = await boundary.toImage(
-        pixelRatio: 3.0,
-      ); // 3.0 makes it super crisp and HD
+      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       final Uint8List pngBytes = byteData!.buffer.asUint8List();
 
-      // 💾 O(1) SPACE: Save to OS Temp Directory (Auto-deletes later)
       final directory = await getTemporaryDirectory();
       final imagePath =
           '${directory.path}/dvr_summary_${DateTime.now().millisecondsSinceEpoch}.png';
       final imageFile = File(imagePath);
       await imageFile.writeAsBytes(pngBytes);
 
-      // 🛡️ PROTECT SHARE INVOCATION
-      if (mounted && _isAppInForeground) {
-        await Share.shareXFiles([XFile(imagePath)], text: text);
-      }
+      if (mounted) await Share.shareXFiles([XFile(imagePath)], text: text);
     } catch (e) {
-      debugPrint("Share error: $e");
-      if (mounted && _isAppInForeground) {
+      if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Failed to capture and share summary.")),
         );
-      }
     }
   }
 }
 
 /// ------------------------------------------------------------
-/// 🔎 DEALER SEARCH DIALOG (Memory Leak Fixed)
+/// 🔎 O(1) EFFICIENT DEALER SEARCH DIALOG
 /// ------------------------------------------------------------
 class _ServerDealerSearchDialog extends StatefulWidget {
   const _ServerDealerSearchDialog();
@@ -1282,15 +1058,9 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   @override
   void initState() {
     super.initState();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 200), () {
-        _performSearch("");
-      });
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _performSearch(""));
   }
 
-  // 🚀 CRITICAL FIX: Prevent Memory Leaks
   @override
   void dispose() {
     _debounce?.cancel();
@@ -1298,9 +1068,9 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
   }
 
   void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce?.cancel();
     _debounce = Timer(
-      const Duration(milliseconds: 400),
+      const Duration(milliseconds: 300),
       () => _performSearch(query),
     );
   }
@@ -1310,73 +1080,45 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
 
     try {
       final cleanQuery = query.trim();
+      final localData = cleanQuery.isEmpty
+          ? await AppDatabase.instance.getInitialDealers(limit: 50)
+          : await AppDatabase.instance.searchLocalDealers(cleanQuery);
 
-      // 🛑 BLOCK 1: INITIAL LOAD (When dialog first opens)
-      if (cleanQuery.isEmpty) {
-        final initialDealers = await AppDatabase.instance.getInitialDealers(
-          limit: 50,
-        );
-        dev.log("🚨 SQLITE VAULT HAS ${initialDealers.length} DEALERS");
+      if (localData.isNotEmpty) {
+        // 🚀 1. Convert Drift rows to raw Maps (Main Thread - very fast)
+        final rawMaps = localData
+            .map((d) => Map<String, dynamic>.from(d.toJson()))
+            .toList();
 
-        List<Dealer> results = [];
-        for (var d in initialDealers) {
-          try {
-            results.add(Dealer.fromJson(d.toJson()));
-          } catch (e) {
-            dev.log(
-              "⚠️ CRASH ON INITIAL DEALER ${d.id}: $e",
-            ); // <-- You will see this now
-          }
+        // 🚀 2. Offload heavy parsing to Background Isolate!
+        final parsedDealers = await _parseDealersInBackground(rawMaps);
+
+        if (mounted) {
+          setState(() {
+            _dealers = parsedDealers;
+            _isLoading = false;
+          });
         }
-
-        setState(() {
-          _dealers = results;
-          _isLoading = false;
-        });
         return;
       }
 
-      // 🛑 BLOCK 2: TYPING SEARCH
-      final localDealers = await AppDatabase.instance.searchLocalDealers(
-        cleanQuery,
-      );
-
-      if (localDealers.isNotEmpty) {
-        List<Dealer> results = [];
-        for (var d in localDealers) {
-          try {
-            results.add(Dealer.fromJson(d.toJson()));
-          } catch (e) {
-            dev.log("⚠️ CRASH ON SEARCHED DEALER ${d.id}: $e");
-          }
-        }
-
-        setState(() {
-          _dealers = results;
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // 3️⃣ Fallback to API search
+      // ☁️ CLOUD FALLBACK
       List<Dealer> onlineResults = await ApiService().fetchDealers(
         search: cleanQuery,
         limit: 50,
       );
-
-      if (onlineResults.isNotEmpty) {
-        await AppDatabase.instance.syncDealersToLocal(
+      if (onlineResults.isNotEmpty)
+        AppDatabase.instance.syncDealersToLocal(
           onlineResults.map((d) => d.toJson()).toList(),
         );
-      }
 
-      setState(() {
-        _dealers = onlineResults;
-        _isLoading = false;
-      });
+      if (mounted)
+        setState(() {
+          _dealers = onlineResults;
+          _isLoading = false;
+        });
     } catch (e) {
-      dev.log("🚨 FATAL SEARCH ERROR: $e");
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -1448,80 +1190,74 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
                         ),
                       ),
                     )
-                  : ListView.separated(
+                  // 🚀 REMOVED JANKY LIST ANIMATIONS: Scrolling is now 60fps butter
+                  : ListView.builder(
                       itemCount: _dealers.length,
-                      separatorBuilder: (context, index) =>
-                          Divider(color: Colors.grey.shade200, height: 1),
                       itemBuilder: (context, index) {
                         final dealer = _dealers[index];
-
-                        // 🚀 MEMORY OPTIMIZED: Replaced the multiple string allocations
-                        // from your second snippet with a single, O(1) ternary resolution.
-                        // This prevents unnecessary garbage collection spikes while scrolling.
-                        final zoneArea = dealer.area.isNotEmpty
+                        final zoneArea = dealer.area.isNotEmpty == true
                             ? "${dealer.region}, ${dealer.area}"
-                            : dealer.region.isNotEmpty
-                            ? dealer.region
-                            : "Unknown Zone";
+                            : (dealer.region.isNotEmpty == true
+                                  ? dealer.region
+                                  : "Unknown Zone");
 
-                        return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                vertical: 4,
-                                horizontal: 0,
-                              ),
-                              // Kept your original premium Container UI look instead of the basic CircleAvatar
-                              leading: Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFEFF6FF),
-                                  borderRadius: BorderRadius.circular(12),
+                        return InkWell(
+                          onTap: () => Navigator.pop(context, dealer),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEFF6FF),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: const Icon(
+                                    Icons.storefront_rounded,
+                                    color: Colors.blueAccent,
+                                    size: 22,
+                                  ),
                                 ),
-                                child: const Icon(
-                                  Icons.storefront_rounded,
-                                  color: Colors.blueAccent,
-                                  size: 22,
-                                ),
-                              ),
-                              title: Text(
-                                dealer.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                  color: Color(0xFF111827),
-                                ),
-                              ),
-                              subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 6.0),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      zoneArea,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF374151),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        dealer.name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 15,
+                                          color: Color(0xFF111827),
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      dealer.address,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF6B7280),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        zoneArea,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF374151),
+                                        ),
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
+                                      Text(
+                                        dealer.address,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF6B7280),
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              onTap: () => Navigator.pop(context, dealer),
-                            )
-                            // 🚀 ANIMATION PRESERVED: Staggered entry animation kept intact
-                            .animate()
-                            .fadeIn(delay: (index * 30).ms)
-                            .slideX(begin: -0.05);
+                              ],
+                            ),
+                          ),
+                        );
                       },
                     ),
             ),
@@ -1538,6 +1274,6 @@ class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
           ),
         ),
       ],
-    ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms);
+    );
   }
 }

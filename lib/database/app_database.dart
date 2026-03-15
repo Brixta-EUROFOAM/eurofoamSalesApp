@@ -468,6 +468,13 @@ class AppDatabase extends _$AppDatabase {
         .get();
   }
 
+  // 🚀 FAST ID MAPPER: Only fetches the IDs, saving massive RAM
+  Future<Set<String>> getAllDealerIdsFast() async {
+    final query = selectOnly(localDealers)..addColumns([localDealers.id]);
+    final results = await query.get();
+    return results.map((row) => row.read(localDealers.id)!.toString()).toSet();
+  }
+
   // to check dealer count in local db
   Future<int> getLocalDealersCount() async {
     final countExp = localDealers.id.count();

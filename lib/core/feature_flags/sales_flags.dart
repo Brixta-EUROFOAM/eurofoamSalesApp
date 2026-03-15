@@ -38,6 +38,6 @@ class SalesFlags {
 
     showDbViewer: false,
     accountSwitcher: true,
-    offlineSync: false,
+    offlineSync: true,
   );
 }
