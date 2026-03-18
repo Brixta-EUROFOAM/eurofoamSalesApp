@@ -453,6 +453,32 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
     });
   }
 
+  bool _hasAnyPending(List<DailyTask> list) {
+    return list.any((t) => t.status.toLowerCase() == 'pending');
+  }
+
+  void _approveAllGlobal(List<DailyTask> list) async {
+    try {
+      for (var t in list) {
+        if (t.status.toLowerCase() == 'pending') {
+          await widget.apiService.updateDailyTask(t.id!, {
+            'status': 'Approved',
+          });
+        }
+      }
+
+      _refreshPjps();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("All PJPs approved")),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Global approval failed")),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -515,6 +541,8 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
 
               if (list.isEmpty) return _buildEmptyState();
 
+              final hasAnyPending = _hasAnyPending(list);
+
               // Clear and rebuild the grouped map correctly inside the builder
               grouped.clear();
               for (var task in list) {
@@ -530,69 +558,114 @@ class _PjpLogsTabState extends State<_PjpLogsTab> {
 
               return RefreshIndicator(
                 onRefresh: () async => _refreshPjps(),
-                child: ListView.builder(
+                child: ListView(
                   padding: const EdgeInsets.all(20),
-                  itemCount: groupedEntries.length,
-                  itemBuilder: (context, index) {
-                    final entry = groupedEntries[index];
-                    final date = entry.key;
-                    final tasks = entry.value;
-
-                    final hasPending = tasks.any(
-                      (t) => t.status.toLowerCase() == 'pending',
-                    );
-
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 16),
-                      child: ExpansionTile(
-                        title: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  DateFormat('dd MMM yyyy').format(date),
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                  ),
+                  children: [
+                    ElevatedButton(
+                      onPressed: hasAnyPending
+                          ? () async {
+                              final confirm = await showDialog<bool>(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text("Approve all PJPs?"),
+                                  content: const Text(
+                                      "This will approve all pending visits."),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text("Cancel"),
+                                    ),
+                                    ElevatedButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      child: const Text("Confirm"),
+                                    ),
+                                  ],
                                 ),
-                                Text("${tasks.length} visits"),
-                              ],
-                            ),
+                              );
 
-                            ElevatedButton(
-                              onPressed: hasPending
-                                  ? () => _approveAll(tasks)
-                                  : null,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: hasPending
-                                    ? Colors.green
-                                    : Colors.grey.shade400,
+                              if (confirm == true) {
+                                _approveAllGlobal(list);
+                              }
+                            }
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: hasAnyPending
+                            ? Colors.green
+                            : Colors.grey.shade400,
+                        minimumSize: const Size(double.infinity, 50),
+                      ),
+                      child: const Text(
+                        "APPROVE ALL PJPs",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    ...groupedEntries.map((entry) {
+                      final date = entry.key;
+                      final tasks = entry.value;
+
+                      final hasPending = tasks.any(
+                        (t) => t.status.toLowerCase() == 'pending',
+                      );
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        child: ExpansionTile(
+                          title: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    DateFormat('dd MMM yyyy').format(date),
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  Text("${tasks.length} visits"),
+                                ],
                               ),
-                              child: const Text(
-                                "Approve All",
-                                style: TextStyle(fontWeight: FontWeight.bold),
+                              ElevatedButton(
+                                onPressed: hasPending
+                                    ? () => _approveAll(tasks)
+                                    : null,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: hasPending
+                                      ? Colors.green
+                                      : Colors.grey.shade400,
+                                ),
+                                child: const Text(
+                                  "Approve All",
+                                  style: TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: tasks.length,
+                                itemBuilder: (context, i) {
+                                  return _buildPjpCard(tasks[i], i);
+                                },
                               ),
                             ),
                           ],
                         ),
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount: tasks.length,
-                              itemBuilder: (context, i) {
-                                return _buildPjpCard(tasks[i], i);
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                      );
+                    }),
+                  ],
                 ),
               );
             },
