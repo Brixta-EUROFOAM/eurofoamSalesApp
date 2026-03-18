@@ -60,10 +60,10 @@ import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_bagLift.da
 // Assuming this defines navigatorKey
 import 'package:firebase_core/firebase_core.dart';
 //REMOTE CONFIG STUFF
-import 'package:firebase_remote_config/firebase_remote_config.dart';
-import 'package:flutter/foundation.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+// import 'package:firebase_remote_config/firebase_remote_config.dart';
+// import 'package:flutter/foundation.dart';
+// import 'package:http/http.dart' as http;
+// import 'dart:convert';
 
 // 1. DEFINE GLOBAL KEY FOR NAVIGATOR
 // We'll use this to get a BuildContext that's always under MaterialApp.
@@ -72,52 +72,52 @@ final GlobalKey<NavigatorState> globalNavigatorKey =
 
 Future<void> setupRemoteConfig() async {
   try {
-    debugPrint("🔍 Connecting to Firebase Remote Config...");
-    final remoteConfig = FirebaseRemoteConfig.instance;
+    // debugPrint("🔍 Connecting to Firebase Remote Config...");
+    // final remoteConfig = FirebaseRemoteConfig.instance;
 
-    // 1. Ensure Firebase doesn't cache for too long during this phase
-    await remoteConfig.setConfigSettings(
-      RemoteConfigSettings(
-        fetchTimeout: const Duration(seconds: 10),
-        minimumFetchInterval: const Duration(minutes: 15),
-      ),
-    );
+    // // 1. Ensure Firebase doesn't cache for too long during this phase
+    // await remoteConfig.setConfigSettings(
+    //   RemoteConfigSettings(
+    //     fetchTimeout: const Duration(seconds: 10),
+    //     minimumFetchInterval: const Duration(minutes: 15),
+    //   ),
+    // );
 
-    // 2. Fetch the dynamic URL from Firebase FIRST
-    await remoteConfig.fetchAndActivate();
-    final String fetchedUrl = remoteConfig.getString("api_base_url");
+    // // 2. Fetch the dynamic URL from Firebase FIRST
+    // await remoteConfig.fetchAndActivate();
+    // final String fetchedUrl = remoteConfig.getString("api_base_url");
 
-    if (fetchedUrl.isEmpty) {
-      debugPrint("⚠️ Firebase returned empty URL. Using default.");
-      return;
-    }
+    // if (fetchedUrl.isEmpty) {
+    //   debugPrint("⚠️ Firebase returned empty URL. Using default.");
+    //   return;
+    // }
 
-    debugPrint("📡 Firebase provided URL: $fetchedUrl. Pinging to verify...");
+    // debugPrint("📡 Firebase provided URL: $fetchedUrl. Pinging to verify...");
 
-    // 3. Ping the FETCHED URL to ensure it is actually alive and yours
-    final response = await http
-        .get(Uri.parse('$fetchedUrl/api'))
-        .timeout(const Duration(seconds: 10));
+    // // 3. Ping the FETCHED URL to ensure it is actually alive and yours
+    // final response = await http
+    //     .get(Uri.parse('$fetchedUrl/api'))
+    //     .timeout(const Duration(seconds: 10));
 
-    if (response.statusCode == 200) {
-      final jsonResponse = jsonDecode(response.body);
-      final message = jsonResponse['message'];
+    // if (response.statusCode == 200) {
+    //   final jsonResponse = jsonDecode(response.body);
+    //   final message = jsonResponse['message'];
 
-      // 4. The Strict Condition: Only apply it if it's genuinely your backend
-      if (message == "Welcome to the Field Force Management API!") {
-        ApiService.baseUrl = fetchedUrl;
-        AuthService.baseUrl = fetchedUrl;
-        debugPrint("✅ SUCCESS: Base URL safely updated to $fetchedUrl");
-      } else {
-        debugPrint(
-          "⚠️ Server at $fetchedUrl responded, but message mismatched. Ignored.",
-        );
-      }
-    } else {
-      debugPrint(
-        "⚠️ Server at $fetchedUrl returned ${response.statusCode}. Ignored.",
-      );
-    }
+    //   // 4. The Strict Condition: Only apply it if it's genuinely your backend
+    //   if (message == "Welcome to the Field Force Management API!") {
+    //     ApiService.baseUrl = fetchedUrl;
+    //     AuthService.baseUrl = fetchedUrl;
+    //     debugPrint("✅ SUCCESS: Base URL safely updated to $fetchedUrl");
+    //   } else {
+    //     debugPrint(
+    //       "⚠️ Server at $fetchedUrl responded, but message mismatched. Ignored.",
+    //     );
+    //   }
+    // } else {
+    //   debugPrint(
+    //     "⚠️ Server at $fetchedUrl returned ${response.statusCode}. Ignored.",
+    //   );
+    // }
   } catch (e) {
     // 🛡️ OFFLINE SAFETY NET
     // If there is no internet, Firebase is down, or the fetched server is dead,
