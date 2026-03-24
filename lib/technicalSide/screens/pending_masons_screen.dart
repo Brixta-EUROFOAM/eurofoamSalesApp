@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
 import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
 import 'package:salesmanapp/technicalSide/models/mason_pc_model.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/submit_mason_kyc_form.dart';
 

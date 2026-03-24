@@ -6,11 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/technicalSide/models/mason_baglift_model.dart';
-import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
 import 'package:salesmanapp/technicalSide/models/sites_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/salesSide/models/dealer_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:camera/camera.dart'; // 🟢 ADD THIS
+import 'package:camera/camera.dart';
+import 'package:salesmanapp/widgets/reusable_functions.dart';
 
 // ---------------------------------------------------------------------------
 // 🟢 INTERNAL CAMERA SCREEN (Copy to bottom of technical_dashboard_screen.dart)
@@ -26,7 +27,7 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   bool _isTakingPicture = false;
-  
+
   // ⚡ NEW: Store list of cameras to enable switching
   List<CameraDescription> _cameras = [];
   int _selectedCameraIdx = 0;
@@ -45,9 +46,9 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
 
       // Find the index of the front camera, or default to 0 (back)
       _selectedCameraIdx = _cameras.indexWhere(
-        (c) => c.lensDirection == CameraLensDirection.front
+        (c) => c.lensDirection == CameraLensDirection.front,
       );
-      
+
       if (_selectedCameraIdx == -1) _selectedCameraIdx = 0;
 
       // Initialize the selected camera
@@ -91,7 +92,9 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
   }
 
   Future<void> _takePicture() async {
-    if (_controller == null || !_controller!.value.isInitialized || _isTakingPicture) {
+    if (_controller == null ||
+        !_controller!.value.isInitialized ||
+        _isTakingPicture) {
       return;
     }
 
@@ -101,9 +104,9 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
       await _controller!.setFlashMode(FlashMode.off);
 
       final image = await _controller!.takePicture();
-      
+
       if (!mounted) return;
-      Navigator.pop(context, image.path); 
+      Navigator.pop(context, image.path);
     } catch (e) {
       debugPrint("Capture error: $e");
     } finally {
@@ -118,12 +121,13 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
       body: FutureBuilder<void>(
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done && _controller != null) {
+          if (snapshot.connectionState == ConnectionState.done &&
+              _controller != null) {
             return Stack(
               children: [
                 // 1. Camera Preview
                 Center(child: CameraPreview(_controller!)),
-                
+
                 // 2. Controls Overlay
                 SafeArea(
                   child: Column(
@@ -137,17 +141,21 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
                           children: [
                             // Close Button
                             IconButton(
-                              icon: const Icon(Icons.close, color: Colors.white, size: 30),
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                                size: 30,
+                              ),
                               onPressed: () => Navigator.pop(context),
                             ),
-                            
+
                             // Flip Button (Hidden if only 1 camera exists)
                             if (_cameras.length > 1)
                               IconButton(
                                 icon: const Icon(
-                                  Icons.flip_camera_ios_outlined, 
-                                  color: Colors.white, 
-                                  size: 30
+                                  Icons.flip_camera_ios_outlined,
+                                  color: Colors.white,
+                                  size: 30,
                                 ),
                                 onPressed: _toggleCamera,
                               ),
@@ -161,12 +169,14 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
                         child: InkWell(
                           onTap: _takePicture,
                           child: Container(
-                            height: 80, 
+                            height: 80,
                             width: 80,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(color: Colors.white, width: 4),
-                              color: _isTakingPicture ? Colors.white : Colors.white24,
+                              color: _isTakingPicture
+                                  ? Colors.white
+                                  : Colors.white24,
                             ),
                           ),
                         ),
@@ -177,7 +187,9 @@ class _InlineCameraScreenState extends State<_InlineCameraScreen> {
               ],
             );
           } else {
-            return const Center(child: CircularProgressIndicator(color: Colors.white));
+            return const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            );
           }
         },
       ),
@@ -265,7 +277,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   Future<void> _loadDrafts() async {
     final prefs = await SharedPreferences.getInstance();
     final savedId = prefs.getString('bag_lift_review_id') ?? "";
-    
+
     if (savedId.isNotEmpty) {
       if (!mounted) return;
       setState(() {
@@ -296,14 +308,14 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
             id: dId,
             name: dName,
             area: "",
-            type: "", 
-            region: "", 
-            phoneNo: "", 
-            address: "", 
-            totalPotential: 0.0, 
-            bestPotential: 0.0, 
-            brandSelling: [], 
-            feedbacks: "", 
+            type: "",
+            region: "",
+            phoneNo: "",
+            address: "",
+            totalPotential: 0.0,
+            bestPotential: 0.0,
+            brandSelling: [],
+            feedbacks: "",
           );
         }
       });
@@ -322,7 +334,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
       'bag_lift_dealer_id',
     ];
     for (var key in keys) await prefs.remove(key);
-    
+
     if (mounted) {
       setState(() {
         _reviewingItemId = null;
@@ -340,16 +352,19 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
   // 📸 FIXED: Robust Lost Data Retrieval
   Future<void> _checkLostData() async {
     if (!Platform.isAndroid) return;
-    
+
     try {
       final LostDataResponse response = await _picker.retrieveLostData();
-      
+
       if (response.isEmpty || response.file == null) return;
 
       if (_reviewingItemId != null) {
-        if(mounted) {
+        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Restoring camera image..."), backgroundColor: _infoBlue),
+            const SnackBar(
+              content: Text("Restoring camera image..."),
+              backgroundColor: _infoBlue,
+            ),
           );
         }
 
@@ -381,7 +396,9 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
       if (widget.highlightedId != null) {
         try {
           final list = await _futureLifts;
-          final targetItem = list.firstWhere((item) => item.id == widget.highlightedId);
+          final targetItem = list.firstWhere(
+            (item) => item.id == widget.highlightedId,
+          );
           if (mounted) {
             Future.microtask(() => _showVerificationDialog(targetItem));
           }
@@ -439,17 +456,14 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
 
   // --- Search Dialogs ---
   Future<TechnicalSite?> _showServerSearchSiteDialog() async {
-    return await showDialog<TechnicalSite>(
-      context: context,
-      builder: (context) => _ServerSiteSearchDialog(api: _api),
-    );
+    final userId = int.tryParse(widget.employee.id);
+    if (userId == null) return null;
+
+    return await openSiteSearch(context, _api, userId);
   }
 
   Future<Dealer?> _showServerSearchDealerDialog() async {
-    return await showDialog<Dealer>(
-      context: context,
-      builder: (context) => _ServerDealerSearchDialog(api: _api),
-    );
+    return await openDealerSearch(context);
   }
 
   void _showVerificationDialog(MasonBagLift item) {
@@ -457,13 +471,13 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     // If we are opening a NEW item that doesn't match the one in RAM/Disk,
     // we must clear the old data so the new dialog is fresh.
     if (_reviewingItemId != null && _reviewingItemId != item.id) {
-       _recoveredFile = null;
-       _bagCountController.clear();
-       _personNameController.clear();
-       _personPhoneController.clear();
-       _memoController.clear();
-       _selectedSite = null;
-       _selectedDealer = null;
+      _recoveredFile = null;
+      _bagCountController.clear();
+      _personNameController.clear();
+      _personPhoneController.clear();
+      _memoController.clear();
+      _selectedSite = null;
+      _selectedDealer = null;
     }
 
     _reviewingItemId = item.id;
@@ -475,10 +489,12 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
 
     // Local Logic State
     bool _isValidatingRules = false;
-    File? _siteImageFile = _recoveredFile; // Initialize with recovered file if exists
+    File? _siteImageFile =
+        _recoveredFile; // Initialize with recovered file if exists
     String? _uploadedSiteImageUrl;
     bool _isUploadingImage = false;
-    bool _needsAutoUpload = _recoveredFile != null; // Flag to trigger upload for recovered file
+    bool _needsAutoUpload =
+        _recoveredFile != null; // Flag to trigger upload for recovered file
 
     final int? validApproverId = int.tryParse(widget.employee.id);
 
@@ -487,24 +503,25 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
       barrierDismissible: false,
       builder: (context) => StatefulBuilder(
         builder: (context, setStateDialog) {
-          
           // 1. Helper Function to Upload
           Future<void> _handleUpload(File file) async {
-             setStateDialog(() => _isUploadingImage = true);
-             try {
-               final url = await _api.uploadImageToR2(file);
-               if(mounted) {
-                 setStateDialog(() {
-                   _uploadedSiteImageUrl = url;
-                   _isUploadingImage = false;
-                 });
-               }
-             } catch (e) {
-               if(mounted) {
-                 setStateDialog(() => _isUploadingImage = false);
-                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Upload failed: $e")));
-               }
-             }
+            setStateDialog(() => _isUploadingImage = true);
+            try {
+              final url = await _api.uploadImageToR2(file);
+              if (mounted) {
+                setStateDialog(() {
+                  _uploadedSiteImageUrl = url;
+                  _isUploadingImage = false;
+                });
+              }
+            } catch (e) {
+              if (mounted) {
+                setStateDialog(() => _isUploadingImage = false);
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text("Upload failed: $e")));
+              }
+            }
           }
 
           // 2. Auto-Upload Trigger for Recovered File
@@ -512,7 +529,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
           if (_needsAutoUpload && _siteImageFile != null) {
             _needsAutoUpload = false; // Run only once
             WidgetsBinding.instance.addPostFrameCallback((_) {
-               _handleUpload(_siteImageFile!);
+              _handleUpload(_siteImageFile!);
             });
           }
 
@@ -523,9 +540,11 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
               // 🟢 REPLACED: Use Inline Camera instead of ImagePicker
               final String? imagePath = await Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const _InlineCameraScreen()),
+                MaterialPageRoute(
+                  builder: (context) => const _InlineCameraScreen(),
+                ),
               );
-              
+
               // If user cancelled
               if (imagePath == null) return;
 
@@ -533,11 +552,10 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
               setStateDialog(() {
                 _siteImageFile = File(imagePath);
               });
-              
+
               // Upload immediately
               await _handleUpload(File(imagePath));
               _saveDrafts();
-
             } catch (e) {
               debugPrint("Camera error: $e");
             }
@@ -679,11 +697,13 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                           const SizedBox(height: 8),
                           InkWell(
                             onTap: () async {
-                              final result = await _showServerSearchSiteDialog();
+                              final result =
+                                  await _showServerSearchSiteDialog();
                               if (result != null) {
                                 setStateDialog(() {
                                   _selectedSite = result;
-                                  _personNameController.text = result.concernedPerson;
+                                  _personNameController.text =
+                                      result.concernedPerson;
                                   _personPhoneController.text = result.phoneNo;
                                 });
                                 _saveDrafts();
@@ -823,9 +843,11 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                         }
 
                         // Final check if upload didn't happen yet (e.g. quick click)
-                        if(_uploadedSiteImageUrl == null && _siteImageFile != null) {
-                           await _handleUpload(_siteImageFile!);
-                           if(_uploadedSiteImageUrl == null) return; // Fail safe
+                        if (_uploadedSiteImageUrl == null &&
+                            _siteImageFile != null) {
+                          await _handleUpload(_siteImageFile!);
+                          if (_uploadedSiteImageUrl == null)
+                            return; // Fail safe
                         }
 
                         setStateDialog(() => _isValidatingRules = true);
@@ -846,9 +868,7 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
                             return;
                           }
 
-                          Navigator.pop(
-                            context,
-                          ); 
+                          Navigator.pop(context);
 
                           _handleBackgroundApproval(
                             id: item.id,
@@ -891,14 +911,11 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white, 
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: const [
-            Icon(
-              Icons.block_flipped,
-              color: Color(0xFFEF4444),
-            ), 
+            Icon(Icons.block_flipped, color: Color(0xFFEF4444)),
             SizedBox(width: 12),
             Text(
               "Approval Blocked",
@@ -1267,283 +1284,6 @@ class _ApproveMasonBagLiftState extends State<ApproveMasonBagLift> {
           ],
         ),
       ),
-    );
-  }
-}
-
-class _ServerSiteSearchDialog extends StatefulWidget {
-  final ApiService api;
-  const _ServerSiteSearchDialog({required this.api});
-
-  @override
-  State<_ServerSiteSearchDialog> createState() =>
-      _ServerSiteSearchDialogState();
-}
-
-class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
-  List<TechnicalSite> _sites = [];
-  bool _isLoading = false;
-  Timer? _debounce;
-  String _lastQuery = "";
-
-  @override
-  void initState() {
-    super.initState();
-    _performSearch("");
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      if (query != _lastQuery) {
-        _performSearch(query);
-      }
-    });
-  }
-
-  Future<void> _performSearch(String query) async {
-    setState(() => _isLoading = true);
-    _lastQuery = query;
-    try {
-      final results = await widget.api.fetchTechnicalSites(
-        search: query,
-        limit: 20,
-      );
-      if (mounted) {
-        setState(() {
-          _sites = results;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text(
-        "Select Site",
-        style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold),
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: 400,
-        child: Column(
-          children: [
-            TextField(
-              autofocus: true,
-              style: const TextStyle(color: Color(0xFF111827)),
-              decoration: InputDecoration(
-                hintText: "Search site...",
-                hintStyle: const TextStyle(color: Color(0xFF6B7280)),
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
-                filled: true,
-                fillColor: Color(0xFFF9FAFB),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
-                ),
-              ),
-              onChanged: _onSearchChanged,
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _sites.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "No sites found",
-                        style: TextStyle(color: Color(0xFF6B7280)),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: _sites.length,
-                      separatorBuilder: (ctx, i) =>
-                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                      itemBuilder: (context, index) {
-                        final site = _sites[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            site.siteName,
-                            style: const TextStyle(
-                              color: Color(0xFF111827),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Text(
-                            site.address,
-                            style: const TextStyle(
-                              color: Color(0xFF6B7280),
-                              fontSize: 12,
-                            ),
-                          ),
-                          onTap: () => Navigator.pop(context, site),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, null),
-          child: const Text("CANCEL"),
-        ),
-      ],
-    );
-  }
-}
-
-class _ServerDealerSearchDialog extends StatefulWidget {
-  final ApiService api;
-  const _ServerDealerSearchDialog({required this.api});
-
-  @override
-  State<_ServerDealerSearchDialog> createState() =>
-      _ServerDealerSearchDialogState();
-}
-
-class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
-  List<Dealer> _dealers = [];
-  bool _isLoading = false;
-  Timer? _debounce;
-  String _lastQuery = "";
-
-  @override
-  void initState() {
-    super.initState();
-    _performSearch("");
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      if (query != _lastQuery) {
-        _performSearch(query);
-      }
-    });
-  }
-
-  Future<void> _performSearch(String query) async {
-    setState(() => _isLoading = true);
-    _lastQuery = query;
-    try {
-      final results = await widget.api.fetchDealers(search: query, limit: 20);
-      if (mounted) {
-        setState(() {
-          _dealers = results;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text(
-        "Select Dealer",
-        style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold),
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: 400,
-        child: Column(
-          children: [
-            TextField(
-              autofocus: true,
-              style: const TextStyle(color: Color(0xFF111827)),
-              decoration: InputDecoration(
-                hintText: "Search dealer...",
-                hintStyle: const TextStyle(color: Color(0xFF6B7280)),
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
-                filled: true,
-                fillColor: Color(0xFFF9FAFB),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
-                ),
-              ),
-              onChanged: _onSearchChanged,
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _dealers.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "No dealers found",
-                        style: TextStyle(color: Color(0xFF6B7280)),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: _dealers.length,
-                      separatorBuilder: (ctx, i) =>
-                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                      itemBuilder: (context, index) {
-                        final dealer = _dealers[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            dealer.name,
-                            style: const TextStyle(
-                              color: Color(0xFF111827),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Text(
-                            dealer.area,
-                            style: const TextStyle(
-                              color: Color(0xFF6B7280),
-                              fontSize: 12,
-                            ),
-                          ),
-                          onTap: () => Navigator.pop(context, dealer),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, null),
-          child: const Text("CANCEL"),
-        ),
-      ],
     );
   }
 }

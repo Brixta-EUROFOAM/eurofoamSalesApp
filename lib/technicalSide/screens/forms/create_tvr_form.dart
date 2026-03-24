@@ -5,23 +5,24 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
-import 'package:salesmanapp/technicalSide/utils/tvrworker.dart';
+import 'package:salesmanapp/technicalSide/screens/tvrwidgets/tvrworker.dart';
 
 // Project Imports
 import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
 import 'package:salesmanapp/technicalSide/models/sites_model.dart';
 import 'package:salesmanapp/technicalSide/models/mason_pc_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/salesSide/models/dealer_model.dart';
+import 'package:salesmanapp/widgets/reusable_functions.dart';
 
 // Refactored Components
-import '../../utils/tvr_constants.dart';
-import '../../tvrwidgets/tvr_form_widgets.dart';
-import '../../tvrwidgets/tvr_camera_screen.dart';
-import '../../tvrwidgets/tvr_ihb_section.dart';
-import '../../tvrwidgets/tvr_dealer_section.dart';
-import '../../tvrwidgets/tvr_influencer_section.dart';
+import '../tvrwidgets/tvr_constants.dart';
+import '../tvrwidgets/tvr_form_widgets.dart';
+import '../tvrwidgets/tvr_camera_screen.dart';
+import '../tvrwidgets/tvr_ihb_section.dart';
+import '../tvrwidgets/tvr_dealer_section.dart';
+import '../tvrwidgets/tvr_influencer_section.dart';
 
 class CreateTvrScreen extends StatefulWidget {
   final Employee employee;
@@ -163,12 +164,15 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   Future<void> _loadDrafts() async {
-    if (_values['selectedSite'] != null)
+    if (_values['selectedSite'] != null) {
       _onSiteSelected(_values['selectedSite']);
-    if (_values['selectedDealer'] != null)
+    }
+    if (_values['selectedDealer'] != null) {
       _onDealerSelected(_values['selectedDealer']);
-    if (_values['selectedMason'] != null)
+    }
+    if (_values['selectedMason'] != null) {
       _onMasonSelected(_values['selectedMason']);
+    }
 
     final prefs = await SharedPreferences.getInstance();
     if (!prefs.containsKey('tvr_ctrl_remarks')) return;
@@ -207,10 +211,12 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
             addressDetails['address'] ??
             addressDetails['formattedAddress'] ??
             addressDetails['addressLabel'];
-        if (foundAddress != null && foundAddress.isNotEmpty)
+        if (foundAddress != null && foundAddress.isNotEmpty) {
           _controllers['siteAddress']!.text = foundAddress;
-        if (addressDetails['area'] != null)
+        }
+        if (addressDetails['area'] != null) {
           _controllers['area']!.text = addressDetails['area']!;
+        }
         if (addressDetails['region'] != null &&
             TvrConstants.regionOptions.contains(addressDetails['region'])) {
           _values['selectedRegion'] = addressDetails['region'];
@@ -410,16 +416,20 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       _controllers['partyName']!.text = site.concernedPerson;
       _controllers['siteAddress']!.text = site.address;
       _controllers['area']!.text = site.area ?? '';
-      if (site.latitude != 0.0){
-        _controllers['latitude']!.text = site.latitude.toStringAsFixed(6);}
-      if (site.longitude != 0.0){
-        _controllers['longitude']!.text = site.longitude.toStringAsFixed(6);}
+      if (site.latitude != 0.0) {
+        _controllers['latitude']!.text = site.latitude.toStringAsFixed(6);
+      }
+      if (site.longitude != 0.0) {
+        _controllers['longitude']!.text = site.longitude.toStringAsFixed(6);
+      }
       if (site.region != null &&
-          TvrConstants.regionOptions.contains(site.region)){
-        _values['selectedRegion'] = site.region;}
+          TvrConstants.regionOptions.contains(site.region)) {
+        _values['selectedRegion'] = site.region;
+      }
       if (site.stageOfConstruction != null &&
-          TvrConstants.stageOptions.contains(site.stageOfConstruction)){
-        _values['selectedStage'] = site.stageOfConstruction;}
+          TvrConstants.stageOptions.contains(site.stageOfConstruction)) {
+        _values['selectedStage'] = site.stageOfConstruction;
+      }
     });
     _saveDrafts();
   }
@@ -432,10 +442,12 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
       _controllers['phone']!.text = dealer.phoneNo;
       _controllers['siteAddress']!.text = dealer.address;
       _controllers['area']!.text = dealer.area;
-      if (dealer.latitude != null){
-        _controllers['latitude']!.text = dealer.latitude!.toStringAsFixed(6);}
-      if (dealer.longitude != null){
-        _controllers['longitude']!.text = dealer.longitude!.toStringAsFixed(6);}
+      if (dealer.latitude != null) {
+        _controllers['latitude']!.text = dealer.latitude!.toStringAsFixed(6);
+      }
+      if (dealer.longitude != null) {
+        _controllers['longitude']!.text = dealer.longitude!.toStringAsFixed(6);
+      }
       _values['selectedInfluencerType'] = 'Dealer';
     });
     _saveDrafts();
@@ -1072,343 +1084,23 @@ class _CreateTvrScreenState extends State<CreateTvrScreen> {
   }
 
   void _openSiteSearch() async {
-    final site = await showDialog<TechnicalSite>(
-      context: context,
-      builder: (c) => _ServerSiteSearchDialog(
-        api: _apiService,
-        userId: int.parse(widget.employee.id),
-      ),
-    );
+    final userId = int.parse(widget.employee.id);
+    final site = await openSiteSearch(context, _apiService, userId);
     if (site != null) _onSiteSelected(site);
   }
 
   void _openDealerSearch() async {
-    final dealer = await showDialog<Dealer>(
-      context: context,
-      builder: (c) => _ServerDealerSearchDialog(api: _apiService),
+    final Position? pos = _values['capturedLocation'];
+    final dealer = await openDealerSearch(
+      context,
+      lat: pos?.latitude,
+      lng: pos?.longitude,
     );
     if (dealer != null) _onDealerSelected(dealer);
   }
 
   void _openMasonSearch() async {
-    final mason = await showDialog<Mason>(
-      context: context,
-      builder: (c) => _ServerMasonSearchDialog(api: _apiService),
-    );
+    final mason = await openMasonSearch(context, _apiService);
     if (mason != null) _onMasonSelected(mason);
-  }
-}
-
-// --- SEARCH DIALOGS (Polished) ---
-class _ServerSiteSearchDialog extends StatefulWidget {
-  final ApiService api;
-  final int userId;
-  const _ServerSiteSearchDialog({required this.api, required this.userId});
-  @override
-  State<_ServerSiteSearchDialog> createState() =>
-      _ServerSiteSearchDialogState();
-}
-
-class _ServerSiteSearchDialogState extends State<_ServerSiteSearchDialog> {
-  List<TechnicalSite> _sites = [];
-  bool _isLoading = false;
-  Timer? _debounce;
-  void _search(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () async {
-      setState(() => _isLoading = true);
-      try {
-        final res = await widget.api.fetchTechnicalSites(
-          userId: widget.userId,
-          search: query,
-        );
-        if (mounted) setState(() => _sites = res);
-      } finally {
-        if (mounted) setState(() => _isLoading = false);
-      }
-    });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _search("");
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        height: 500,
-        width: double.maxFinite,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Select Site",
-              style: TextStyle(
-                color: Color(0xFF1E293B),
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              decoration: InputDecoration(
-                hintText: "Search...",
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: const Color(0xFFF1F5F9),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onChanged: _search,
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _sites.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "No sites found",
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: _sites.length,
-                      separatorBuilder: (_, __) => const Divider(),
-                      itemBuilder: (ctx, i) => ListTile(
-                        title: Text(
-                          _sites[i].siteName,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text("${_sites[i].address}"),
-                        onTap: () => Navigator.pop(context, _sites[i]),
-                      ),
-                    ),
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context, null),
-                child: const Text("CLOSE"),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ServerMasonSearchDialog extends StatefulWidget {
-  final ApiService api;
-  const _ServerMasonSearchDialog({required this.api});
-  @override
-  State<_ServerMasonSearchDialog> createState() =>
-      _ServerMasonSearchDialogState();
-}
-
-class _ServerMasonSearchDialogState extends State<_ServerMasonSearchDialog> {
-  List<Mason> _masons = [];
-  bool _isLoading = false;
-  Timer? _debounce;
-  void _search(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () async {
-      setState(() => _isLoading = true);
-      try {
-        final res = await widget.api.fetchMasons(search: query);
-        if (mounted) setState(() => _masons = res);
-      } finally {
-        if (mounted) setState(() => _isLoading = false);
-      }
-    });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _search("");
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        height: 500,
-        width: double.maxFinite,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Select Mason",
-              style: TextStyle(
-                color: Color(0xFF1E293B),
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              decoration: InputDecoration(
-                hintText: "Search...",
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: const Color(0xFFF1F5F9),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onChanged: _search,
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _masons.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "No masons found",
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: _masons.length,
-                      separatorBuilder: (_, __) => const Divider(),
-                      itemBuilder: (ctx, i) => ListTile(
-                        title: Text(
-                          _masons[i].name,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text(_masons[i].phoneNumber),
-                        onTap: () => Navigator.pop(context, _masons[i]),
-                      ),
-                    ),
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context, null),
-                child: const Text("CLOSE"),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ServerDealerSearchDialog extends StatefulWidget {
-  final ApiService api;
-  const _ServerDealerSearchDialog({required this.api});
-  @override
-  State<_ServerDealerSearchDialog> createState() =>
-      _ServerDealerSearchDialogState();
-}
-
-class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
-  List<Dealer> _dealers = [];
-  bool _isLoading = false;
-  Timer? _debounce;
-  void _search(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () async {
-      setState(() => _isLoading = true);
-      try {
-        final res = await widget.api.fetchDealers(search: query, limit: 20);
-        if (mounted) setState(() => _dealers = res);
-      } finally {
-        if (mounted) setState(() => _isLoading = false);
-      }
-    });
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _search("");
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        height: 500,
-        width: double.maxFinite,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "Select Dealer",
-              style: TextStyle(
-                color: Color(0xFF1E293B),
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              decoration: InputDecoration(
-                hintText: "Search...",
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: const Color(0xFFF1F5F9),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-              onChanged: _search,
-            ),
-            const SizedBox(height: 10),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _dealers.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "No dealers found",
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: _dealers.length,
-                      separatorBuilder: (_, __) => const Divider(),
-                      itemBuilder: (ctx, i) => ListTile(
-                        title: Text(
-                          _dealers[i].name,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text("${_dealers[i].area}"),
-                        onTap: () => Navigator.pop(context, _dealers[i]),
-                      ),
-                    ),
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () => Navigator.pop(context, null),
-                child: const Text("CLOSE"),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

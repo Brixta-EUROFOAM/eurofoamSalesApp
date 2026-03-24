@@ -4,7 +4,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
@@ -15,7 +15,7 @@ import 'package:camera/camera.dart';
 import 'package:geocoding/geocoding.dart';
 
 // --- FORMS IMPORTS ---
-import 'package:salesmanapp/screens/forms/add_dealer_form.dart';
+import 'package:salesmanapp/salesSide/screens/forms/add_dealer_form.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/create_tvr_form.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_bagLift.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_kyc.dart';
@@ -453,12 +453,42 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       List<Placemark> placemarks = await placemarkFromCoordinates(lat, lng);
       if (placemarks.isNotEmpty) {
         Placemark place = placemarks[0];
-        return "${place.street}, ${place.subLocality}, ${place.locality}";
+        List<String> validAddressParts = [];
+
+        // Helper to safely add address parts
+        void addPart(String? part) {
+          if (part != null && part.trim().isNotEmpty && !part.contains('+')) {
+            if (!validAddressParts.contains(part.trim())) {
+              validAddressParts.add(part.trim());
+            }
+          }
+        }
+
+        // Add granular details first, falling back to broader areas
+        addPart(place.thoroughfare);      // Street name
+        addPart(place.subLocality);       // Neighborhood / Area (e.g., Beltola)
+        addPart(place.locality);          // City (e.g., Guwahati)
+        addPart(place.subAdministrativeArea); // District (e.g., Kamrup Metropolitan)
+        // Only use 'street' or 'name' if we are desperate and it doesn't have a '+'
+        if (validAddressParts.isEmpty) {
+           addPart(place.name);
+           addPart(place.street);
+        }
+
+        // If we found valid parts, join the first 2 or 3 for a clean display string
+        if (validAddressParts.isNotEmpty) {
+          return validAddressParts.take(3).join(', ');
+        } else {
+          // Ultimate fallback if everything was empty or just Plus Codes
+          final fallbackCity = place.locality ?? 'Unknown Area';
+          final fallbackState = place.administrativeArea ?? '';
+          return "$fallbackCity, $fallbackState".replaceAll(RegExp(r'^,\s*|,\s*$'), '');
+        }
       }
     } catch (e) {
       debugPrint("Geocoding failed: $e");
     }
-    return "Lat: $lat, Lng: $lng";
+    return "Lat: ${lat.toStringAsFixed(4)}, Lng: ${lng.toStringAsFixed(4)}";
   }
 
   // 🚀 MAX OPTIMIZED SPACE/TIME UNIFIED HANDLER
@@ -802,10 +832,12 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                       subtitle: "Technical Visit Report Form",
                       iconBg: const Color(0xFFF0FDF4),
                       iconColor: Colors.green,
-                      onTap: () async {
-                        Navigator.pop(sheetContext);
+                      onTap: () {
+                        Navigator.pop(sheetContext); // Close bottom sheet immediately
+
+                        // Soft Warning: Fire the snackbar but DO NOT WAIT!
                         if (!_isCheckedIn) {
-                          ScaffoldMessenger.of(this.context).showSnackBar(
+                          ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text(
                                 "Hey! YOU did NOT check in today!!",
@@ -814,9 +846,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                               backgroundColor: Colors.orange,
                             ),
                           );
-                          await Future.delayed(const Duration(seconds: 3));
                         }
-                        if (!mounted) return;
                         showDialog(
                           context: this.context,
                           barrierDismissible: false,
@@ -870,8 +900,10 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                       subtitle: "Record meeting details and expenses",
                       iconBg: const Color(0xFFEEF2FF),
                       iconColor: const Color(0xFF4F46E5),
-                      onTap: () async {
-                        Navigator.pop(sheetContext);
+                      onTap: () {
+                        Navigator.pop(sheetContext); // Close bottom sheet immediately
+
+                        // Soft Warning: Fire the snackbar but DO NOT WAIT!
                         if (!_isCheckedIn) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
@@ -882,9 +914,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                               backgroundColor: Colors.orange,
                             ),
                           );
-                          await Future.delayed(const Duration(seconds: 3));
                         }
-                        if (!mounted) return;
                         _openFullScreen(
                           TsoMeetingsForm(employee: widget.employee),
                         );

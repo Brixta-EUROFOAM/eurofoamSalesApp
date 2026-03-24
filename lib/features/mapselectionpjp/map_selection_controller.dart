@@ -4,17 +4,17 @@ import 'package:http/http.dart' as http;
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'map_selection_result.dart';
 import 'map_selection_capabilities.dart';
+import 'package:salesmanapp/widgets/reusable_constants.dart';
 
 class MapSelectionController {
   final MapSelectionCapabilities caps;
 
   // 🔥 STADIA RASTER STYLE (Crash-Proof)
   static String get mapStyle {
-    final apiKey = dotenv.env['STADIA_API_KEY'] ?? '';
+    final apiKey = AppKeys.stadiaApiKey;
     return '''
     {
       "version": 8,

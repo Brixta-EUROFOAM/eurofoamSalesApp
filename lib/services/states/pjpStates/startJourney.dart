@@ -1,5 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 import 'package:salesmanapp/features/technicalPjpjourneystart/pjp_journey_controller.dart';

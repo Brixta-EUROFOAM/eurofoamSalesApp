@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/models/team_members_model.dart';
+import 'package:salesmanapp/salesSide/models/team_members_model.dart';
 
 class TechnicalTeamViewListScreen extends StatefulWidget {
   final int seniorId;

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/dealer_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:intl/intl.dart';
 import 'dart:developer' as dev;

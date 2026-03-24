@@ -2,7 +2,6 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
@@ -14,13 +13,13 @@ import 'package:flutter_animate/flutter_animate.dart';
 // Core & Models
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 import 'package:salesmanapp/core/app_kernel.dart';
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 
 // Features
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
-// import 'package:salesmanapp/features/mapselectionpjp/map_selection_result.dart';
+import 'package:salesmanapp/widgets/reusable_functions.dart';
 import 'package:salesmanapp/features/unplanned_journey/unplanned_journey_result.dart';
 import 'package:salesmanapp/features/journeytracking/journey_tracking_controller.dart';
 import 'package:salesmanapp/features/journeytracking/journey_tracking_result.dart';
@@ -31,9 +30,10 @@ import 'package:salesmanapp/features/journeylocation/journeylocation_controller.
 import 'package:salesmanapp/features/journeyMapstyle/journeyMapstyle_controller.dart';
 import 'package:salesmanapp/services/states/journeyStates/journey_screen_state.dart';
 import 'package:salesmanapp/database/app_database.dart';
+import 'package:salesmanapp/widgets/reusable_constants.dart';
 
 // --- UI OVERLAY ---
-import 'package:salesmanapp/technicalSide/screens/journeyUi/journey_overlay_manager.dart';
+import 'package:salesmanapp/features/journeyUi/journey_overlay_manager.dart';
 
 class TechnicalJourneyScreen extends StatefulWidget {
   final Employee employee;
@@ -85,8 +85,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   late JourneyMode _journeyMode;
   bool _isSelectionMode = false;
   final _mapInitMachine = MapInitStateMachine();
-  final String? _stadiaApiKey = dotenv.env['STADIA_API_KEY'];
-  final String? _radarApiKey = dotenv.env['RADAR_API_KEY'];
+  final String _radarApiKey = AppKeys.radarApiKey;
+  final String _stadiaApiKey = AppKeys.stadiaApiKey;
   Pjp? _backupPlannedPjp;
   LatLng? _backupDestination;
 
@@ -391,6 +391,108 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     await _determinePositionAndMoveCamera();
   }
 
+  Future<void> _openDealerSearch() async {
+    final result = await openDealerSearch(
+      context,
+    lat: _currentUserLocation?.latitude,
+  lng: _currentUserLocation?.longitude,);
+
+    if (result != null) {
+      LatLng target = (result.latitude != null && result.longitude != null)
+          ? LatLng(result.latitude!, result.longitude!)
+          : (_currentUserLocation ?? const LatLng(26.1445, 91.7362));
+
+      await _loadUnplannedJourney(
+        UnplannedJourneyResult(
+          destination: target,
+          displayName: result.name,
+          type: UnplannedEntityType.dealer,
+        ),
+      );
+
+      setState(() {
+        _isSiteVisit = false;
+      });
+    }
+  }
+
+  void _showUnplannedTypeSelector() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Select Journey Type",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              /// DEALER
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F172A),
+                  minimumSize: const Size.fromHeight(54),
+                ),
+                icon: const Icon(Icons.storefront, color: Colors.white),
+                label: const Text(
+                  "Select Dealer",
+                  style: TextStyle(color: Colors.white),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openDealerSearch();
+                },
+              ),
+
+              const SizedBox(height: 12),
+
+              /// MAP ROUTE
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(54),
+                  side: const BorderSide(color: Color(0xFF0F172A), width: 1.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                icon: const Icon(Icons.map, color: Color(0xFF0F172A)),
+                label: const Text(
+                  "Select Route on Map",
+                  style: TextStyle(
+                    color: Color(0xFF0F172A),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                onPressed: () async {
+                  Navigator.pop(context);
+                  setState(() {
+                    _isSelectionMode = true;
+                  });
+
+                  if (_currentUserLocation != null) {
+                    final controller = await _controllerCompleter.future;
+                    controller.animateCamera(
+                      CameraUpdate.newLatLngZoom(_currentUserLocation!, 16),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void didUpdateWidget(TechnicalJourneyScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -488,6 +590,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
         _destinationController.text = "";
       });
       _distanceDisplay.value = "Select Destination";
+      _showUnplannedTypeSelector();
       await _removeRouteLine();
       await _removeDestinationMarker();
     } else {
@@ -509,7 +612,12 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     setState(() {
       _journeyMode = JourneyMode.unplanned;
       _destinationLocation = result.destination;
-      _destinationController.text = result.displayName;
+      if (result.type == UnplannedEntityType.dealer) {
+        _destinationController.text = result.displayName; // dealer name
+      } else {
+        _destinationController.text =
+            result.displayName; // address (same, but explicit)
+      }
       _isSiteVisit = result.type == UnplannedEntityType.site;
       _currentPjp = null;
     });
@@ -523,9 +631,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
       }
 
       if (_currentUserLocation != null) {
-        if (_radarApiKey != null) {
-          await _getDirectionsAndDrawRoute();
-        }
+        await _getDirectionsAndDrawRoute();
         _fitBounds();
       }
     } catch (_) {
@@ -614,7 +720,6 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
   Future<void> _getDirectionsAndDrawRoute() async {
     if (!_useHardwareAcceleration) return; // 🛡️ PROTECT
     if (_currentUserLocation == null || _destinationLocation == null) return;
-    if (_radarApiKey == null) return;
 
     final controller = await _controllerCompleter.future;
 
@@ -956,7 +1061,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
 
   Future<String> _readStyle() async {
     final style = AppKernel.instance.feature<JourneyMapStyleController>();
-    final result = style.loadStyle(_stadiaApiKey!);
+    final result = style.loadStyle(_stadiaApiKey);
     return result.styleJson;
   }
 
@@ -1361,24 +1466,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
               controller: _destinationController,
               readOnly: true,
               // 🚀 NEW: Make the entire text box clickable in Unplanned mode
-              onTap: !isPlanned && _destinationController.text.isEmpty
-                  ? () async {
-                      setState(() {
-                        _isSelectionMode = true;
-                      });
-                      if (_currentUserLocation != null) {
-                        try {
-                          final controller = await _controllerCompleter.future;
-                          controller.animateCamera(
-                            CameraUpdate.newLatLngZoom(
-                              _currentUserLocation!,
-                              16,
-                            ),
-                          );
-                        } catch (_) {}
-                      }
-                    }
-                  : null,
+              onTap: !isPlanned ? _showUnplannedTypeSelector : null,
               style: TextStyle(
                 color: _destinationController.text.isEmpty
                     ? _textGrey
@@ -1430,23 +1518,7 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                 ),
-                                onPressed: () async {
-                                  setState(() {
-                                    _isSelectionMode = true;
-                                  });
-                                  if (_currentUserLocation != null) {
-                                    try {
-                                      final controller =
-                                          await _controllerCompleter.future;
-                                      controller.animateCamera(
-                                        CameraUpdate.newLatLngZoom(
-                                          _currentUserLocation!,
-                                          16,
-                                        ),
-                                      );
-                                    } catch (_) {}
-                                  }
-                                },
+                                onPressed: _showUnplannedTypeSelector,
                                 child: const Text(
                                   "SET",
                                   style: TextStyle(

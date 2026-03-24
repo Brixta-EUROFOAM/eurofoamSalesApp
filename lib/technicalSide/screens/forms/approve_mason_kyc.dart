@@ -1,11 +1,11 @@
 // lib/technicalSide/screens/forms/approve_mason_kyc.dart
-
-import 'dart:async'; // Required for Timer (Debounce)
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/technicalSide/models/mason_kyc_model.dart';
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/dealer_model.dart';
+import 'package:salesmanapp/widgets/reusable_functions.dart';
 
 class ApproveMasonKycScreen extends StatefulWidget {
   final Employee employee;
@@ -56,11 +56,7 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
 
   // --- 🟢 DYNAMIC SERVER SEARCH ---
   Future<Dealer?> _showServerSearchDealerDialog() async {
-    return await showDialog<Dealer>(
-      context: context,
-      barrierDismissible: true, // Search dialog can be dismissed
-      builder: (context) => _ServerSearchDialog(api: _api),
-    );
+    return await openDealerSearch(context);
   }
 
   // --- 🛡️ UPDATED: EDIT DIALOG (Safe from accidental close) ---
@@ -77,7 +73,9 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
         builder: (context, setStateDialog) {
           return AlertDialog(
             backgroundColor: _surfaceWhite,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             title: const Text(
               "Review & Edit Details",
               style: TextStyle(fontWeight: FontWeight.bold, color: _textDark),
@@ -96,9 +94,16 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                   const SizedBox(height: 16),
 
                   // Dealer Selector
-                  const Text("Assign/Change Dealer", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: _textDark)),
+                  const Text(
+                    "Assign/Change Dealer",
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                      color: _textDark,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  
+
                   InkWell(
                     onTap: () async {
                       // Open the dynamic search dialog
@@ -109,11 +114,14 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                     },
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 16,
+                      ),
                       decoration: BoxDecoration(
                         color: _inputFill,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: _cardNavy.withOpacity(0.1)), 
+                        border: Border.all(color: _cardNavy.withOpacity(0.1)),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -122,8 +130,12 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                             child: Text(
                               selectedDealer?.name ?? "Tap to Search Dealer...",
                               style: TextStyle(
-                                color: selectedDealer != null ? _textDark : Colors.grey,
-                                fontWeight: selectedDealer != null ? FontWeight.w600 : FontWeight.normal,
+                                color: selectedDealer != null
+                                    ? _textDark
+                                    : Colors.grey,
+                                fontWeight: selectedDealer != null
+                                    ? FontWeight.w600
+                                    : FontWeight.normal,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -133,7 +145,7 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 16),
 
                   // Remarks
@@ -149,19 +161,37 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text("CANCEL", style: TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  "CANCEL",
+                  style: TextStyle(
+                    color: _textGrey,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  _processSubmission(item.id, 'rejected', remark: remarkController.text);
+                  _processSubmission(
+                    item.id,
+                    'rejected',
+                    remark: remarkController.text,
+                  );
                 },
-                child: const Text("REJECT", style: TextStyle(color: _dangerRed, fontWeight: FontWeight.bold)),
+                child: const Text(
+                  "REJECT",
+                  style: TextStyle(
+                    color: _dangerRed,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _accentGreen,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
                 onPressed: () {
                   Navigator.pop(context);
@@ -176,7 +206,13 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                     masonUpdates: updates,
                   );
                 },
-                child: const Text("SAVE & APPROVE", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                child: const Text(
+                  "SAVE & APPROVE",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ],
           );
@@ -192,8 +228,14 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
       filled: true,
       fillColor: _inputFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide.none,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: BorderSide.none,
+      ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: _cardNavy, width: 1),
@@ -246,12 +288,21 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
         elevation: 0,
         centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textGrey, size: 20),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: _textGrey,
+            size: 20,
+          ),
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
           "Review KYC",
-          style: TextStyle(color: _textDark, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 0.5),
+          style: TextStyle(
+            color: _textDark,
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+            letterSpacing: 0.5,
+          ),
         ),
         actions: [
           IconButton(
@@ -264,10 +315,17 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
         future: _submissionsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator(color: _cardNavy));
+            return const Center(
+              child: CircularProgressIndicator(color: _cardNavy),
+            );
           }
           if (snapshot.hasError) {
-            return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: _dangerRed)));
+            return Center(
+              child: Text(
+                "Error: ${snapshot.error}",
+                style: const TextStyle(color: _dangerRed),
+              ),
+            );
           }
           if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return Center(
@@ -279,12 +337,28 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       shape: BoxShape.circle,
-                      boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 5))],
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          blurRadius: 10,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
                     ),
-                    child: const Icon(Icons.verified_user_outlined, size: 40, color: _textGrey),
+                    child: const Icon(
+                      Icons.verified_user_outlined,
+                      size: 40,
+                      color: _textGrey,
+                    ),
                   ),
                   const SizedBox(height: 16),
-                  const Text("No pending KYC submissions", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold)),
+                  const Text(
+                    "No pending KYC submissions",
+                    style: TextStyle(
+                      color: _textDark,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ],
               ),
             );
@@ -308,7 +382,13 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
       decoration: BoxDecoration(
         color: _surfaceWhite,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -316,7 +396,9 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
           // Header: Mason Info
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6)))),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
+            ),
             child: Row(
               children: [
                 CircleAvatar(
@@ -328,20 +410,40 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(item.mason?.name ?? "Unknown Mason", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: _textDark)),
+                      Text(
+                        item.mason?.name ?? "Unknown Mason",
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: _textDark,
+                        ),
+                      ),
                       const SizedBox(height: 2),
-                      Text(item.mason?.phoneNumber ?? "No Phone", style: const TextStyle(color: _textGrey, fontSize: 13)),
+                      Text(
+                        item.mason?.phoneNumber ?? "No Phone",
+                        style: const TextStyle(color: _textGrey, fontSize: 13),
+                      ),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFFFF7ED),
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(color: const Color(0xFFFFEDD5)),
                   ),
-                  child: const Text("PENDING", style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: _pendingOrange)),
+                  child: const Text(
+                    "PENDING",
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: _pendingOrange,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -353,11 +455,20 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (item.aadhaarNumber != null) _detailRow("Aadhaar", item.aadhaarNumber!),
+                if (item.aadhaarNumber != null)
+                  _detailRow("Aadhaar", item.aadhaarNumber!),
                 if (item.panNumber != null) _detailRow("PAN", item.panNumber!),
-                if (item.voterIdNumber != null) _detailRow("Voter ID", item.voterIdNumber!),
+                if (item.voterIdNumber != null)
+                  _detailRow("Voter ID", item.voterIdNumber!),
                 const SizedBox(height: 20),
-                const Text("Submitted Documents", style: TextStyle(fontWeight: FontWeight.bold, color: _textDark, fontSize: 14)),
+                const Text(
+                  "Submitted Documents",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: _textDark,
+                    fontSize: 14,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 _buildDocumentsGrid(item.documents),
               ],
@@ -371,13 +482,23 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
               width: double.infinity,
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.edit_note, color: Colors.white),
-                label: const Text("REVIEW & EDIT DETAILS", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                label: const Text(
+                  "REVIEW & EDIT DETAILS",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: _cardNavy,
                   padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
-                onPressed: _isProcessing ? null : () => _showEditAndActionDialog(item),
+                onPressed: _isProcessing
+                    ? null
+                    : () => _showEditAndActionDialog(item),
               ),
             ),
           ),
@@ -393,20 +514,37 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(label, style: const TextStyle(color: _textGrey, fontSize: 13)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.w600, color: _textDark, fontSize: 13)),
+          Text(
+            value,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: _textDark,
+              fontSize: 13,
+            ),
+          ),
         ],
       ),
     );
   }
 
   Widget _buildDocumentsGrid(Map<String, dynamic> docs) {
-    if (docs.isEmpty) return const Text("No documents attached", style: TextStyle(fontStyle: FontStyle.italic, color: _textGrey));
+    if (docs.isEmpty)
+      return const Text(
+        "No documents attached",
+        style: TextStyle(fontStyle: FontStyle.italic, color: _textGrey),
+      );
 
     return Wrap(
       spacing: 12,
       runSpacing: 12,
       children: docs.entries.map((entry) {
-        String label = entry.key.replaceAll('Url', '').replaceAllMapped(RegExp(r'([A-Z])'), (match) => ' ${match.group(0)}').trim();
+        String label = entry.key
+            .replaceAll('Url', '')
+            .replaceAllMapped(
+              RegExp(r'([A-Z])'),
+              (match) => ' ${match.group(0)}',
+            )
+            .trim();
         String url = entry.value.toString();
 
         return GestureDetector(
@@ -420,13 +558,25 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.grey[200]!),
                   color: Colors.grey[50],
-                  image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+                  image: DecorationImage(
+                    image: NetworkImage(url),
+                    fit: BoxFit.cover,
+                  ),
                 ),
               ),
               const SizedBox(height: 6),
               SizedBox(
                 width: 80,
-                child: Text(label, style: const TextStyle(fontSize: 10, color: _textGrey, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: _textGrey,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                ),
               ),
             ],
           ),
@@ -447,7 +597,10 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
               alignment: Alignment.topRight,
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
-                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
                 child: const CloseButton(),
               ),
             ),
@@ -458,131 +611,6 @@ class _ApproveMasonKycScreenState extends State<ApproveMasonKycScreen> {
           ],
         ),
       ),
-    );
-  }
-}
-
-// --- 🟢 INTERNAL WIDGET: Server-Side Search Dialog ---
-class _ServerSearchDialog extends StatefulWidget {
-  final ApiService api;
-  const _ServerSearchDialog({required this.api});
-
-  @override
-  State<_ServerSearchDialog> createState() => _ServerSearchDialogState();
-}
-
-class _ServerSearchDialogState extends State<_ServerSearchDialog> {
-  List<Dealer> _dealers = [];
-  bool _isLoading = false;
-  Timer? _debounce;
-  String _lastQuery = "";
-
-  // Colors
-  static const Color _textDark = Color(0xFF111827);
-  static const Color _textGrey = Color(0xFF6B7280);
-  static const Color _inputFill = Color(0xFFF9FAFB);
-
-  @override
-  void initState() {
-    super.initState();
-    _performSearch(""); // Initial load
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      if (query != _lastQuery) {
-        _performSearch(query);
-      }
-    });
-  }
-
-  Future<void> _performSearch(String query) async {
-    setState(() => _isLoading = true);
-    _lastQuery = query;
-
-    try {
-      final results = await widget.api.fetchDealers(
-        search: query,
-        limit: 20,
-      );
-      if (mounted) {
-        setState(() {
-          _dealers = results;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      debugPrint("Search Error: $e");
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text("Select Dealer", style: TextStyle(color: _textDark, fontWeight: FontWeight.bold)),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: 400,
-        child: Column(
-          children: [
-            // Search Bar
-            TextField(
-              autofocus: true,
-              style: const TextStyle(color: _textDark),
-              decoration: InputDecoration(
-                hintText: "Type to search dealer...",
-                hintStyle: const TextStyle(color: _textGrey),
-                prefixIcon: const Icon(Icons.search, color: _textGrey),
-                filled: true,
-                fillColor: _inputFill,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              ),
-              onChanged: _onSearchChanged,
-            ),
-            const SizedBox(height: 12),
-            
-            // Results List
-            Expanded(
-              child: _isLoading 
-                ? const Center(child: CircularProgressIndicator())
-                : _dealers.isEmpty
-                    ? const Center(child: Text("No dealers found", style: TextStyle(color: _textGrey)))
-                    : ListView.separated(
-                        itemCount: _dealers.length,
-                        separatorBuilder: (ctx, i) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                        itemBuilder: (context, index) {
-                          final dealer = _dealers[index];
-                          return ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(dealer.name, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w600)),
-                            subtitle: Text(dealer.area, style: const TextStyle(color: _textGrey, fontSize: 12)),
-                            onTap: () => Navigator.pop(context, dealer),
-                          );
-                        },
-                      ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, null),
-          child: const Text("CANCEL", style: TextStyle(color: _textGrey, fontWeight: FontWeight.bold)),
-        )
-      ],
     );
   }
 }

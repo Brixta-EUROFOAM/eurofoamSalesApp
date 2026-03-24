@@ -9,7 +9,7 @@ import 'package:uuid/uuid.dart';
 
 // Project Imports
 import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
 import 'package:salesmanapp/services/journeyFgTaskHandler/journey_foreground_service.dart';
 import 'journey_tracking_capabilities.dart';
 import 'journey_tracking_result.dart';

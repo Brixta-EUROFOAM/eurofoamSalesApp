@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_radar/flutter_radar.dart';
 import 'package:provider/provider.dart';
 //import 'package:shared_preferences/shared_preferences.dart';
@@ -44,88 +43,27 @@ import 'package:salesmanapp/features/salesJourney/sales_journey_capabilities.dar
 // --- WIDGETS & THEMES ---
 import 'package:salesmanapp/widgets/app_theme.dart';
 import 'package:salesmanapp/widgets/theme_provider.dart';
+import 'package:salesmanapp/widgets/reusable_constants.dart';
 
 // --- MODELS & SERVICES ---
-import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
 import 'package:salesmanapp/services/notification_service.dart';
 import 'package:salesmanapp/api/auth_service.dart';
 import 'package:salesmanapp/services/update_service.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 
 // --- SCREENS ---
-import 'package:salesmanapp/screens/auth/login_screen.dart';
-import 'package:salesmanapp/screens/nav_screen.dart';
-import 'package:salesmanapp/screens/app_selector_screen.dart';
+import 'package:salesmanapp/auth/login_screen.dart';
+import 'package:salesmanapp/salesSide/screens/nav_screen.dart';
+import 'package:salesmanapp/auth/app_selector_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/technical_nav_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/approve_mason_bagLift.dart';
-// Assuming this defines navigatorKey
 import 'package:firebase_core/firebase_core.dart';
-//REMOTE CONFIG STUFF
-// import 'package:firebase_remote_config/firebase_remote_config.dart';
-// import 'package:flutter/foundation.dart';
-// import 'package:http/http.dart' as http;
-// import 'dart:convert';
 
 // 1. DEFINE GLOBAL KEY FOR NAVIGATOR
 // We'll use this to get a BuildContext that's always under MaterialApp.
 final GlobalKey<NavigatorState> globalNavigatorKey =
     GlobalKey<NavigatorState>();
-
-Future<void> setupRemoteConfig() async {
-  try {
-    // debugPrint("🔍 Connecting to Firebase Remote Config...");
-    // final remoteConfig = FirebaseRemoteConfig.instance;
-
-    // // 1. Ensure Firebase doesn't cache for too long during this phase
-    // await remoteConfig.setConfigSettings(
-    //   RemoteConfigSettings(
-    //     fetchTimeout: const Duration(seconds: 10),
-    //     minimumFetchInterval: const Duration(minutes: 15),
-    //   ),
-    // );
-
-    // // 2. Fetch the dynamic URL from Firebase FIRST
-    // await remoteConfig.fetchAndActivate();
-    // final String fetchedUrl = remoteConfig.getString("api_base_url");
-
-    // if (fetchedUrl.isEmpty) {
-    //   debugPrint("⚠️ Firebase returned empty URL. Using default.");
-    //   return;
-    // }
-
-    // debugPrint("📡 Firebase provided URL: $fetchedUrl. Pinging to verify...");
-
-    // // 3. Ping the FETCHED URL to ensure it is actually alive and yours
-    // final response = await http
-    //     .get(Uri.parse('$fetchedUrl/api'))
-    //     .timeout(const Duration(seconds: 10));
-
-    // if (response.statusCode == 200) {
-    //   final jsonResponse = jsonDecode(response.body);
-    //   final message = jsonResponse['message'];
-
-    //   // 4. The Strict Condition: Only apply it if it's genuinely your backend
-    //   if (message == "Welcome to the Field Force Management API!") {
-    //     ApiService.baseUrl = fetchedUrl;
-    //     AuthService.baseUrl = fetchedUrl;
-    //     debugPrint("✅ SUCCESS: Base URL safely updated to $fetchedUrl");
-    //   } else {
-    //     debugPrint(
-    //       "⚠️ Server at $fetchedUrl responded, but message mismatched. Ignored.",
-    //     );
-    //   }
-    // } else {
-    //   debugPrint(
-    //     "⚠️ Server at $fetchedUrl returned ${response.statusCode}. Ignored.",
-    //   );
-    // }
-  } catch (e) {
-    // 🛡️ OFFLINE SAFETY NET
-    // If there is no internet, Firebase is down, or the fetched server is dead,
-    // this silently catches the error. The app will just use the default
-    // URLs defined in ApiService/AuthService and rely on your new Offline Engine!
-    debugPrint("⚠️ Remote Config bypass triggered (Network/Server down): $e");
-  }
-}
 
 Future<void> main() async {
   final flags = TechnicalFlags.dev;
@@ -135,7 +73,25 @@ Future<void> main() async {
   await Firebase.initializeApp();
   debugPrint("Firebase Initialized Successfully.");
 
-  await setupRemoteConfig();
+  // Remote Config -- pull env keys
+  final remoteConfig = FirebaseRemoteConfig.instance;
+
+  await remoteConfig.setConfigSettings(
+    RemoteConfigSettings(
+      fetchTimeout: const Duration(seconds: 10),
+      minimumFetchInterval: Duration.zero,
+    ),
+  );
+
+  await remoteConfig.setDefaults({
+    'RADAR_API_KEY': '',
+    'STADIA_API_KEY': '',
+  });
+
+  await remoteConfig.fetchAndActivate();
+
+  debugPrint("RC Radar: ${remoteConfig.getString('RADAR_API_KEY')}");
+  debugPrint("RC Stadia: ${remoteConfig.getString('STADIA_API_KEY')}");
 
   final kernel = AppKernel.instance;
   //KERNEL REGISTRATION
@@ -244,14 +200,12 @@ Future<void> main() async {
 
   await DvrTimerForegroundService.init();
 
-  await dotenv.load(fileName: ".env");
-
-  final radarPublishableKey = dotenv.env['RADAR_API_KEY'];
-  if (radarPublishableKey != null) {
+  final radarPublishableKey = AppKeys.radarApiKey;
+  if (radarPublishableKey.isEmpty) {
+    debugPrint("❌ Radar key missing — skipping init");
+  } else {
     await Radar.initialize(radarPublishableKey);
     debugPrint("Radar SDK Initialized Successfully.");
-  } else {
-    debugPrint("ERROR: RADAR_PUBLISHABLE_KEY not found in .env file.");
   }
 
   runApp(
@@ -320,10 +274,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // await _checkForcedLogout();
-
-      if (globalNavigatorKey.currentContext != null) {
-        UpdateService.checkVersion(globalNavigatorKey.currentContext!);
-      }
+      UpdateService.checkVersion();
     });
   }
 

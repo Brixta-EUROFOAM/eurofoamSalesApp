@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
 import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
 
 class UserPjpListScreen extends StatefulWidget {
   final int userId;

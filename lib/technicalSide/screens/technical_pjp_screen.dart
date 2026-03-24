@@ -6,8 +6,8 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR ANIMATIONS
 
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/create_technical_pjp_form.dart';
 import 'package:salesmanapp/technicalSide/screens/bulk_technical_pjp_wizard_screen.dart';

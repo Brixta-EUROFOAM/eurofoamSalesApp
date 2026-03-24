@@ -32,7 +32,7 @@ class SalesFlags {
 
     createDvr: true,
     addDealer: true,
-    competitionForm: true,
+    competitionForm: false,
     salesOrders: false,
     teamView: true,
 

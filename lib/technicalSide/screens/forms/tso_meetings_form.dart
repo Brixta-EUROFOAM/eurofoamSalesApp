@@ -7,8 +7,8 @@ import 'package:intl/intl.dart';
 import 'package:camera/camera.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/dealer_model.dart';
 import 'package:salesmanapp/technicalSide/models/tso_meetings_model.dart';
 
 // ---------------------------------------------------------------------------

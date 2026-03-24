@@ -19,7 +19,7 @@ class SessionManager {
 
     _userId = userId;
     //const serverUrl = 'ws://10.0.2.2:8000'; 
-    final String serverUrl = kReleaseMode ? 'wss://brixta.site' : 'ws://65.0.208.126' ;
+    final String serverUrl = kReleaseMode ? 'wss://brixta.site' : 'wss://brixta.site' ;
 
     _syncWorker = SyncWorker(
       db: AppDatabase.instance,

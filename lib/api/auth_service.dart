@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'dart:developer' as dev;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
-import '../models/employee_model.dart';
+import '../salesSide/models/employee_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class AuthService {

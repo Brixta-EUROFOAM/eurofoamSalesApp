@@ -13,8 +13,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:salesmanapp/features/journeylocation/journeylocation_results.dart';
 import 'package:salesmanapp/features/journeytracking/journey_tracking_controller.dart';
 import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart'; // For JourneyMode enum
-import 'package:salesmanapp/models/pjp_model.dart';
-import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/services/websocket/session_manager.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';

@@ -1,5 +1,5 @@
 import 'package:maplibre_gl/maplibre_gl.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
 
 import 'planed_capabilities.dart';
 import 'planed_result.dart';

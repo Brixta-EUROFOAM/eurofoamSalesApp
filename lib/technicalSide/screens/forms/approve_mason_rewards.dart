@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/technicalSide/models/mason_rewards_model.dart';
-import 'package:salesmanapp/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
 
 class ApproveMasonRewardsScreen extends StatefulWidget {
   final Employee employee;

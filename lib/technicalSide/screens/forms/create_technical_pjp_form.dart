@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:salesmanapp/core/app_kernel.dart'; //
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_result.dart';
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:maplibre_gl/maplibre_gl.dart'; // Ensure this is at the top
 import 'package:flutter/services.dart';
@@ -51,14 +51,6 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
   final _schemesController = TextEditingController(text: '');
   final _infNameController = TextEditingController();
   final _infPhoneController = TextEditingController();
-
-  final List<String> _activityOptions = [
-    'Mason',
-    'Contractor',
-    'Engineer/Architect',
-    'Builder',
-    'Dealer',
-  ];
 
   // --- THEME ---
   static const Color _surfaceWhite = Colors.white;
@@ -226,8 +218,6 @@ class _CreateTechnicalPjpFormState extends State<CreateTechnicalPjpForm> {
                           ),
                           _buildVisitTypeSelector(),
                           const SizedBox(height: 24),
-                          _buildDynamicContextFields(),
-                          const SizedBox(height: 16),
                           _buildMapSelectorInput(
                             label: "Route / Full Address",
                             controller: _routeController,
@@ -306,9 +296,6 @@ Widget _buildMapSelectorInput({
   }) {
     return TextFormField(
       controller: controller,
-      // ⚡ FIX: Use readOnly instead of IgnorePointer.
-      // This keeps the field "active" (so validation errors show properly)
-      // but prevents the keyboard from opening.
       readOnly: true,
       onTap: onTap, // Native tap handler works perfectly with readOnly
 
@@ -355,44 +342,6 @@ Widget _buildMapSelectorInput({
         ],
       ),
     );
-  }
-
-  Widget _buildDynamicContextFields() {
-    if (_visitType == 'Influencer') {
-      return Column(
-        children: [
-          _buildSimpleInput(
-            label: "Name (PC / Mason / Engg)",
-            controller: _infNameController,
-            icon: Icons.person_outline,
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _buildFintechDropdown(
-                  label: "Activity Type",
-                  value: _selectedActivityType,
-                  items: _activityOptions,
-                  icon: Icons.assignment_ind_rounded,
-                  onChanged: (v) => setState(() => _selectedActivityType = v),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildSimpleInput(
-                  label: "Phone",
-                  controller: _infPhoneController,
-                  icon: Icons.phone_android,
-                  isPhone: true,
-                ),
-              ),
-            ],
-          ),
-        ],
-      );
-    }
-    return const SizedBox.shrink();
   }
 
   Widget _buildDynamicMetricGrid() {
@@ -477,42 +426,6 @@ Widget _buildMapSelectorInput({
             _schemesController,
             Colors.redAccent,
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFintechDropdown({
-    required String label,
-    required String? value,
-    required List<String> items,
-    required IconData icon,
-    required void Function(String?) onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        DropdownButtonFormField<String>(
-          value: value,
-          isExpanded: true,
-          dropdownColor: _surfaceWhite,
-          style: const TextStyle(color: _textDark, fontWeight: FontWeight.w500),
-          decoration: InputDecoration(
-            labelText: label,
-            labelStyle: const TextStyle(color: _textGrey),
-            prefixIcon: Icon(icon, color: _textGrey, size: 20),
-            filled: true,
-            fillColor: _inputFill,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
-            ),
-          ),
-          items: items
-              .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-              .toList(),
-          onChanged: onChanged,
-          validator: (v) => v == null ? 'Required' : null,
         ),
       ],
     );

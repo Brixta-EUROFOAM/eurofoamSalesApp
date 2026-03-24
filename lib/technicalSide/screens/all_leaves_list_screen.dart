@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
 import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/models/leave_application_model.dart';
+import 'package:salesmanapp/salesSide/models/leave_application_model.dart';
 import 'package:salesmanapp/technicalSide/screens/forms/create_leave_appl_form.dart';
 
 class AllLeavesListScreen extends StatefulWidget {

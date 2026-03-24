@@ -33,6 +33,7 @@ class TechnicalFlags {
 
   final bool showDbViewer;
   final bool accountSwitcher;
+  final bool offlineSync;
 
   const TechnicalFlags({
     required this.attendance,
@@ -62,6 +63,7 @@ class TechnicalFlags {
     required this.unplannedJourney,
     required this.showDbViewer,
     required this.accountSwitcher,
+    required this.offlineSync,
   });
 
   static const TechnicalFlags dev = TechnicalFlags(
@@ -97,5 +99,6 @@ class TechnicalFlags {
 
     showDbViewer: false,
     accountSwitcher: true,
+    offlineSync: true,
   );
 }

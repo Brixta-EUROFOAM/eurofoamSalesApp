@@ -1,18 +1,17 @@
 import 'dart:convert';
 import 'dart:developer' as dev;
 import 'dart:io';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import '../models/dealer_model.dart';
-import '../models/pjp_model.dart';
-import '../models/daily_task_model.dart';
-import '../models/leave_application_model.dart';
-import '../models/attendance_model.dart';
-import '../models/daily_visit_report_model.dart';
-import '../models/geotracking_data_model.dart';
-import '../models/competition_report_model.dart';
-import '../models/employee_model.dart';
+import '../salesSide/models/dealer_model.dart';
+import '../salesSide/models/pjp_model.dart';
+import '../salesSide/models/daily_task_model.dart';
+import '../salesSide/models/leave_application_model.dart';
+import '../salesSide/models/attendance_model.dart';
+import '../salesSide/models/daily_visit_report_model.dart';
+import '../salesSide/models/geotracking_data_model.dart';
+import '../salesSide/models/competition_report_model.dart';
+import '../salesSide/models/employee_model.dart';
 import '../technicalSide/models/technical_visit_report_model.dart';
 import '../technicalSide/models/mason_baglift_model.dart';
 import '../technicalSide/models/mason_kyc_model.dart';
@@ -20,7 +19,8 @@ import '../technicalSide/models/mason_rewards_model.dart';
 import '../technicalSide/models/sites_model.dart';
 import '../technicalSide/models/mason_pc_model.dart';
 import '../technicalSide/models/tso_meetings_model.dart';
-import '../models/team_members_model.dart';
+import '../salesSide/models/team_members_model.dart';
+import 'package:salesmanapp/widgets/reusable_constants.dart';
 
 // --- ✅ 1. (NEW) TSO USER HELPER CLASS (DEFINED HERE) ---
 class TsoUser {
@@ -305,10 +305,7 @@ class ApiService {
     required double latitude,
     required double longitude,
   }) async {
-    final radarApiKey = dotenv.env['RADAR_API_KEY'];
-    if (radarApiKey == null) {
-      throw Exception('RADAR_API_KEY not found in .env file');
-    }
+    final radarApiKey = AppKeys.radarApiKey;
 
     final url = Uri.parse(
       'https://api.radar.io/v1/geocode/reverse?coordinates=$latitude,$longitude',
@@ -362,15 +359,27 @@ class ApiService {
     String? area,
     String? type,
     int? userId,
+    double? lat,
+    double? lng,
+    double radius = 5, // km
     String? search,
     int page = 1,
     int limit = 300,
   }) async {
-    // 1. Build the query string
+    // 1. NEARBY MODE (PRIORITY)
+    if (lat != null && lng != null && (search == null || search.isEmpty)) {
+      return _get(
+        'dealers/discovery/nearby?lat=$lat&lng=$lng&radius=$radius',
+        (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
+      );
+    }
+
+    // 2. NORMAL FILTER SEARCH
     final queryParams = <String, String>{
       'limit': limit.toString(),
       'page': page.toString(),
     };
+
     if (region != null) queryParams['region'] = region;
     if (area != null) queryParams['area'] = area;
     if (type != null) queryParams['type'] = type;
@@ -381,7 +390,6 @@ class ApiService {
 
     final queryString = Uri(queryParameters: queryParams).query;
 
-    // 2. Call the endpoint
     return _get(
       'dealers?$queryString',
       (json) => (json as List).map((item) => Dealer.fromJson(item)).toList(),
@@ -808,6 +816,35 @@ class ApiService {
   // Just update the DailyTask status
   Future<void> updateDailyTaskStatus(String taskId, String status) async {
     await _patch('daily-tasks/$taskId', {'status': status}, (json) => json);
+  }
+
+  // Bulk update daily task status
+  Future<void> bulkUpdateDailyTaskStatus(List<String> taskIds, String status) async {
+    if (taskIds.isEmpty) return;
+
+    final url = Uri.parse('$baseUrl/api/daily-tasks/bulk-status');
+    dev.log('PATCH (Direct Bulk): $url', name: 'ApiService');
+    
+    try {
+      final response = await _client.patch(
+        url,
+        headers: _authHeaders, 
+        body: jsonEncode({
+          'taskIds': taskIds,
+          'status': status,
+        }),
+      );
+
+      final jsonData = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && jsonData['success'] == true) {return;
+      } else {
+        throw Exception(jsonData['error'] ?? 'Failed to bulk update tasks');
+      }
+    } catch (e) {
+      dev.log('API Error on bulkUpdateDailyTaskStatus', error: e, name: 'ApiService');
+      rethrow;
+    }
   }
 
   Future<void> deleteDailyTask(String taskId) => _delete('daily-tasks/$taskId');

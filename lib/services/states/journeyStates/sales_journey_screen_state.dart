@@ -11,7 +11,7 @@ import 'package:salesmanapp/features/salesJourney/sales_journey_controller.dart'
 import 'package:salesmanapp/services/journeyFgTaskHandler/journey_foreground_service.dart';
 import 'package:salesmanapp/services/states/taskStates/start_sales_journey.dart';
 import 'package:salesmanapp/services/websocket/session_manager.dart';
-import 'package:salesmanapp/models/daily_task_model.dart'; // 🚀 Added for DailyTask model
+import 'package:salesmanapp/salesSide/models/daily_task_model.dart'; // 🚀 Added for DailyTask model
 import 'package:salesmanapp/features/JourneyModeController/journey_mode_result.dart'; // 🚀 Added for JourneyMode
 
 // ==========================================

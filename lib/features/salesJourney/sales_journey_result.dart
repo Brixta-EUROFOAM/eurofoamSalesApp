@@ -1,4 +1,4 @@
-import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/salesSide/models/dealer_model.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 
 /// Base abstract class for all Sales Journey States

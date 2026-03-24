@@ -4,8 +4,8 @@ import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM
 import 'package:salesmanapp/core/app_kernel.dart';
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_controller.dart';
 import 'package:salesmanapp/features/mapselectionpjp/map_selection_result.dart';
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
 import 'package:salesmanapp/api/api_service.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';

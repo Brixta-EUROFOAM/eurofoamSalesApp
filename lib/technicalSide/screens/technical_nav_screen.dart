@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // 🔥 ADDED FOR HAPTICS
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart'; // 🚀 ADDED: Smooth App Shell Animations
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
 
 // --- Screens ---
 import 'package:salesmanapp/technicalSide/screens/technical_dashboard_screen.dart';

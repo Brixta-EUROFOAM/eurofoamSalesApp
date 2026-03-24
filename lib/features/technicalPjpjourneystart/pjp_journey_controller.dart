@@ -1,6 +1,6 @@
 import 'package:salesmanapp/api/api_service.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
-import 'package:salesmanapp/models/dealer_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/dealer_model.dart';
 import 'package:salesmanapp/technicalSide/models/sites_model.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 

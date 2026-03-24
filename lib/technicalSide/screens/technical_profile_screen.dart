@@ -2,17 +2,18 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // 🔥 ADDED FOR PREMIUM ANIMATIONS
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:salesmanapp/models/employee_model.dart';
-import 'package:salesmanapp/models/attendance_model.dart';
-import 'package:salesmanapp/models/pjp_model.dart';
-import 'package:salesmanapp/models/daily_task_model.dart';
-import 'package:salesmanapp/models/leave_application_model.dart';
+import 'package:salesmanapp/salesSide/models/employee_model.dart';
+import 'package:salesmanapp/salesSide/models/attendance_model.dart';
+import 'package:salesmanapp/salesSide/models/pjp_model.dart';
+import 'package:salesmanapp/salesSide/models/daily_task_model.dart';
+import 'package:salesmanapp/salesSide/models/leave_application_model.dart';
 import 'package:salesmanapp/technicalSide/models/technical_visit_report_model.dart';
 
 import 'package:salesmanapp/api/api_service.dart';
@@ -20,7 +21,7 @@ import 'package:salesmanapp/api/auth_service.dart';
 import 'package:salesmanapp/widgets/theme_provider.dart';
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
 
-import 'package:salesmanapp/technicalSide/tvrwidgets/all_tvr_list_screen.dart';
+import 'package:salesmanapp/technicalSide/screens/tvrwidgets/all_tvr_list_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/all_pjp_list_screen.dart';
 import 'package:salesmanapp/technicalSide/screens/all_leaves_list_screen.dart';
 
@@ -198,6 +199,91 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
     }
   }
 
+  // 🚀 O(1) EXTREME OPTIMIZATION SYNC METHOD
+  Future<void> syncOfflineDealers() async {
+    try {
+      int page = 1;
+      int newlyAdded = 0;
+      int patched = 0;
+      bool hasMore = true;
+      const int batchSize = 500;
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).clearSnackBars();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("🔄 Background sync started..."),
+            duration: Duration(seconds: 3),
+            backgroundColor: Color(0xFF0F172A),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+
+      // 🚀 Fetch IDs into memory (Set has O(1) lookup time)
+      final Set<String> existingIds = await AppDatabase.instance
+          .getAllDealerIdsFast();
+
+      while (hasMore) {
+        // 🚀 Yield the thread minimally to keep UI at 60fps
+        await Future.delayed(const Duration(milliseconds: 16));
+
+        final batch = await _apiService.fetchDealers(
+          search: "",
+          limit: batchSize,
+          page: page,
+        );
+
+        if (batch.isEmpty) {
+          hasMore = false;
+          break;
+        }
+
+        // 🚀 O(1) Logic Update: Set.add() returns true if the item was newly added, false if it existed!
+        for (var dealer in batch) {
+          if (dealer.id != null) {
+            if (existingIds.add(dealer.id!)) {
+              newlyAdded++;
+            } else {
+              patched++;
+            }
+          }
+        }
+
+        // 🚀 RAM SAVER: Removed Map.from() overhead. Drift handles insertion async.
+        final dealerJsonList = batch.map((d) => d.toJson()).toList();
+        await AppDatabase.instance.syncDealersToLocal(dealerJsonList);
+
+        page++;
+        if (batch.length < batchSize) hasMore = false;
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "✅ Sync Complete!\nAdded: $newlyAdded | Patched: $patched\nTotal in Vault: ${existingIds.length}",
+            ),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("🚨 SYNC ERROR: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Sync stopped at error: $e"),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
@@ -294,7 +380,7 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                           iconBg: const Color(0xFFFAF5FF),
                           onTap: () {
                             final userId = int.tryParse(widget.employee.id);
-                            if (userId != null)
+                            if (userId != null) {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -302,6 +388,7 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                                       UserTvrListScreen(userId: userId),
                                 ),
                               );
+                            }
                           },
                         )
                         .animate()
@@ -318,7 +405,7 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                           iconBg: const Color(0xFFE0E7FF),
                           onTap: () {
                             final userId = int.tryParse(widget.employee.id);
-                            if (userId != null)
+                            if (userId != null) {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -326,6 +413,7 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                                       UserPjpListScreen(userId: userId),
                                 ),
                               );
+                            }
                           },
                         )
                         .animate()
@@ -590,12 +678,13 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                           onTap: () async {
                             final prefs = await SharedPreferences.getInstance();
                             await prefs.setBool('is_technical_mode', false);
-                            if (context.mounted)
+                            if (context.mounted) {
                               Navigator.of(context).pushNamedAndRemoveUntil(
                                 '/home',
                                 (route) => false,
                                 arguments: widget.employee,
                               );
+                            }
                           },
                         ),
                       )
@@ -609,98 +698,166 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                         color: Colors.blueAccent.withOpacity(0.2),
                       )
                       .animate(onPlay: (c) => c.repeat()),
-                ],
 
-                // --- 4. ACCOUNT ACTIONS ---
-                const SizedBox(height: 32),
-                Text(
-                      "Account",
+                  if (flags.offlineSync) ...[
+                    const SizedBox(height: 32),
+                    Text(
+                      "Offline Data",
                       style: TextStyle(
                         color: _textDark,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
-                    )
-                    .animate()
-                    .fadeIn(delay: 950.ms)
-                    .slideX(begin: -0.1, curve: Curves.easeOut),
-                const SizedBox(height: 16),
+                    ).animate().fadeIn(delay: 780.ms).slideX(begin: -0.1),
+                    const SizedBox(height: 16),
+                    Container(
+                          decoration: BoxDecoration(
+                            color: _surfaceWhite,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: Colors.blueAccent.withOpacity(0.3),
+                              width: 1.5,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.06),
+                                blurRadius: 20,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                            leading: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(
+                                Icons.cloud_download_rounded,
+                                color: Colors.blueAccent,
+                                size: 26,
+                              ),
+                            ),
+                            title: const Text(
+                              "Sync Offline Dealers",
+                              style: TextStyle(
+                                color: Colors.blueAccent,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
+                            trailing: const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 16,
+                              color: Colors.blueAccent,
+                            ),
+                            onTap: () async {
+                              HapticFeedback.mediumImpact();
+                              await syncOfflineDealers();
+                            },
+                          ),
+                        )
+                        .animate()
+                        .fadeIn(delay: 800.ms)
+                        .slideY(begin: 0.1, curve: Curves.easeOutCubic),
+                  ],
 
-                Container(
-                      decoration: BoxDecoration(
-                        color: _surfaceWhite,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.06),
-                            blurRadius: 20,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: Theme(
-                        data: Theme.of(
-                          context,
-                        ).copyWith(dividerColor: Colors.transparent),
-                        child: ExpansionTile(
-                          leading: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: _cardNavy.withOpacity(0.05),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.shield_outlined,
-                              color: _cardNavy,
-                              size: 20,
-                            ),
-                          ),
-                          title: Text(
-                            'Privacy & Security',
-                            style: TextStyle(
-                              color: _textDark,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            ),
-                          ),
-                          childrenPadding: const EdgeInsets.only(bottom: 12),
-                          children: [
-                            ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                              ),
-                              leading: const Icon(
-                                Icons.delete_outline,
-                                color: Colors.redAccent,
-                              ),
-                              title: const Text(
-                                "Request Account Deletion",
-                                style: TextStyle(
-                                  color: Colors.redAccent,
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              trailing: const Icon(
-                                Icons.open_in_new,
-                                size: 16,
-                                color: Colors.grey,
-                              ),
-                              onTap: _launchDeleteAccountUrl,
+                  // --- 4. ACCOUNT ACTIONS ---
+                  const SizedBox(height: 32),
+                  Text(
+                        "Account",
+                        style: TextStyle(
+                          color: _textDark,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(delay: 950.ms)
+                      .slideX(begin: -0.1, curve: Curves.easeOut),
+                  const SizedBox(height: 16),
+
+                  Container(
+                        decoration: BoxDecoration(
+                          color: _surfaceWhite,
+                          borderRadius: BorderRadius.circular(24),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.grey.withOpacity(0.06),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
                             ),
                           ],
                         ),
-                      ),
-                    )
-                    .animate()
-                    .fadeIn(delay: 1000.ms)
-                    .slideY(begin: 0.2, curve: Curves.easeOutCubic),
+                        child: Theme(
+                          data: Theme.of(
+                            context,
+                          ).copyWith(dividerColor: Colors.transparent),
+                          child: ExpansionTile(
+                            leading: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: _cardNavy.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Icon(
+                                Icons.shield_outlined,
+                                color: _cardNavy,
+                                size: 20,
+                              ),
+                            ),
+                            title: Text(
+                              'Privacy & Security',
+                              style: TextStyle(
+                                color: _textDark,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                            childrenPadding: const EdgeInsets.only(bottom: 12),
+                            children: [
+                              ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                ),
+                                leading: const Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.redAccent,
+                                ),
+                                title: const Text(
+                                  "Request Account Deletion",
+                                  style: TextStyle(
+                                    color: Colors.redAccent,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                trailing: const Icon(
+                                  Icons.open_in_new,
+                                  size: 16,
+                                  color: Colors.grey,
+                                ),
+                                onTap: _launchDeleteAccountUrl,
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(delay: 1000.ms)
+                      .slideY(begin: 0.2, curve: Curves.easeOutCubic),
 
-                const SizedBox(height: 32),
-                _LogoutButton(color: _dangerRed)
-                    .animate()
-                    .fadeIn(delay: 1050.ms)
-                    .scaleXY(begin: 0.95, curve: Curves.easeOut),
+                  const SizedBox(height: 32),
+                  _LogoutButton(color: _dangerRed)
+                      .animate()
+                      .fadeIn(delay: 1050.ms)
+                      .scaleXY(begin: 0.95, curve: Curves.easeOut),
+                ],
               ],
             ),
           );
@@ -984,10 +1141,11 @@ class _LogoutButton extends StatelessWidget {
       ),
       onPressed: () async {
         await AuthService().logout();
-        if (context.mounted)
+        if (context.mounted) {
           Navigator.of(
             context,
           ).pushNamedAndRemoveUntil('/selector', (route) => false);
+        }
       },
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
