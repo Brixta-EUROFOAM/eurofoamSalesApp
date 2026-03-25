@@ -9,7 +9,7 @@
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
-	<string>com.example.assetarchiverflutter</string>
+	<string>com.salesmanapp.best</string>
 	<key>PROJECT_ID</key>
 	<string>bestauthotp</string>
 	<key>STORAGE_BUCKET</key>
@@ -25,6 +25,8 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:1004141461365:ios:1e236102e3231a06f2dd3c</string>
+	<string>1:1004141461365:ios:0eb36ae26abe0b8ef2dd3c</string>
+	<key>DATABASE_URL</key>
+	<string>https://bestauthotp-default-rtdb.asia-southeast1.firebasedatabase.app</string>
 </dict>
 </plist>

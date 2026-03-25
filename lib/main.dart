@@ -49,7 +49,6 @@ import 'package:salesmanapp/widgets/reusable_constants.dart';
 import 'package:salesmanapp/salesSide/models/employee_model.dart';
 import 'package:salesmanapp/services/notification_service.dart';
 import 'package:salesmanapp/api/auth_service.dart';
-import 'package:salesmanapp/services/update_service.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 
 // --- SCREENS ---
@@ -274,7 +273,6 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // await _checkForcedLogout();
-      UpdateService.checkVersion();
     });
   }
 

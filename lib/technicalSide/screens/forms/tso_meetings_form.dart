@@ -10,6 +10,7 @@ import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/salesSide/models/employee_model.dart';
 import 'package:salesmanapp/salesSide/models/dealer_model.dart';
 import 'package:salesmanapp/technicalSide/models/tso_meetings_model.dart';
+import 'package:salesmanapp/widgets/reusable_functions.dart';
 
 // ---------------------------------------------------------------------------
 // INLINE CAMERA MODULE
@@ -299,10 +300,7 @@ class _TsoMeetingsFormState extends State<TsoMeetingsForm> {
   }
 
   Future<void> _openDealerSearch() async {
-    final Dealer? result = await showDialog(
-      context: context,
-      builder: (_) => _ServerDealerSearchDialog(api: _apiService),
-    );
+    final Dealer? result = await openDealerSearch(context);
     if (result != null) {
       setState(() => _selectedDealer = result);
     }
@@ -804,146 +802,6 @@ class _TsoMeetingsFormState extends State<TsoMeetingsForm> {
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _cardNavy, width: 1.5)),
       errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _dangerRed, width: 1.5)),
       focusedErrorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _dangerRed, width: 1.5)),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 🟢 SEARCH DIALOG MODULE
-// ---------------------------------------------------------------------------
-class _ServerDealerSearchDialog extends StatefulWidget {
-  final ApiService api;
-  const _ServerDealerSearchDialog({required this.api});
-
-  @override
-  State<_ServerDealerSearchDialog> createState() =>
-      _ServerDealerSearchDialogState();
-}
-
-class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
-  List<Dealer> _dealers = [];
-  bool _isLoading = false;
-  Timer? _debounce;
-  String _lastQuery = "";
-
-  @override
-  void initState() {
-    super.initState();
-    _performSearch("");
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    super.dispose();
-  }
-
-  void _onSearchChanged(String query) {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      if (query != _lastQuery) {
-        _performSearch(query);
-      }
-    });
-  }
-
-  Future<void> _performSearch(String query) async {
-    setState(() => _isLoading = true);
-    _lastQuery = query;
-    try {
-      final results = await widget.api.fetchDealers(search: query, limit: 20);
-      if (mounted) {
-        setState(() {
-          _dealers = results;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text(
-        "Select Dealer",
-        style: TextStyle(color: Color(0xFF111827), fontWeight: FontWeight.bold),
-      ),
-      content: SizedBox(
-        width: double.maxFinite,
-        height: 400,
-        child: Column(
-          children: [
-            TextField(
-              autofocus: true,
-              style: const TextStyle(color: Color(0xFF111827)),
-              decoration: InputDecoration(
-                hintText: "Search dealer...",
-                hintStyle: const TextStyle(color: Color(0xFF6B7280)),
-                prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
-                filled: true,
-                fillColor: const Color(0xFFF9FAFB),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 12,
-                ),
-              ),
-              onChanged: _onSearchChanged,
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _dealers.isEmpty
-                  ? const Center(
-                      child: Text(
-                        "No dealers found",
-                        style: TextStyle(color: Color(0xFF6B7280)),
-                      ),
-                    )
-                  : ListView.separated(
-                      itemCount: _dealers.length,
-                      separatorBuilder: (ctx, i) =>
-                          const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                      itemBuilder: (context, index) {
-                        final dealer = _dealers[index];
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            dealer.name,
-                            style: const TextStyle(
-                              color: Color(0xFF111827),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle: Text(
-                            dealer.area,
-                            style: const TextStyle(
-                              color: Color(0xFF6B7280),
-                              fontSize: 12,
-                            ),
-                          ),
-                          onTap: () => Navigator.pop(context, dealer),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, null),
-          child: const Text("CANCEL"),
-        ),
-      ],
     );
   }
 }

@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "1004141461365",
+    "firebase_url": "https://bestauthotp-default-rtdb.asia-southeast1.firebasedatabase.app",
     "project_id": "bestauthotp",
     "storage_bucket": "bestauthotp.firebasestorage.app"
   },

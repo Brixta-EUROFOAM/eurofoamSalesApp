@@ -4,7 +4,8 @@ import 'dart:developer' as dev;
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // 🚀 Premium Animations
+import 'package:flutter_animate/flutter_animate.dart'; 
+import 'package:salesmanapp/services/update_service.dart';
 
 import 'package:salesmanapp/salesSide/models/employee_model.dart';
 import 'package:salesmanapp/salesSide/models/pjp_model.dart';
@@ -76,6 +77,7 @@ class _NavScreenState extends State<NavScreen> {
   void initState() {
     super.initState();
     _navProvider = NavProvider();
+    UpdateService.checkVersion(userRole: 'SALES');
   }
 
   @override

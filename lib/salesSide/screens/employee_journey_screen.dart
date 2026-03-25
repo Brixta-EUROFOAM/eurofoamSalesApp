@@ -13,6 +13,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart'; 
+import 'package:firebase_database/firebase_database.dart'; // Live Tracking updates to Firebase Realtime DB
 
 // --- Core & API Imports ---
 import 'package:salesmanapp/api/api_service.dart';
@@ -89,6 +91,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
 
   bool _restoreChecked = false;
   LatLng? _currentUserLocation;
+  LatLng? _lastRecordedLocation;
   LatLng? _destinationLocation;
   final List<LatLng> _routeTaken = [];
   bool _isRouteLineLayerAdded = false;
@@ -109,6 +112,8 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     target: LatLng(26.1445, 91.7362),
     zoom: 12,
   );
+
+  final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
 
   // ---------- UI STATE ----------
   final ValueNotifier<String> _distanceDisplay = ValueNotifier<String>(
@@ -180,7 +185,9 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     super.initState();
 
     // Default to unplanned unless coming from a planned task
-    _journeyMode = widget.initialJourneyData != null ? JourneyMode.planned : JourneyMode.unplanned;
+    _journeyMode = widget.initialJourneyData != null
+        ? JourneyMode.planned
+        : JourneyMode.unplanned;
 
     _controller = SalesJourneyController(
       caps: SalesJourneyCapabilities.fromFlags(SalesFlags.dev),
@@ -254,6 +261,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
       _routeTaken.clear();
       _hasArrived = false;
       _isMapTrackingUser = true;
+      _lastRecordedLocation = null;
     });
 
     _distanceDisplay.value = "0.00 km";
@@ -290,6 +298,20 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
     });
 
     _posSub = _controller.positionStream.listen((latLng) async {
+      // GPS JITTER: Ignore tiny jumps < 0.5 meters
+      if (_lastRecordedLocation != null) {
+        final dist = Geolocator.distanceBetween(
+          _lastRecordedLocation!.latitude,
+          _lastRecordedLocation!.longitude,
+          latLng.latitude,
+          latLng.longitude,
+        );
+
+        // If movement is less than half a meter, drop the update completely!
+        if (dist < 0.5) return; 
+      }
+      
+      _lastRecordedLocation = latLng;
       _currentUserLocation = latLng;
       _routeTaken.add(latLng);
 
@@ -297,7 +319,23 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         _updateTravelledPolyline();
       }
 
-      // 🚀 BATTERY EFFICIENT SQLITE WRITES
+      // Send Live Loc to Firebase Realtime DB first
+      if (_isJourneyActive) {
+        try {
+          _dbRef.child('live_locations/${widget.employee.id}').set({
+            'lat': latLng.latitude,
+            'lng': latLng.longitude,
+            'timestamp': ServerValue.timestamp,
+            'name': widget.employee.displayName,
+            'role': 'SALES',
+            'taskId': _taskId ?? 'unplanned',
+          });
+        } catch (e) {
+          dev.log("Firebase RTDB Error: $e");
+        }
+      }
+
+      // BATTERY EFFICIENT SQLITE WRITES
       if (_isJourneyActive && _controller.currentJourneyId != null) {
         _breadcrumbBatch.add(
           JourneyBreadcrumbsCompanion.insert(
@@ -848,6 +886,7 @@ class _EmployeeJourneyScreenState extends State<EmployeeJourneyScreen> {
         _routeTaken.clear();
         _journeyMode = JourneyMode.unplanned;
         _destinationController.clear();
+        _lastRecordedLocation = null;
       });
 
       _distanceDisplay.value = "Select Destination";
@@ -1680,178 +1719,3 @@ class _StartJourneySlider extends StatelessWidget {
     );
   }
 }
-
-// class _ServerDealerSearchDialog extends StatefulWidget {
-//   final ApiService api;
-//   const _ServerDealerSearchDialog({required this.api});
-//   @override
-//   State<_ServerDealerSearchDialog> createState() =>
-//       _ServerDealerSearchDialogState();
-// }
-
-// class _ServerDealerSearchDialogState extends State<_ServerDealerSearchDialog> {
-//   List<Dealer> _dealers = [];
-//   bool _isLoading = false;
-//   Timer? _debounce;
-
-//   @override
-//   void initState() {
-//     super.initState();
-//     _performSearch("");
-//   }
-
-//   // 🚀 CRITICAL FIX: Prevent memory leak and crash if dialog closes while typing
-//   @override
-//   void dispose() {
-//     _debounce?.cancel();
-//     super.dispose();
-//   }
-
-//   void _onSearchChanged(String query) {
-//     _debounce?.cancel();
-//     _debounce = Timer(const Duration(milliseconds: 400), () {
-//       _performSearch(query);
-//     });
-//   }
-
-//   Future<void> _performSearch(String query) async {
-//     setState(() => _isLoading = true);
-//     try {
-//       final results = await widget.api.fetchDealers(search: query, limit: 20);
-//       if (mounted) {
-//         setState(() {
-//           _dealers = results;
-//           _isLoading = false;
-//         });
-//       }
-//     } catch (e) {
-//       if (mounted) setState(() => _isLoading = false);
-//     }
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     return AlertDialog(
-//       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-//       title: const Text(
-//         "Select Dealer",
-//         style: TextStyle(fontWeight: FontWeight.w900),
-//       ),
-//       contentPadding: const EdgeInsets.only(
-//         left: 20,
-//         right: 20,
-//         top: 10,
-//         bottom: 0,
-//       ),
-//       content: SizedBox(
-//         width: double.maxFinite,
-//         height: MediaQuery.of(context).size.height * 0.5,
-//         child: Column(
-//           children: [
-//             TextField(
-//               onChanged: _onSearchChanged,
-//               decoration: InputDecoration(
-//                 hintText: "Search by name or zone...",
-//                 prefixIcon: const Icon(Icons.search, color: Color(0xFF6B7280)),
-//                 filled: true,
-//                 fillColor: const Color(0xFFF9FAFB),
-//                 border: OutlineInputBorder(
-//                   borderRadius: BorderRadius.circular(12),
-//                   borderSide: BorderSide.none,
-//                 ),
-//                 contentPadding: const EdgeInsets.symmetric(vertical: 0),
-//               ),
-//             ),
-//             const SizedBox(height: 16),
-//             Expanded(
-//               child: _isLoading
-//                   ? const Center(
-//                       child: CircularProgressIndicator(
-//                         color: Color(0xFF0F172A),
-//                       ),
-//                     )
-//                   : _dealers.isEmpty
-//                   ? const Center(
-//                       child: Text(
-//                         "No dealers found.",
-//                         style: TextStyle(color: Colors.grey),
-//                       ),
-//                     )
-//                   : ListView.separated(
-//                       itemCount: _dealers.length,
-//                       separatorBuilder: (context, index) =>
-//                           Divider(color: Colors.grey.shade200, height: 1),
-//                       itemBuilder: (context, index) {
-//                         final dealer = _dealers[index];
-//                         final String displayZone = dealer.region.isNotEmpty
-//                             ? dealer.region
-//                             : "Unknown Zone";
-
-//                         return ListTile(
-//                           contentPadding: const EdgeInsets.symmetric(
-//                             vertical: 4,
-//                             horizontal: 0,
-//                           ),
-//                           leading: const CircleAvatar(
-//                             backgroundColor: Color(0xFFEFF6FF),
-//                             child: Icon(
-//                               Icons.storefront,
-//                               color: Colors.blueAccent,
-//                               size: 20,
-//                             ),
-//                           ),
-//                           title: Text(
-//                             dealer.name,
-//                             style: const TextStyle(
-//                               fontWeight: FontWeight.bold,
-//                               fontSize: 15,
-//                               color: Color(0xFF111827),
-//                             ),
-//                           ),
-//                           // 🚀 MINIMALIST & HIGH PERFORMANCE: Removed heavy nested Rows & Containers
-//                           subtitle: Padding(
-//                             padding: const EdgeInsets.only(top: 6.0),
-//                             child: Column(
-//                               crossAxisAlignment: CrossAxisAlignment.start,
-//                               children: [
-//                                 Text(
-//                                   "Zone: $displayZone",
-//                                   style: const TextStyle(
-//                                     fontSize: 12,
-//                                     fontWeight: FontWeight.w600,
-//                                     color: Color(0xFF4B5563), // Clean dark grey
-//                                   ),
-//                                 ),
-//                                 const SizedBox(height: 2),
-//                                 Text(
-//                                   dealer.address,
-//                                   style: const TextStyle(
-//                                     fontSize: 12,
-//                                     color: Color(0xFF9CA3AF), // Subtle grey
-//                                   ),
-//                                   maxLines: 1,
-//                                   overflow: TextOverflow.ellipsis,
-//                                 ),
-//                               ],
-//                             ),
-//                           ),
-//                           onTap: () => Navigator.pop(context, dealer),
-//                         );
-//                       },
-//                     ),
-//             ),
-//           ],
-//         ),
-//       ),
-//       actions: [
-//         TextButton(
-//           onPressed: () => Navigator.pop(context),
-//           child: const Text(
-//             "CANCEL",
-//             style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
-//           ),
-//         ),
-//       ],
-//     ).animate().scale(curve: Curves.easeOutBack, duration: 400.ms);
-//   }
-// }

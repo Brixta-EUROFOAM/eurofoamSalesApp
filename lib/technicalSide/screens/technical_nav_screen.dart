@@ -1,11 +1,12 @@
 // lib/technicalSide/screens/technical_nav_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 🔥 ADDED FOR HAPTICS
+import 'package:flutter/services.dart'; 
 import 'package:provider/provider.dart';
-import 'package:flutter_animate/flutter_animate.dart'; // 🚀 ADDED: Smooth App Shell Animations
+import 'package:flutter_animate/flutter_animate.dart'; 
 import 'package:salesmanapp/salesSide/models/employee_model.dart';
 import 'package:salesmanapp/salesSide/models/pjp_model.dart';
+import 'package:salesmanapp/services/update_service.dart';
 
 // --- Screens ---
 import 'package:salesmanapp/technicalSide/screens/technical_dashboard_screen.dart';
@@ -38,11 +39,17 @@ class _TechnicalNavScreenState extends State<TechnicalNavScreen> {
   static const Color _cardNavy = Color(0xFF0F172A);
   static const Color _textGrey = Color(0xFF9CA3AF);
 
+  @override
+  void initState() {
+    super.initState();
+    UpdateService.checkVersion(userRole: 'TECHNICAL');
+  }
+
   // 🚀 O(1) Tab Switcher (No Heavy Rebuilds)
   void _onItemTapped(int index) {
     if (_selectedIndex == index) return;
 
-    HapticFeedback.selectionClick(); // 🔥 Premium Tactile Feedback
+    HapticFeedback.selectionClick(); 
     setState(() => _selectedIndex = index);
 
     if (index == 1) {

@@ -1,6 +1,7 @@
 // lib/screens/technical_journey/technical_journey_screen.dart
 
 import 'dart:async';
+import 'dart:developer' as dev;
 import 'package:flutter/material.dart';
 import 'package:flutter_radar/flutter_radar.dart';
 import 'package:geocoding/geocoding.dart';
@@ -9,6 +10,7 @@ import 'package:slide_to_act/slide_to_act.dart';
 import 'package:provider/provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:firebase_database/firebase_database.dart'; // Live Tracking updates to Firebase Realtime DB
 
 // Core & Models
 import 'package:salesmanapp/core/feature_flags/technical_flags.dart';
@@ -126,6 +128,8 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     zoom: 12,
   );
 
+  final DatabaseReference _dbRef = FirebaseDatabase.instance.ref();
+
   // Theme
   final Color _bgLight = const Color(0xFFF3F4F6);
   final Color _cardNavy = const Color(0xFF0F172A);
@@ -224,6 +228,21 @@ class _TechnicalJourneyScreenState extends State<TechnicalJourneyScreen> {
     if (_canUpdatePolyline()) {
       _updateTravelledPolyline();
     }
+
+    if (_isJourneyActive) {
+        try {
+          _dbRef.child('live_locations/${widget.employee.id}').set({
+            'lat': latLng.latitude,
+            'lng': latLng.longitude,
+            'timestamp': ServerValue.timestamp,
+            'name': widget.employee.displayName,
+            'role': 'TECHNICAL',
+            'pjpId': _currentPjp?.id ?? 'unplanned',
+          });
+        } catch (e) {
+          dev.log("Firebase RTDB Error: $e");
+        }
+      }
   }
 
   Future<void> _checkActiveSession() async {
