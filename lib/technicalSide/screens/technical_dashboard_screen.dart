@@ -441,6 +441,7 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
     try {
       return await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 20),
       );
     } catch (e) {
       debugPrint("Error getting position: $e");
@@ -465,14 +466,16 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
         }
 
         // Add granular details first, falling back to broader areas
-        addPart(place.thoroughfare);      // Street name
-        addPart(place.subLocality);       // Neighborhood / Area (e.g., Beltola)
-        addPart(place.locality);          // City (e.g., Guwahati)
-        addPart(place.subAdministrativeArea); // District (e.g., Kamrup Metropolitan)
+        addPart(place.thoroughfare); // Street name
+        addPart(place.subLocality); // Neighborhood / Area (e.g., Beltola)
+        addPart(place.locality); // City (e.g., Guwahati)
+        addPart(
+          place.subAdministrativeArea,
+        ); // District (e.g., Kamrup Metropolitan)
         // Only use 'street' or 'name' if we are desperate and it doesn't have a '+'
         if (validAddressParts.isEmpty) {
-           addPart(place.name);
-           addPart(place.street);
+          addPart(place.name);
+          addPart(place.street);
         }
 
         // If we found valid parts, join the first 2 or 3 for a clean display string
@@ -482,7 +485,10 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
           // Ultimate fallback if everything was empty or just Plus Codes
           final fallbackCity = place.locality ?? 'Unknown Area';
           final fallbackState = place.administrativeArea ?? '';
-          return "$fallbackCity, $fallbackState".replaceAll(RegExp(r'^,\s*|,\s*$'), '');
+          return "$fallbackCity, $fallbackState".replaceAll(
+            RegExp(r'^,\s*|,\s*$'),
+            '',
+          );
         }
       }
     } catch (e) {
@@ -545,15 +551,18 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
       }
 
       // 🚀 SPEED OPTIMIZATION 3: AWAIT PRE-WARMED GPS SAFELY
-      final Position? position = await locationFuture.timeout(
-        const Duration(seconds: 10),
+      Position? position = await locationFuture.timeout(
+        const Duration(seconds: 20),
         onTimeout: () => null,
       );
 
+      // retry once
       if (position == null) {
-        throw Exception(
-          "Location verification failed. Please check your GPS signal.",
-        );
+        position = await _getCurrentPosition();
+      }
+
+      if (position == null) {
+        throw Exception("Fetch Location. Please check GPS.");
       }
 
       // 🚀 SPEED OPTIMIZATION 4: PARALLEL NETWORK PIPELINE
@@ -833,7 +842,9 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                       iconBg: const Color(0xFFF0FDF4),
                       iconColor: Colors.green,
                       onTap: () {
-                        Navigator.pop(sheetContext); // Close bottom sheet immediately
+                        Navigator.pop(
+                          sheetContext,
+                        ); // Close bottom sheet immediately
 
                         // Soft Warning: Fire the snackbar but DO NOT WAIT!
                         if (!_isCheckedIn) {
@@ -901,7 +912,9 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                       iconBg: const Color(0xFFEEF2FF),
                       iconColor: const Color(0xFF4F46E5),
                       onTap: () {
-                        Navigator.pop(sheetContext); // Close bottom sheet immediately
+                        Navigator.pop(
+                          sheetContext,
+                        ); // Close bottom sheet immediately
 
                         // Soft Warning: Fire the snackbar but DO NOT WAIT!
                         if (!_isCheckedIn) {

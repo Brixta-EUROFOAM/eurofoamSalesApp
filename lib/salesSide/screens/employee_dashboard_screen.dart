@@ -647,7 +647,8 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
     try {
       // 🚀 SPEED OPTIMIZATION 1: PRE-WARM GPS
       Future<Position?> locationFuture = _getCurrentPosition().timeout(
-        const Duration(seconds: 15),
+        const Duration(seconds: 20),
+        onTimeout: () => null,
       );
 
       // 📸 OPEN CAMERA
@@ -667,9 +668,18 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       final File imageFile = File(imagePath);
 
       // 🚀 SPEED OPTIMIZATION 3: AWAIT PRE-WARMED GPS
-      final Position? position = await locationFuture;
+      Position? position = await locationFuture.timeout(
+        const Duration(seconds: 20),
+        onTimeout: () => null,
+      );
+
+      // retry once
       if (position == null) {
-        throw Exception("Location verification failed. Please enable GPS.");
+        position = await _getCurrentPosition();
+      }
+
+      if (position == null) {
+        throw Exception("Fetch Location. Please check GPS.");
       }
 
       // 🚀 SPEED OPTIMIZATION 4: PARALLEL NETWORK PIPELINE
