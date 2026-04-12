@@ -16,7 +16,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.assetarchiverflutter"
+    namespace = "com.salesmanapp.best"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.1.13356709"
 
