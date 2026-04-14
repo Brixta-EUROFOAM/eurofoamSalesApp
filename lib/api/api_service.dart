@@ -12,6 +12,8 @@ import '../salesSide/models/daily_visit_report_model.dart';
 import '../salesSide/models/geotracking_data_model.dart';
 import '../salesSide/models/competition_report_model.dart';
 import '../salesSide/models/employee_model.dart';
+import '../salesSide/models/sales_order_model.dart';
+
 import '../technicalSide/models/technical_visit_report_model.dart';
 import '../technicalSide/models/mason_baglift_model.dart';
 import '../technicalSide/models/mason_kyc_model.dart';
@@ -44,11 +46,8 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  //static String baseUrl = 'http://65.0.208.126'; //aws
   static String baseUrl = 'https://brixta.site'; // fix24
   //static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
-  //static String baseUrl = 'https://myserver2-5ame.onrender.com'; // (masontsopart - QR + wss)
-  //static String baseUrl = 'http://122.176.219.242:55000';
 
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
@@ -819,30 +818,35 @@ class ApiService {
   }
 
   // Bulk update daily task status
-  Future<void> bulkUpdateDailyTaskStatus(List<String> taskIds, String status) async {
+  Future<void> bulkUpdateDailyTaskStatus(
+    List<String> taskIds,
+    String status,
+  ) async {
     if (taskIds.isEmpty) return;
 
     final url = Uri.parse('$baseUrl/api/daily-tasks/bulk-status');
     dev.log('PATCH (Direct Bulk): $url', name: 'ApiService');
-    
+
     try {
       final response = await _client.patch(
         url,
-        headers: _authHeaders, 
-        body: jsonEncode({
-          'taskIds': taskIds,
-          'status': status,
-        }),
+        headers: _authHeaders,
+        body: jsonEncode({'taskIds': taskIds, 'status': status}),
       );
 
       final jsonData = jsonDecode(response.body);
 
-      if (response.statusCode == 200 && jsonData['success'] == true) {return;
+      if (response.statusCode == 200 && jsonData['success'] == true) {
+        return;
       } else {
         throw Exception(jsonData['error'] ?? 'Failed to bulk update tasks');
       }
     } catch (e) {
-      dev.log('API Error on bulkUpdateDailyTaskStatus', error: e, name: 'ApiService');
+      dev.log(
+        'API Error on bulkUpdateDailyTaskStatus',
+        error: e,
+        name: 'ApiService',
+      );
       rethrow;
     }
   }
@@ -928,6 +932,54 @@ class ApiService {
     });
   }
 
+  Future<List<DailyVisitReport>> fetchAllDvrs(
+    int userId, {
+    String? startDate,
+    String? endDate,
+    String? dealerType,
+    String? visitType,
+  }) async {
+    List<DailyVisitReport> all = [];
+
+    int page = 1;
+    const int limit = 3000; // match backend max
+    bool hasMore = true;
+
+    while (hasMore) {
+      final queryParams = <String, String>{
+        'page': page.toString(),
+        'limit': limit.toString(),
+        if (startDate != null) 'startDate': startDate,
+        if (endDate != null) 'endDate': endDate,
+        if (dealerType != null && dealerType != 'All') 'dealerType': dealerType,
+        if (visitType != null) 'visitType': visitType,
+      };
+
+      final queryString = Uri(queryParameters: queryParams).query;
+
+      final endpoint = 'daily-visit-reports/user/$userId?$queryString';
+
+      final chunk = await _get(endpoint, (json) {
+        final List dataList = json is List ? json : (json['data'] ?? []);
+        return dataList.map((item) => DailyVisitReport.fromJson(item)).toList();
+      });
+
+      if (chunk.isEmpty) {
+        hasMore = false;
+      } else {
+        all.addAll(chunk);
+
+        if (chunk.length < limit) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+    }
+
+    return all;
+  }
+
   Future<DailyVisitReport> createDvr(DailyVisitReport dvr) async {
     return _post(
       'daily-visit-reports',
@@ -964,6 +1016,53 @@ class ApiService {
     );
   }
 
+  Future<List<TechnicalVisitReport>> fetchAllTvrs(
+    int userId, {
+    String? startDate,
+    String? endDate,
+    String? visitType,
+  }) async {
+    List<TechnicalVisitReport> all = [];
+
+    int page = 1;
+    const int limit = 3000;
+    bool hasMore = true;
+
+    while (hasMore) {
+      final queryParams = <String, String>{
+        'page': page.toString(),
+        'limit': limit.toString(),
+        if (startDate != null) 'startDate': startDate,
+        if (endDate != null) 'endDate': endDate,
+        if (visitType != null) 'visitType': visitType,
+      };
+
+      final queryString = Uri(queryParameters: queryParams).query;
+
+      final chunk = await _get(
+        'technical-visit-reports/user/$userId?$queryString',
+        (json) {
+          final List dataList = json is List ? json : (json['data'] ?? []);
+          return dataList.map((e) => TechnicalVisitReport.fromJson(e)).toList();
+        },
+      );
+
+      if (chunk.isEmpty) {
+        hasMore = false;
+      } else {
+        all.addAll(chunk);
+
+        if (chunk.length < limit) {
+          hasMore = false;
+        } else {
+          page++;
+        }
+      }
+    }
+
+    return all;
+  }
+
   Future<TechnicalVisitReport> createTvr(TechnicalVisitReport tvr) async {
     return _post(
       'technical-visit-reports',
@@ -984,8 +1083,96 @@ class ApiService {
     );
   }
 
-  Future<void> deleteSalesOrder(String orderId) =>
-      _delete('sales-orders/$orderId');
+  Future<List<SalesOrder>> fetchSalesOrders({
+    int page = 1,
+    int limit = 50,
+    String? status,
+    int? userId,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+    };
+
+    if (status != null) queryParams['status'] = status;
+    if (userId != null) queryParams['userId'] = userId.toString();
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get(
+      'sales-orders?$queryString',
+      (json) => (json as List).map((e) => SalesOrder.fromJson(e)).toList(),
+    );
+  }
+
+  Future<List<SalesOrder>> fetchSalesOrdersByUser(
+    int userId, {
+    int limit = 50,
+    int page = 1,
+    String? status,
+  }) async {
+    final queryParams = <String, String>{
+      'limit': limit.toString(),
+      'page': page.toString(),
+    };
+
+    if (status != null) queryParams['status'] = status;
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get(
+      'sales-orders/user/$userId?$queryString',
+      (json) => (json as List).map((e) => SalesOrder.fromJson(e)).toList(),
+    );
+  }
+
+  Future<List<SalesOrder>> fetchSalesOrdersByDealer(
+    String dealerId, {
+    int limit = 50,
+    int page = 1,
+  }) async {
+    final queryString = Uri(
+      queryParameters: {'limit': limit.toString(), 'page': page.toString()},
+    ).query;
+
+    return _get(
+      'sales-orders/dealer/$dealerId?$queryString',
+      (json) => (json as List).map((e) => SalesOrder.fromJson(e)).toList(),
+    );
+  }
+
+  Future<SalesOrder> fetchSalesOrderById(String id) async {
+    return _get('sales-orders/$id', (json) => SalesOrder.fromJson(json));
+  }
+
+  Future<SalesOrder> createSalesOrder(SalesOrder order) async {
+    return _post(
+      'sales-orders',
+      order.toJson(),
+      (json) => SalesOrder.fromJson(json),
+    );
+  }
+
+  Future<List<SalesOrder>> searchSalesOrders({
+    String? search,
+    String? status,
+    String? dateFrom,
+    String? dateTo,
+  }) async {
+    final queryParams = <String, String>{};
+
+    if (search != null) queryParams['search'] = search;
+    if (status != null) queryParams['status'] = status;
+    if (dateFrom != null) queryParams['dateFrom'] = dateFrom;
+    if (dateTo != null) queryParams['dateTo'] = dateTo;
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get(
+      'sales-orders?$queryString',
+      (json) => (json as List).map((e) => SalesOrder.fromJson(e)).toList(),
+    );
+  }
 
   Future<Employee> fetchEmployeeProfile(String userId) async {
     final json = await _get(

@@ -184,7 +184,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _clockTimer?.cancel(); // Kill the timer
-    DvrTimerForegroundService.stop();
+    
     super.dispose();
   }
 
@@ -434,6 +434,7 @@ class _CreateDvrScreenState extends State<CreateDvrScreen>
 
       if (mounted) {
         _clockTimer?.cancel();
+        DvrTimerForegroundService.stop();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Saved Offline & Uploading..."),

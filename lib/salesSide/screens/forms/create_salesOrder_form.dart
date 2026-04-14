@@ -1,393 +1,418 @@
-import 'dart:convert';
+// lib/salesSide/widgets/sales_order_form.dart
 
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:socket_io_client/socket_io_client.dart' as IO;
+import '../../../api/api_service.dart';
 
-import 'package:salesmanapp/salesSide/models/employee_model.dart';
+import '../../models/sales_order_model.dart';
+import '../../models/employee_model.dart';
+import '../../models/dealer_model.dart';
+import '../../../widgets/reusable_functions.dart';
+import '../salesOrderWidgets/sales_order_constants.dart';
+import '../salesOrderWidgets/sales_order_widgets.dart';
 
-class ChatMessage {
-  final String text;
-  final String role;
-
-  ChatMessage({required this.text, required this.role});
-
-  Map<String, dynamic> toJson() => {
-        'text': text,
-        'role': role,
-      };
-
-  factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    return ChatMessage(
-      text: json['text'] as String,
-      role: json['role'] as String,
-    );
-  }
-}
-
-class SalesOrderScreen extends StatefulWidget {
+class SalesOrderForm extends StatefulWidget {
   final Employee employee;
-  const SalesOrderScreen({super.key, required this.employee});
+  final Function(SalesOrder)? onSubmit;
+
+  const SalesOrderForm({super.key, required this.employee, this.onSubmit});
 
   @override
-  State<SalesOrderScreen> createState() => _SalesOrderScreenState();
+  State<SalesOrderForm> createState() => _SalesOrderFormState();
 }
 
-class _SalesOrderScreenState extends State<SalesOrderScreen> {
-  final TextEditingController _textController = TextEditingController();
-  final List<ChatMessage> _messages = [];
-  final ScrollController _scrollController = ScrollController();
+class _SalesOrderFormState extends State<SalesOrderForm> {
+  final _formKey = GlobalKey<FormState>();
+  bool _isSubmitting = false;
+  final ApiService _apiService = ApiService();
 
-  late IO.Socket _socket;
-  late SharedPreferences _prefs;
+  // ---------------------------
+  // 🧠 STATE
+  // ---------------------------
+  Dealer? _selectedDealer;
+  bool _sameAsParty = false;
+  String? _selectedUnit = "MT";
+  String? _paymentMode;
 
-  bool _isConnected = false;
-  bool _isLoading = false;
-
-  static const String _chatStorageKey = 'sales_order_chat';
+  // ---------------------------
+  // 📝 CONTROLLERS
+  // ---------------------------
+  final c = <String, TextEditingController>{};
 
   @override
   void initState() {
     super.initState();
-    _initializeChat();
-  }
 
-  Future<void> _initializeChat() async {
-    _prefs = await SharedPreferences.getInstance();
+    const fields = [
+      "orderPartyName",
+      "partyPhoneNo",
+      "partyArea",
+      "partyRegion",
+      "partyAddress",
+      "deliveryArea",
+      "deliveryRegion",
+      "deliveryAddress",
+      "paymentTerms",
+      "paymentAmount",
+      "receivedPayment",
+      "pendingPayment",
+      "orderQty",
+      "itemPrice",
+      "discountPercentage",
+      "itemPriceAfterDiscount",
+      "itemType",
+      "itemGrade",
+      "status",
+    ];
 
-    final stored = _prefs.getString(_chatStorageKey);
-    if (stored != null) {
-      final List decoded = jsonDecode(stored);
-      _messages.addAll(
-        decoded
-            .map((e) => ChatMessage.fromJson(e))
-            .toList()
-            .reversed,
-      );
+    for (var f in fields) {
+      c[f] = TextEditingController();
     }
 
-    if (mounted) setState(() {});
-    _connectToSocket();
+    c["paymentAmount"]!.addListener(_calculatePending);
+    c["receivedPayment"]!.addListener(_calculatePending);
   }
 
-  void _connectToSocket() {
-    const socketUrl = 'https://python-ai-agent.onrender.com';
+  void _calculatePending() {
+    final total = double.tryParse(c["paymentAmount"]!.text) ?? 0;
+    final received = double.tryParse(c["receivedPayment"]!.text) ?? 0;
 
-    _socket = IO.io(
-      socketUrl,
-      <String, dynamic>{
-        'path': '/socket.io',
-        'transports': ['websocket', 'polling'],
-        'autoConnect': false,
-      },
-    );
+    final pending = total - received;
 
-    _socket.connect();
+    final text = pending >= 0 ? pending.toStringAsFixed(2) : "0.00";
 
-    _socket.onConnect((_) {
-      if (mounted) setState(() => _isConnected = true);
-    });
+    if (c["pendingPayment"]!.text == text) return;
 
-    _socket.onDisconnect((_) {
-      if (mounted) setState(() => _isConnected = false);
-    });
-
-    _socket.on('ready', (_) {
-      if (_messages.isEmpty) {
-        _addMessage(
-          text: "Hello! I'm CemTemBot, ready to assist. What can I get for you?",
-          role: 'assistant',
-        );
-      }
-    });
-
-    _socket.on('status', (data) {
-      if (data is Map && data['typing'] is bool) {
-        if (mounted) setState(() => _isLoading = data['typing']);
-      }
-    });
-
-    _socket.on('bot_message', (data) {
-      if (data is Map && data['text'] is String) {
-        _addMessage(text: data['text'], role: 'assistant');
-      }
-      if (mounted) setState(() => _isLoading = false);
+    // PREVENT LOOP
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      c["pendingPayment"]!.text = text;
     });
   }
 
-  void _addMessage({required String text, required String role}) {
-    final message = ChatMessage(text: text, role: role);
+  // ---------------------------
+  // 🚀 DEALER SELECT
+  // ---------------------------
+  Future<void> _selectDealer() async {
+    await Future.delayed(Duration.zero);
 
-    if (mounted) {
+    final dealer = await openDealerSearch(context);
+
+    if (dealer != null) {
       setState(() {
-        _messages.insert(0, message);
+        _selectedDealer = dealer;
+
+        c["orderPartyName"]!.text = dealer.name;
+        c["partyPhoneNo"]!.text = dealer.phoneNo;
+        c["partyArea"]!.text = dealer.area;
+        c["partyRegion"]!.text = dealer.region;
+        c["partyAddress"]!.text = dealer.address;
       });
     }
-
-    _persistMessages();
-    _scrollToBottom();
   }
 
-  void _persistMessages() {
-    final jsonList = _messages
-        .reversed
-        .map((m) => m.toJson())
-        .toList();
+  // ---------------------------
+  // 🔁 SAME ADDRESS TOGGLE
+  // ---------------------------
+  void _handleSameAddress(bool val) {
+    setState(() {
+      _sameAsParty = val;
 
-    _prefs.setString(_chatStorageKey, jsonEncode(jsonList));
+      if (val) {
+        c["deliveryArea"]!.text = c["partyArea"]!.text;
+        c["deliveryRegion"]!.text = c["partyRegion"]!.text;
+        c["deliveryAddress"]!.text = c["partyAddress"]!.text;
+      } else {
+        c["deliveryArea"]!.clear();
+        c["deliveryRegion"]!.clear();
+        c["deliveryAddress"]!.clear();
+      }
+    });
   }
 
-  void _handleSubmitted(String text) {
-    if (text.trim().isEmpty || !_isConnected) return;
+  // ---------------------------
+  // 🧾 SUBMIT
+  // ---------------------------
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
 
-    _textController.clear();
-    _addMessage(text: text, role: 'user');
+    setState(() => _isSubmitting = true);
 
-    if (mounted) setState(() => _isLoading = true);
-    _socket.emit('send_message', {'text': text});
-  }
+    try {
+      final order = SalesOrder(
+        id: "",
+        userId: int.tryParse(widget.employee.id),
+        dealerId: _selectedDealer?.id,
+        orderDate: DateTime.now(),
 
-  void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        0.0,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
+        orderPartyName: c["orderPartyName"]!.text,
+        partyPhoneNo: c["partyPhoneNo"]!.text,
+        partyArea: c["partyArea"]!.text,
+        partyRegion: c["partyRegion"]!.text,
+        partyAddress: c["partyAddress"]!.text,
+
+        deliveryArea: c["deliveryArea"]!.text,
+        deliveryRegion: c["deliveryRegion"]!.text,
+        deliveryAddress: c["deliveryAddress"]!.text,
+
+        paymentMode: _paymentMode,
+        paymentTerms: c["paymentTerms"]!.text,
+        paymentAmount: double.tryParse(c["paymentAmount"]!.text),
+        receivedPayment: double.tryParse(c["receivedPayment"]!.text),
+        pendingPayment: double.tryParse(c["pendingPayment"]!.text),
+
+        orderQty: double.tryParse(c["orderQty"]!.text),
+        orderUnit: _selectedUnit,
+
+        itemPrice: double.tryParse(c["itemPrice"]!.text),
+        discountPercentage: double.tryParse(c["discountPercentage"]!.text),
+        itemPriceAfterDiscount: double.tryParse(
+          c["itemPriceAfterDiscount"]!.text,
+        ),
+
+        itemType: c["itemType"]!.text,
+        itemGrade: c["itemGrade"]!.text,
+        status: c["status"]!.text,
       );
+
+      await _apiService.createSalesOrder(order);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Order Created Successfully"),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      Navigator.pop(context); // ONLY after success
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed: $e"), backgroundColor: Colors.red),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
     }
   }
 
-  @override
-  void dispose() {
-    _textController.dispose();
-    _scrollController.dispose();
-    _socket.dispose();
-    super.dispose();
-  }
-
+  // ---------------------------
+  // 🧱 UI
+  // ---------------------------
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
-        children: [
-          _buildStatusBanner(),
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              reverse: true,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              itemCount: _messages.length,
-              itemBuilder: (_, i) =>
-                  _ChatMessageBubble(message: _messages[i]),
-            ),
-          ),
-          if (_isLoading) const _TypingIndicator(),
-          _buildTextComposer(),
-          const SizedBox(height: 80),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusBanner() {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      color: theme.colorScheme.primary,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.support_agent,
-              color: theme.colorScheme.onPrimary, size: 16),
-          const SizedBox(width: 8),
-          Text(
-            "CemTemBot Status:",
-            style: TextStyle(
-              color: theme.colorScheme.onPrimary.withOpacity(0.8),
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _isConnected
-                  ? const Color(0xFF4CAF50)
-                  : const Color(0xFFE57373),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Text(
-            _isConnected ? "Connected" : "Disconnected",
-            style: TextStyle(
-              color: _isConnected
-                  ? const Color(0xFF4CAF50)
-                  : const Color(0xFFE57373),
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTextComposer() {
-    final theme = Theme.of(context);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      color: theme.scaffoldBackgroundColor,
-      child: Card(
-        elevation: 0,
-        color: theme.colorScheme.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-          side: theme.brightness == Brightness.light
-              ? BorderSide(
-                  color: theme.colorScheme.onSurface.withOpacity(0.1),
-                )
-              : BorderSide.none,
-        ),
-        child: Row(
+    return Form(
+      key: _formKey,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
           children: [
-            Expanded(
-              child: TextField(
-                controller: _textController,
-                enabled: _isConnected,
-                onSubmitted: _handleSubmitted,
-                decoration: InputDecoration(
-                  hintText:
-                      _isConnected ? 'Type your order...' : 'Connecting...',
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 14),
-                ),
-              ),
+            /// -------------------------
+            /// 🏢 DEALER
+            /// -------------------------
+            const SoSectionHeader(title: "Dealer", icon: Icons.store),
+
+            InkWell(
+              onTap: _selectDealer,
+              child: _selector(_selectedDealer?.name ?? "Select Dealer"),
             ),
-            IconButton(
-              icon: Icon(
-                Icons.send,
-                color: _isConnected
-                    ? theme.colorScheme.secondary
-                    : theme.disabledColor,
-              ),
-              onPressed: _isConnected
-                  ? () => _handleSubmitted(_textController.text)
+
+            const SizedBox(height: 20),
+
+            /// -------------------------
+            /// 👤 PARTY DETAILS
+            /// -------------------------
+            const SoSectionHeader(title: "Party Details"),
+
+            SoInputField(
+              controller: c["orderPartyName"]!,
+              label: "Party Name",
+              requiredField: true,
+            ),
+
+            SoInputField(
+              controller: c["partyPhoneNo"]!,
+              label: "Phone",
+              requiredField: true,
+              keyboardType: TextInputType.phone,
+            ),
+
+            SoInputField(
+              controller: c["partyArea"]!,
+              label: "Area",
+              requiredField: false,
+            ),
+
+            SoDropdownField(
+              label: "Region",
+              value:
+                  SalesOrderConstants.regionOptions.contains(
+                    c["partyRegion"]!.text,
+                  )
+                  ? c["partyRegion"]!.text
                   : null,
+              items: SalesOrderConstants.regionOptions,
+              onChanged: (v) {
+                c["partyRegion"]!.text = v ?? "";
+              },
+            ),
+
+            SoInputField(
+              controller: c["partyAddress"]!,
+              label: "Address",
+              maxLines: 2,
+            ),
+
+            const SizedBox(height: 20),
+
+            /// -------------------------
+            /// 🚚 DELIVERY
+            /// -------------------------
+            const SoSectionHeader(title: "Delivery"),
+
+            SwitchListTile(
+              value: _sameAsParty,
+              onChanged: _handleSameAddress,
+              title: const Text("Same as Party Address"),
+              activeColor: Colors.white,
+              activeTrackColor: const Color(0xFF0F172A),
+              inactiveThumbColor: Colors.white,
+              inactiveTrackColor: Colors.grey.shade400,
+            ),
+
+            SoInputField(
+              controller: c["deliveryArea"]!,
+              label: "Delivery Area",
+              requiredField: true,
+            ),
+
+            SoDropdownField(
+              label: "Delivery Region",
+              value:
+                  SalesOrderConstants.regionOptions.contains(
+                    c["deliveryRegion"]!.text,
+                  )
+                  ? c["deliveryRegion"]!.text
+                  : null,
+              items: SalesOrderConstants.regionOptions,
+              onChanged: (v) =>
+                  setState(() => c["deliveryRegion"]!.text = v ?? ""),
+            ),
+
+            SoInputField(
+              controller: c["deliveryAddress"]!,
+              label: "Delivery Address",
+              requiredField: true,
+              maxLines: 2,
+            ),
+
+            const SizedBox(height: 20),
+
+            /// -------------------------
+            /// 📦 ORDER
+            /// -------------------------
+            const SoSectionHeader(title: "Order"),
+
+            SoNumberField(
+              controller: c["orderQty"]!,
+              label: "Quantity",
+              requiredField: true,
+            ),
+
+            SoDropdownField(
+              label: "Unit",
+              value: _selectedUnit,
+              items: SalesOrderConstants.unitOptions,
+              onChanged: (v) => setState(() => _selectedUnit = v),
+            ),
+
+            const SizedBox(height: 20),
+
+            /// -------------------------
+            /// 💰 PAYMENT
+            /// -------------------------
+            const SoSectionHeader(title: "Payment"),
+
+            SoDropdownField(
+              label: "Payment Mode",
+              value: _paymentMode,
+              items: SalesOrderConstants.paymentModes,
+              onChanged: (v) => setState(() => _paymentMode = v),
+            ),
+
+            SoInputField(
+              controller: c["paymentTerms"]!,
+              label: "Payment Terms",
+              requiredField: true,
+            ),
+
+            SoNumberField(
+              controller: c["paymentAmount"]!,
+              label: "Total Amount",
+              requiredField: true,
+            ),
+
+            SoNumberField(
+              controller: c["receivedPayment"]!,
+              label: "Received",
+              requiredField: true,
+            ),
+
+            SoInputField(
+              controller: c["pendingPayment"]!,
+              label: "Pending",
+              requiredField: true,
+              keyboardType: TextInputType.number,
+              readOnly: true,
+            ),
+
+            const SizedBox(height: 30),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0F172A),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: _isSubmitting ? null : _submit,
+                child: _isSubmitting
+                    ? const SizedBox(
+                        height: 20,
+                        width: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text("SUBMIT ORDER"),
+              ),
             ),
           ],
         ),
       ),
-    ).animate().slide(begin: const Offset(0, 0.5), duration: 200.ms);
+    );
   }
-}
 
-class _ChatMessageBubble extends StatelessWidget {
-  final ChatMessage message;
-  const _ChatMessageBubble({required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isUser = message.role == 'user';
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        mainAxisAlignment:
-            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (!isUser)
-            CircleAvatar(
-              backgroundColor: theme.colorScheme.surface,
-              child: Icon(Icons.support_agent,
-                  color: theme.colorScheme.onSurface),
-            ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: BoxDecoration(
-                color: isUser
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.surface,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                message.text,
-                style: TextStyle(
-                  color: isUser
-                      ? theme.colorScheme.onPrimary
-                      : theme.colorScheme.onSurface,
-                  height: 1.4,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    ).animate().fadeIn(duration: 300.ms).slideY(begin: 0.3);
-  }
-}
-
-class _TypingIndicator extends StatelessWidget {
-  const _TypingIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Padding(
+  Widget _selector(String text) {
+    return Container(
       padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
       child: Row(
         children: [
-          CircleAvatar(
-            backgroundColor: theme.colorScheme.surface,
-            child: Icon(Icons.support_agent,
-                color: theme.colorScheme.onSurface),
-          ),
-          const SizedBox(width: 12),
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: List.generate(
-                3,
-                (i) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.onSurface.withOpacity(0.7),
-                      shape: BoxShape.circle,
-                    ),
-                  )
-                      .animate()
-                      .scaleY(
-                        delay: (i * 200).ms,
-                        duration: 400.ms,
-                      )
-                      .then(delay: 800.ms)
-                      .scaleY(duration: 400.ms),
-                ),
-              ),
-            ),
-          ),
+          Expanded(child: Text(text)),
+          const Icon(Icons.search),
         ],
       ),
-    ).animate(onComplete: (c) => c.repeat()).shimmer(duration: 1200.ms);
+    );
   }
 }

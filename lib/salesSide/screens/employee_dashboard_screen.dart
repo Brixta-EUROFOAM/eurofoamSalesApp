@@ -308,7 +308,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: SingleChildScrollView(
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
@@ -338,23 +338,59 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                         subtitle: "Daily Visit Report",
                         iconBg: const Color(0xFFEFF6FF),
                         iconColor: Colors.blue,
-                        onTap: () {
-                          Navigator.pop(
-                            context,
-                          ); // Close bottom sheet immediately
+                        onTap: () async {
+                          Navigator.pop(sheetContext); // close bottom sheet
 
-                          // Soft Warning: Fire the snackbar but DO NOT WAIT!
                           if (!_isCheckedIn) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  "Hey! YOU did NOT check in today!!",
+                            final shouldCheckIn = await showDialog<bool>(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (dialogContext) => AlertDialog(
+                                title: const Text("Check-In Required"),
+                                content: const Text(
+                                  "You did not check in today!\n\nPlease check in to continue.",
                                 ),
-                                duration: Duration(seconds: 3),
-                                backgroundColor: Colors.orange,
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, false),
+                                    child: const Text("Cancel"),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF0F172A),
+                                      foregroundColor: Colors.white,
+                                    ),
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, true),
+                                    child: const Text("Check In Now"),
+                                  ),
+                                ],
                               ),
                             );
+                            if (shouldCheckIn != true) return;
+
+                            // Trigger actual check-in flow
+                            await _performAttendanceAction(true);
+
+                            // IMPORTANT: wait for state update
+                            await Future.delayed(
+                              const Duration(milliseconds: 500),
+                            );
+
+                            // Re-check
+                            if (!_isCheckedIn) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Check-in failed. Try again."),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
                           }
+
+                          // NOW allow DVR
                           Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -407,9 +443,21 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                         subtitle: "Manage orders",
                         iconBg: const Color(0xFFF3E8FF),
                         iconColor: Colors.purple,
-                        onTap: () => _openDialog(
-                          SalesOrderScreen(employee: widget.employee),
-                        ),
+                        onTap: () {
+                          Navigator.pop(sheetContext); // close bottom sheet
+
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => Scaffold(
+                                appBar: AppBar(
+                                  title: const Text("Sales Order"),
+                                ),
+                                body: SalesOrderForm(employee: widget.employee),
+                              ),
+                            ),
+                          );
+                        },
                       )
                       .animate()
                       .fadeIn(delay: 250.ms)
@@ -423,7 +471,7 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                         iconBg: const Color(0xFFF1F5F9),
                         iconColor: Colors.lightBlue,
                         onTap: () {
-                          Navigator.pop(context);
+                          Navigator.pop(sheetContext);
                           // This will open the specific Sales Team List
                           Navigator.push(
                             context,

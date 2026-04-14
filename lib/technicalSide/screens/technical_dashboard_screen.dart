@@ -841,30 +841,67 @@ class _TechnicalDashboardScreenState extends State<TechnicalDashboardScreen>
                       subtitle: "Technical Visit Report Form",
                       iconBg: const Color(0xFFF0FDF4),
                       iconColor: Colors.green,
-                      onTap: () {
-                        Navigator.pop(
-                          sheetContext,
-                        ); // Close bottom sheet immediately
+                      onTap: () async {
+                          Navigator.pop(sheetContext); // close bottom sheet
 
-                        // Soft Warning: Fire the snackbar but DO NOT WAIT!
-                        if (!_isCheckedIn) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                "Hey! YOU did NOT check in today!!",
+                          if (!_isCheckedIn) {
+                            final shouldCheckIn = await showDialog<bool>(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (dialogContext) => AlertDialog(
+                                title: const Text("Check-In Required"),
+                                content: const Text(
+                                  "You did not check in today!\n\nPlease check in to continue.",
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, false),
+                                    child: const Text("Cancel"),
+                                  ),
+                                  ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF0F172A),
+                                      foregroundColor: Colors.white, 
+                                    ),
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, true),
+                                    child: const Text("Check In Now"),
+                                  ),
+                                ],
                               ),
-                              duration: Duration(seconds: 3),
-                              backgroundColor: Colors.orange,
+                            );
+                            if (shouldCheckIn != true) return;
+
+                            // Trigger actual check-in flow
+                            await _performAttendanceAction(true);
+
+                            // IMPORTANT: wait for state update
+                            await Future.delayed(
+                              const Duration(milliseconds: 500),
+                            );
+
+                            // Re-check
+                            if (!_isCheckedIn) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text("Check-in failed. Try again."),
+                                  backgroundColor: Colors.red,
+                                ),
+                              );
+                              return;
+                            }
+                          }
+
+                          // NOW allow DVR
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  CreateTvrScreen(employee: widget.employee),
                             ),
                           );
-                        }
-                        showDialog(
-                          context: this.context,
-                          barrierDismissible: false,
-                          builder: (dialogContext) =>
-                              CreateTvrScreen(employee: widget.employee),
-                        );
-                      },
+                        },
                     )
                     .animate()
                     .fadeIn(delay: 100.ms)

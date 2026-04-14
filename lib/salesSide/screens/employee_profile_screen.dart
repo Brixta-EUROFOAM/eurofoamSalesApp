@@ -96,7 +96,6 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     final endMonthStr = DateFormat('yyyy-MM-dd').format(endOfMonth);
 
     try {
-      // 🚀 SPEED OPTIMIZATION: Fire all network requests concurrently
       final results = await Future.wait([
         _apiService
             .fetchDvrsForUser(
@@ -105,22 +104,26 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
               endDate: endMonthStr,
             )
             .catchError((_) => <DailyVisitReport>[]),
+
+        _apiService.fetchAllDvrs(uid).catchError((_) => <DailyVisitReport>[]),
+
         _apiService
             .fetchDailyTasksForUser(uid)
             .catchError((_) => <DailyTask>[]),
+
         _apiService
             .fetchAttendanceForUser(uid, limit: 1000)
             .catchError((_) => <Attendance>[]),
+
         _apiService
             .fetchLeaveApplicationsForUser(uid, limit: 1)
             .catchError((_) => <LeaveApplication>[]),
       ]);
 
-      // 🚀 CPU & MEMORY OPTIMIZATION: Main thread is vastly faster than spawning an Isolate for this.
       final dvrsThisMonth = results[0] as List<DailyVisitReport>;
-      final allTasks = results[1] as List<DailyTask>;
-      final attendance = results[2] as List<Attendance>;
-      final leaves = results[3] as List<LeaveApplication>;
+      final allTasks = results[2] as List<DailyTask>;
+      final attendance = results[3] as List<Attendance>;
+      final leaves = results[4] as List<LeaveApplication>;
 
       int completedTasks = 0;
       for (var t in allTasks) {
@@ -173,16 +176,18 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       'https://docs.google.com/forms/d/e/1FAIpQLSdq-4YaYoEckyD7H_fYl_L-ordLQIdC7RSiqmQd9w054G2Zkg/viewform?usp=publish-editor',
     );
     try {
-      if (!await launchUrl(url, mode: LaunchMode.externalApplication))
-          {throw Exception('Could not launch url');}
+      if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+        throw Exception('Could not launch url');
+      }
     } catch (e) {
-      if (mounted){
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Could not open the form. Please contact support.'),
           ),
         );
-    }}
+      }
+    }
   }
 
   // 🚀 O(1) EXTREME OPTIMIZATION SYNC METHOD
@@ -258,7 +263,7 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
       }
     } catch (e) {
       debugPrint("🚨 SYNC ERROR: $e");
-      if (mounted){
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text("Sync stopped at error: $e"),
@@ -266,7 +271,8 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
             behavior: SnackBarBehavior.floating,
           ),
         );
-    }}
+      }
+    }
   }
 
   @override
@@ -652,13 +658,14 @@ class EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
                               final prefs =
                                   await SharedPreferences.getInstance();
                               await prefs.setBool('is_technical_mode', true);
-                              if (context.mounted){
+                              if (context.mounted) {
                                 Navigator.of(context).pushNamedAndRemoveUntil(
                                   '/technical_home',
                                   (route) => false,
                                   arguments: widget.employee,
                                 );
-                              }}
+                              }
+                            }
                           },
                         ),
                       )
@@ -1108,11 +1115,12 @@ class _LogoutButton extends StatelessWidget {
       ),
       onPressed: () async {
         await AuthService().logout();
-        if (context.mounted){
+        if (context.mounted) {
           Navigator.of(
             context,
           ).pushNamedAndRemoveUntil('/selector', (route) => false);
-      }},
+        }
+      },
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.white,
         foregroundColor: const Color(0xFFEF4444),

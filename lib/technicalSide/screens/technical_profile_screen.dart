@@ -107,7 +107,7 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
       startDate: startMonthStr,
       endDate: endMonthStr,
     );
-    var tvrsTotalFuture = _apiService.fetchTvrsForUser(uid, limit: 10000);
+    var tvrsTotalFuture = _apiService.fetchAllTvrs(uid);
     var pjpFuture = _apiService.fetchPjpsForUser(uid);
     var tasksFuture = _apiService.fetchDailyTasksForUser(
       uid,
@@ -541,22 +541,22 @@ class _TechnicalProfileScreenState extends State<TechnicalProfileScreen> {
                                     size: 18,
                                   ),
                                 ),
-                                ButtonSegment(
-                                  value: ThemeMode.dark,
-                                  label: Text('Dark'),
-                                  icon: Icon(
-                                    Icons.dark_mode_outlined,
-                                    size: 18,
-                                  ),
-                                ),
-                                ButtonSegment(
-                                  value: ThemeMode.system,
-                                  label: Text('Auto'),
-                                  icon: Icon(
-                                    Icons.phone_android_outlined,
-                                    size: 18,
-                                  ),
-                                ),
+                                // ButtonSegment(
+                                //   value: ThemeMode.dark,
+                                //   label: Text('Dark'),
+                                //   icon: Icon(
+                                //     Icons.dark_mode_outlined,
+                                //     size: 18,
+                                //   ),
+                                // ),
+                                // ButtonSegment(
+                                //   value: ThemeMode.system,
+                                //   label: Text('Auto'),
+                                //   icon: Icon(
+                                //     Icons.phone_android_outlined,
+                                //     size: 18,
+                                //   ),
+                                // ),
                               ],
                               selected: {themeProvider.themeMode},
                               onSelectionChanged:
