@@ -13,6 +13,7 @@ import 'package:salesmanapp/salesSide/screens/forms/add_dealer_form.dart';
 import 'package:salesmanapp/salesSide/screens/forms/create_dvr.dart';
 import 'package:salesmanapp/salesSide/screens/forms/create_competition_form.dart';
 import 'package:salesmanapp/salesSide/screens/forms/create_salesOrder_form.dart';
+import 'package:salesmanapp/salesSide/screens/forms/add_destination_list.dart';
 import 'package:salesmanapp/salesSide/screens/team_view_list_screen.dart';
 import 'dart:async';
 import 'package:salesmanapp/salesSide/screens/dvrwidgets/dvrworker.dart';
@@ -417,6 +418,21 @@ class EmployeeDashboardScreenState extends State<EmployeeDashboardScreen>
                       )
                       .animate()
                       .fadeIn(delay: 150.ms)
+                      .slideX(begin: -0.1, curve: Curves.easeOutCubic),
+
+                if (flags.addDestination)
+                  _buildActionSheetItem(
+                        icon: Icons.place_outlined,
+                        title: "Add Destination",
+                        subtitle: "Register a new master destination",
+                        iconBg: const Color(0xFFECFDF5), // Emerald tint
+                        iconColor: Colors.teal,
+                        onTap: () => _openDialog(
+                          AddDestinationScreen(employee: widget.employee),
+                        ),
+                      )
+                      .animate()
+                      .fadeIn(delay: 175.ms)
                       .slideX(begin: -0.1, curve: Curves.easeOutCubic),
 
                 if (flags.competitionForm)

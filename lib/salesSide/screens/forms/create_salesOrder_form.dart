@@ -1,6 +1,8 @@
-// lib/salesSide/widgets/sales_order_form.dart
+// lib/salesSide/screens/forms/sales_order_form.dart
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart'; // REQUIRED for date formatting
+
 import '../../../api/api_service.dart';
 
 import '../../models/sales_order_model.dart';
@@ -9,6 +11,7 @@ import '../../models/dealer_model.dart';
 import '../../../widgets/reusable_functions.dart';
 import '../salesOrderWidgets/sales_order_constants.dart';
 import '../salesOrderWidgets/sales_order_widgets.dart';
+import '../../models/destination_model.dart';
 
 class SalesOrderForm extends StatefulWidget {
   final Employee employee;
@@ -29,9 +32,12 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
   // 🧠 STATE
   // ---------------------------
   Dealer? _selectedDealer;
-  bool _sameAsParty = false;
   String? _selectedUnit = "MT";
-  String? _paymentMode;
+  String? _salesCategory;
+  final _paymentModeController = TextEditingController(text: "BANK TRANSFER");
+  DestinationModel? _selectedDestination;
+  
+  DateTime? _deliveryDate; // Single source of truth for the date
 
   // ---------------------------
   // 📝 CONTROLLERS
@@ -109,23 +115,18 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
     }
   }
 
-  // ---------------------------
-  // 🔁 SAME ADDRESS TOGGLE
-  // ---------------------------
-  void _handleSameAddress(bool val) {
-    setState(() {
-      _sameAsParty = val;
+  Future<void> _selectDestination() async {
+    final destination = await openDestinationSearch(context, _apiService);
 
-      if (val) {
-        c["deliveryArea"]!.text = c["partyArea"]!.text;
-        c["deliveryRegion"]!.text = c["partyRegion"]!.text;
-        c["deliveryAddress"]!.text = c["partyAddress"]!.text;
-      } else {
-        c["deliveryArea"]!.clear();
-        c["deliveryRegion"]!.clear();
-        c["deliveryAddress"]!.clear();
-      }
-    });
+    if (destination != null) {
+      setState(() {
+        _selectedDestination = destination;
+
+        c["deliveryAddress"]!.text = destination.destination ?? "";
+        c["deliveryArea"]!.text = destination.district ?? "";
+        c["deliveryRegion"]!.text = destination.zone ?? "";
+      });
+    }
   }
 
   // ---------------------------
@@ -133,6 +134,16 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
   // ---------------------------
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    
+    if (_deliveryDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Please select a Delivery Date"),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
     setState(() => _isSubmitting = true);
 
@@ -141,6 +152,7 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
         id: "",
         userId: int.tryParse(widget.employee.id),
         dealerId: _selectedDealer?.id,
+        verifiedDealerId: _selectedDealer?.verifiedDealerId,
         orderDate: DateTime.now(),
 
         orderPartyName: c["orderPartyName"]!.text,
@@ -152,8 +164,11 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
         deliveryArea: c["deliveryArea"]!.text,
         deliveryRegion: c["deliveryRegion"]!.text,
         deliveryAddress: c["deliveryAddress"]!.text,
+        deliveryDate: _deliveryDate,
+        deliveryLocPincode: c["deliveryLocPincode"]?.text,
 
-        paymentMode: _paymentMode,
+        salesCategory: _salesCategory,
+        paymentMode: "BANK TRANSFER",
         paymentTerms: c["paymentTerms"]!.text,
         paymentAmount: double.tryParse(c["paymentAmount"]!.text),
         receivedPayment: double.tryParse(c["receivedPayment"]!.text),
@@ -208,6 +223,7 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             /// -------------------------
             /// 🏢 DEALER
@@ -272,20 +288,19 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
             /// -------------------------
             const SoSectionHeader(title: "Delivery"),
 
-            SwitchListTile(
-              value: _sameAsParty,
-              onChanged: _handleSameAddress,
-              title: const Text("Same as Party Address"),
-              activeColor: Colors.white,
-              activeTrackColor: const Color(0xFF0F172A),
-              inactiveThumbColor: Colors.white,
-              inactiveTrackColor: Colors.grey.shade400,
+            InkWell(
+              onTap: _selectDestination,
+              child: _selector(
+                _selectedDestination?.destination ?? "Select Destination",
+              ),
             ),
+
+            const SizedBox(height: 20),
 
             SoInputField(
               controller: c["deliveryArea"]!,
               label: "Delivery Area",
-              requiredField: true,
+              readOnly: true,
             ),
 
             SoDropdownField(
@@ -304,8 +319,92 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
             SoInputField(
               controller: c["deliveryAddress"]!,
               label: "Delivery Address",
+              readOnly: true,
               requiredField: true,
-              maxLines: 2,
+            ),
+
+            SoInputField(
+              controller: c["deliveryLocPincode"] ??= TextEditingController(),
+              label: "Pincode (Optional)",
+              keyboardType: TextInputType.number,
+            ),
+
+            const SizedBox(height: 10),
+
+            // ------------------------------------------
+            // 🟢 CLICKABLE DATE SELECTOR (POP-UP)
+            // ------------------------------------------
+            const Text(
+              "Delivery Date *",
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF111827),
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 8),
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () async {
+                final DateTime? picked = await showDatePicker(
+                  context: context,
+                  initialDate: _deliveryDate ?? DateTime.now(),
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime(2100),
+                  builder: (context, child) {
+                    return Theme(
+                      data: Theme.of(context).copyWith(
+                        colorScheme: const ColorScheme.light(
+                          primary: Color(0xFF0F172A), // Your Navy Blue
+                          onPrimary: Colors.white,
+                          onSurface: Color(0xFF111827),
+                        ),
+                        textButtonTheme: TextButtonThemeData(
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                      child: child!,
+                    );
+                  },
+                );
+                
+                if (picked != null && picked != _deliveryDate) {
+                  setState(() {
+                    _deliveryDate = picked;
+                  });
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9FAFB),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      _deliveryDate == null
+                          ? "Select Delivery Date"
+                          : DateFormat('EEEE, MMM d, yyyy').format(_deliveryDate!),
+                      style: TextStyle(
+                        color: _deliveryDate == null
+                            ? Colors.grey.shade500
+                            : const Color(0xFF111827),
+                        fontWeight: FontWeight.w500,
+                        fontSize: 14,
+                      ),
+                    ),
+                    Icon(
+                      Icons.calendar_month_outlined,
+                      color: Colors.grey.shade600,
+                      size: 22,
+                    ),
+                  ],
+                ),
+              ),
             ),
 
             const SizedBox(height: 20),
@@ -314,6 +413,22 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
             /// 📦 ORDER
             /// -------------------------
             const SoSectionHeader(title: "Order"),
+
+            SoDropdownField(
+              label: "Item Type",
+              value: c["itemType"]!.text.isNotEmpty
+                  ? c["itemType"]!.text
+                  : null,
+              items: SalesOrderConstants.itemTypes,
+              onChanged: (v) => setState(() => c["itemType"]!.text = v ?? ""),
+            ),
+
+            SoDropdownField(
+              label: "Sales Category",
+              value: _salesCategory,
+              items: SalesOrderConstants.salesCategories,
+              onChanged: (v) => setState(() => _salesCategory = v),
+            ),
 
             SoNumberField(
               controller: c["orderQty"]!,
@@ -335,16 +450,20 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
             /// -------------------------
             const SoSectionHeader(title: "Payment"),
 
-            SoDropdownField(
+            SoInputField(
+              controller: _paymentModeController,
               label: "Payment Mode",
-              value: _paymentMode,
-              items: SalesOrderConstants.paymentModes,
-              onChanged: (v) => setState(() => _paymentMode = v),
+              readOnly: true,
             ),
 
-            SoInputField(
-              controller: c["paymentTerms"]!,
+            SoDropdownField(
               label: "Payment Terms",
+              value: c["paymentTerms"]!.text.isNotEmpty
+                  ? c["paymentTerms"]!.text
+                  : null,
+              items: SalesOrderConstants.paymentTermsOptions,
+              onChanged: (v) =>
+                  setState(() => c["paymentTerms"]!.text = v ?? ""),
               requiredField: true,
             ),
 
@@ -405,7 +524,8 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFF0F172A).withOpacity(0.25)),
       ),
       child: Row(
         children: [

@@ -7,6 +7,7 @@ import 'package:salesmanapp/api/api_service.dart';
 import 'package:salesmanapp/database/app_database.dart';
 
 import 'package:salesmanapp/salesSide/models/dealer_model.dart';
+import 'package:salesmanapp/salesSide/models/destination_model.dart';
 import 'package:salesmanapp/technicalSide/models/sites_model.dart';
 import 'package:salesmanapp/technicalSide/models/mason_pc_model.dart';
 
@@ -49,6 +50,16 @@ Future<Mason?> openMasonSearch(BuildContext context, ApiService api) {
   return openSearchDialog(
     context: context,
     dialog: MasonSearchDialog(api: api),
+  );
+}
+
+Future<DestinationModel?> openDestinationSearch(
+  BuildContext context,
+  ApiService api,
+) {
+  return openSearchDialog(
+    context: context,
+    dialog: DestinationSearchDialog(api: api),
   );
 }
 
@@ -378,6 +389,75 @@ class _MasonSearchDialogState extends State<MasonSearchDialog> {
         ),
         subtitle: Text(mason.phoneNumber),
         onTap: () => Navigator.pop(context, mason),
+      ),
+    );
+  }
+}
+
+class DestinationSearchDialog extends StatefulWidget {
+  final ApiService api;
+
+  const DestinationSearchDialog({super.key, required this.api});
+
+  @override
+  State<DestinationSearchDialog> createState() =>
+      _DestinationSearchDialogState();
+}
+
+class _DestinationSearchDialogState extends State<DestinationSearchDialog> {
+  List<DestinationModel> _destinations = [];
+  bool _isLoading = false;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _search("");
+  }
+
+  void _search(String query) {
+    _debounce?.cancel();
+
+    _debounce = Timer(const Duration(milliseconds: 400), () async {
+      setState(() => _isLoading = true);
+
+      try {
+        final res = await widget.api.fetchDestinations(
+          search: query,
+          limit: 50,
+        );
+
+        if (mounted) {
+          setState(() => _destinations = res);
+        }
+      } catch (e) {
+        debugPrint("Destination search error: $e");
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _BaseSearchDialog<DestinationModel>(
+      title: "Select Destination",
+      isLoading: _isLoading,
+      items: _destinations,
+      onSearch: _search,
+      itemBuilder: (d) => ListTile(
+        title: Text(
+          d.destination ?? "",
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text("${d.district ?? ""}, ${d.zone ?? ""}"),
+        onTap: () => Navigator.pop(context, d),
       ),
     );
   }

@@ -7,6 +7,8 @@ class SalesOrder {
   final String? dealerId;
   final String? dvrId;
   final String? pjpId;
+  final int? verifiedDealerId;
+  final String? salesCategory;
 
   final DateTime orderDate;
   final String orderPartyName;
@@ -50,6 +52,8 @@ class SalesOrder {
     this.dealerId,
     this.dvrId,
     this.pjpId,
+    this.verifiedDealerId,
+    this.salesCategory,
     required this.orderDate,
     required this.orderPartyName,
     this.partyPhoneNo,
@@ -86,6 +90,8 @@ class SalesOrder {
       dealerId: json['dealerId'],
       dvrId: json['dvrId'],
       pjpId: json['pjpId'],
+      verifiedDealerId: json['verifiedDealerId'],
+      salesCategory: json['salesCategory'],
       orderDate: DateTime.parse(json['orderDate']),
       orderPartyName: json['orderPartyName'] ?? '',
       partyPhoneNo: json['partyPhoneNo'],
@@ -144,6 +150,8 @@ class SalesOrder {
       "dealerId": dealerId,
       "dvrId": dvrId,
       "pjpId": pjpId,
+      "verifiedDealerId": verifiedDealerId,
+      "salesCategory": salesCategory,
       "orderDate": orderDate.toIso8601String(),
       "orderPartyName": orderPartyName,
       "partyPhoneNo": partyPhoneNo,

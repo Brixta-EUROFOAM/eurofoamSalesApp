@@ -5,6 +5,7 @@ class Dealer {
   final int? userId;
   final String type;
   final String? parentDealerId;
+  final int? verifiedDealerId;
   final String name;
   final String region;
   final String area;
@@ -81,6 +82,7 @@ class Dealer {
     this.userId,
     required this.type,
     this.parentDealerId,
+    this.verifiedDealerId,
     required this.name,
     required this.region,
     required this.area,
@@ -181,6 +183,7 @@ class Dealer {
       userId: _parseInt(json['userId']),
       type: json['type'] ?? '',
       parentDealerId: json['parentDealerId'],
+      verifiedDealerId: _parseInt(json['verifiedDealerId']),
       name: json['name'] ?? '',
       region: json['region'] ?? '',
       area: json['area'] ?? '',
@@ -202,8 +205,9 @@ class Dealer {
         if (val is String) {
           try {
             final decoded = jsonDecode(val);
-            if (decoded is List)
+            if (decoded is List){
               return decoded.map((e) => e.toString()).toList();
+              }
           } catch (_) {}
           return val.split(',').map((e) => e.trim()).toList();
         }
@@ -277,6 +281,7 @@ class Dealer {
       'userId': userId,
       'type': type,
       'parentDealerId': _nullIfEmpty(parentDealerId),
+      'verifiedDealerId': verifiedDealerId ?? null,
       'name': name,
       'region': region,
       'area': area,
@@ -295,8 +300,6 @@ class Dealer {
       'feedbacks': feedbacks,
       'remarks': _nullIfEmpty(remarks),
 
-      // 'createdAt': createdAt?.toIso8601String(), // <-- REMOVED
-      // 'updatedAt': updatedAt?.toIso8601String(), // <-- REMOVED
       'dealerDevelopmentStatus': _nullIfEmpty(dealerDevelopmentStatus),
       'dealerDevelopmentObstacle': _nullIfEmpty(dealerDevelopmentObstacle),
       'salesGrowthPercentage': salesGrowthPercentage,

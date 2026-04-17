@@ -14,16 +14,16 @@ class SalesOrderConstants {
     "Tripura",
   ];
 
-  static const List<String> unitOptions = [
-    "MT",
-    "Bags",
+  static const List<String> unitOptions = ["MT", "Bags"];
+
+  static const List<String> paymentTermsOptions = [
+    "Credit Period",
+    "Advance Payment",
+    "After Loading",
+    "After Invoicing",
   ];
 
-  static const List<String> paymentModes = [
-    "Cash",
-    "Cheque",
-    "Bank Draft",
-    "Credit",
-    "Online/UPI",
-  ];
+  static const List<String> itemTypes = ["PPC", "OPC"];
+
+  static const List<String> salesCategories = ["Trade", "Non-Trade"];
 }

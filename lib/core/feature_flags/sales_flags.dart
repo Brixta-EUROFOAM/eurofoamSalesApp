@@ -5,6 +5,7 @@ class SalesFlags {
 
   final bool createDvr;
   final bool addDealer;
+  final bool addDestination;
   final bool competitionForm;
   final bool salesOrders;
   final bool teamView;
@@ -18,6 +19,7 @@ class SalesFlags {
 
     required this.createDvr,
     required this.addDealer,
+    required this.addDestination,
     required this.competitionForm,
     required this.salesOrders,
     required this.teamView,
@@ -31,9 +33,10 @@ class SalesFlags {
     journey: true,
 
     createDvr: true,
+    addDestination: true,
     addDealer: true,
     competitionForm: false,
-    salesOrders: false,
+    salesOrders: true,
     teamView: true,
 
     showDbViewer: false,

@@ -13,6 +13,7 @@ import '../salesSide/models/geotracking_data_model.dart';
 import '../salesSide/models/competition_report_model.dart';
 import '../salesSide/models/employee_model.dart';
 import '../salesSide/models/sales_order_model.dart';
+import '../salesSide/models/destination_model.dart';
 
 import '../technicalSide/models/technical_visit_report_model.dart';
 import '../technicalSide/models/mason_baglift_model.dart';
@@ -46,8 +47,8 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  static String baseUrl = 'https://brixta.site'; // fix24
-  //static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  //static String baseUrl = 'https://brixta.site'; // fix24
+  static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
 
   // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
@@ -1171,6 +1172,53 @@ class ApiService {
     return _get(
       'sales-orders?$queryString',
       (json) => (json as List).map((e) => SalesOrder.fromJson(e)).toList(),
+    );
+  }
+
+  Future<List<DestinationModel>> fetchDestinations({
+    int page = 1,
+    int limit = 50,
+    String? search,
+    String? zone,
+    String? district,
+    String? institution,
+  }) async {
+    final queryParams = <String, String>{
+      'page': page.toString(),
+      'limit': limit.toString(),
+    };
+
+    if (search != null && search.isNotEmpty) queryParams['search'] = search;
+    if (zone != null && zone.isNotEmpty) queryParams['zone'] = zone;
+    if (district != null && district.isNotEmpty)
+      queryParams['district'] = district;
+    if (institution != null && institution.isNotEmpty)
+      queryParams['institution'] = institution;
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get(
+      'destinations?$queryString',
+      (json) => (json as List)
+          .map((item) => DestinationModel.fromJson(item))
+          .toList(),
+    );
+  }
+
+  Future<DestinationModel> fetchDestinationById(int destinationId) async {
+    return _get(
+      'destinations/$destinationId',
+      (json) => DestinationModel.fromJson(json),
+    );
+  }
+
+  Future<DestinationModel> createDestination(
+    DestinationModel destination,
+  ) async {
+    return _post(
+      'destinations',
+      destination.toJson(),
+      (json) => DestinationModel.fromJson(json),
     );
   }
 
