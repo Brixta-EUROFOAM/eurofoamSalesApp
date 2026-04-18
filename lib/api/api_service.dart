@@ -47,13 +47,11 @@ class TsoUser {
 /// Note: Use ApiService.setAuthToken(...) after login to ensure
 /// Authorization header is attached to subsequent requests.
 class ApiService {
-  //static String baseUrl = 'https://brixta.site'; // fix24
-  static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
+  static String baseUrl = 'https://brixta.site'; // fix24
+  //static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
 
-  // --- ✅ FIX: Initialize http.Client ---
   final http.Client _client = http.Client();
-
-  // --- ✅ ADDED TOKEN STORAGE ---
+  
   static String? _authToken;
 
   /// Set the in-memory auth token (call after successful login).
