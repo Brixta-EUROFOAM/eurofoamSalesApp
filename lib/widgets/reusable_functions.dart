@@ -35,6 +35,15 @@ Future<Dealer?> openDealerSearch(
   );
 }
 
+Future<VerifiedDealer?> openVerifiedDealerSearch(
+  BuildContext context,
+) {
+  return openSearchDialog(
+    context: context,
+    dialog: const VerifiedDealerSearchDialog(),
+  );
+}
+
 Future<TechnicalSite?> openSiteSearch(
   BuildContext context,
   ApiService api,
@@ -248,6 +257,79 @@ class _DealerSearchDialogState extends State<DealerSearchDialog> {
         ),
         subtitle: Text(
           "${dealer.area}, ${dealer.region}",
+          style: const TextStyle(color: Colors.grey),
+        ),
+        onTap: () => Navigator.pop(context, dealer),
+      ),
+    );
+  }
+}
+
+// Verified Dealer
+class VerifiedDealerSearchDialog extends StatefulWidget {
+  const VerifiedDealerSearchDialog({super.key});
+
+  @override
+  State<VerifiedDealerSearchDialog> createState() =>
+      _VerifiedDealerSearchDialogState();
+}
+
+class _VerifiedDealerSearchDialogState
+    extends State<VerifiedDealerSearchDialog> {
+  List<VerifiedDealer> _dealers = [];
+  bool _isLoading = false;
+  Timer? _debounce;
+
+  final _api = ApiService();
+
+  @override
+  void initState() {
+    super.initState();
+    _search("");
+  }
+
+  void _search(String query) {
+    _debounce?.cancel();
+
+    _debounce = Timer(const Duration(milliseconds: 300), () async {
+      setState(() => _isLoading = true);
+
+      try {
+        final results = await _api.fetchVerifiedDealers(
+          search: query.trim(),
+        );
+
+        if (mounted) {
+          setState(() => _dealers = results);
+        }
+      } catch (e) {
+        debugPrint("Verified dealer search error: $e");
+      } finally {
+        if (mounted) setState(() => _isLoading = false);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _BaseSearchDialog<VerifiedDealer>(
+      title: "Select Verified Dealer",
+      isLoading: _isLoading,
+      items: _dealers,
+      onSearch: _search,
+      itemBuilder: (dealer) => ListTile(
+        title: Text(
+          dealer.dealerPartyName,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          "${dealer.area ?? ""}, ${dealer.zone ?? ""}",
           style: const TextStyle(color: Colors.grey),
         ),
         onTap: () => Navigator.pop(context, dealer),

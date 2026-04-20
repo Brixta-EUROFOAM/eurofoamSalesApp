@@ -14,6 +14,7 @@ import '../salesSide/models/competition_report_model.dart';
 import '../salesSide/models/employee_model.dart';
 import '../salesSide/models/sales_order_model.dart';
 import '../salesSide/models/destination_model.dart';
+import '../salesSide/models/outstanding_report_model.dart';
 
 import '../technicalSide/models/technical_visit_report_model.dart';
 import '../technicalSide/models/mason_baglift_model.dart';
@@ -51,7 +52,7 @@ class ApiService {
   //static String baseUrl = 'http://10.0.2.2:8000'; //localhost connection
 
   final http.Client _client = http.Client();
-  
+
   static String? _authToken;
 
   /// Set the in-memory auth token (call after successful login).
@@ -447,6 +448,55 @@ class ApiService {
       'radius': radius,
     };
     return _patch('dealers/$dealerId', body, (json) => Dealer.fromJson(json));
+  }
+
+  Future<List<VerifiedDealer>> fetchVerifiedDealers({
+    int page = 1,
+    String? search,
+    String? zone,
+    String? district,
+    String? area,
+  }) async {
+    final queryParams = <String, String>{'page': page.toString()};
+
+    if (search != null && search.isNotEmpty) queryParams['search'] = search;
+    if (zone != null) queryParams['zone'] = zone;
+    if (district != null) queryParams['district'] = district;
+    if (area != null) queryParams['area'] = area;
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get('verified-dealers?$queryString', (json) {
+      // 🛑 1. DEBUG: Print exactly what the backend sent
+      debugPrint("RAW API RESPONSE TYPE: ${json.runtimeType}");
+      debugPrint("RAW API RESPONSE: $json");
+
+      // 🛡️ 2. AUTO-HEAL: If the backend sent a raw String (like an HTML 500 error page)
+      if (json is String) {
+        throw Exception("Backend crashed and sent text/HTML: $json");
+      }
+
+      // 🛡️ 3. AUTO-HEAL: If the backend sent an Array directly instead of { data: [...] }
+      if (json is List) {
+        return json.map((e) => VerifiedDealer.fromJson(e)).toList();
+      }
+
+      // ✅ 4. STANDARD: If it's the standard { data: [...] } object
+      if (json is Map && json.containsKey('data')) {
+        final dataList = json['data'] as List?;
+        if (dataList == null) return [];
+        return dataList.map((e) => VerifiedDealer.fromJson(e)).toList();
+      }
+
+      return [];
+    });
+  }
+
+  Future<VerifiedDealer> fetchVerifiedDealerById(int id) async {
+    return _get(
+      'verified-dealers/$id',
+      (json) => VerifiedDealer.fromJson(json['data']),
+    );
   }
 
   Future<void> deleteDealer(String dealerId) => _delete('dealers/$dealerId');
@@ -1522,6 +1572,81 @@ class ApiService {
       'team/recursive/$seniorId',
       (json) =>
           (json as List).map((item) => TeamMember.fromJson(item)).toList(),
+    );
+  }
+
+  Future<List<OutstandingReport>> fetchOutstandingReports({
+    int page = 1,
+    String? institution,
+    int? verifiedDealerId,
+    String? search,
+    String? fromDate,
+    String? toDate,
+  }) async {
+    final queryParams = <String, String>{'page': page.toString()};
+
+    if (institution != null) queryParams['institution'] = institution;
+    if (verifiedDealerId != null) {
+      queryParams['verifiedDealerId'] = verifiedDealerId.toString();
+    }
+    if (search != null) queryParams['search'] = search;
+    if (fromDate != null) queryParams['fromDate'] = fromDate;
+    if (toDate != null) queryParams['toDate'] = toDate;
+
+    final queryString = Uri(queryParameters: queryParams).query;
+
+    return _get(
+      'outstanding-reports?$queryString',
+      (json) => (json['data'] as List)
+          .map((e) => OutstandingReport.fromJson(e))
+          .toList(),
+    );
+  }
+
+  Future<List<OutstandingReport>> fetchOutstandingByDealer(
+    int dealerId, {
+    int page = 1,
+  }) async {
+    final queryString = Uri(queryParameters: {'page': page.toString()}).query;
+
+    return _get(
+      'outstanding-reports/dealer/$dealerId?$queryString',
+      (json) => (json['data'] as List)
+          .map((e) => OutstandingReport.fromJson(e))
+          .toList(),
+    );
+  }
+
+  Future<OutstandingReport> fetchOutstandingById(String id) async {
+    return _get(
+      'outstanding-reports/$id',
+      (json) => OutstandingReport.fromJson(json['data']),
+    );
+  }
+
+  Future<List<OutstandingReport>> fetchOutstandingByVerifiedDealer(
+    int verifiedDealerId,
+  ) async {
+    return _get(
+      'outstanding-reports/dealer/$verifiedDealerId',
+      (json) {
+        debugPrint("RAW OUTSTANDING API RESPONSE: $json");
+
+        // 🛡️ SCENARIO 1: Backend sent an Array directly (This is causing your crash!)
+        if (json is List) {
+          return json.map((e) => OutstandingReport.fromJson(e)).toList();
+        } 
+        
+        // 🛡️ SCENARIO 2: Backend sent { "data": [...] }
+        else if (json is Map && json.containsKey('data')) {
+          final dataList = json['data'] as List?;
+          if (dataList == null || dataList.isEmpty) return [];
+          return dataList.map((e) => OutstandingReport.fromJson(e)).toList();
+        }
+
+        // 🛡️ SCENARIO 3: Backend sent something weird or empty
+        return [];
+      },
     );
   }
 }

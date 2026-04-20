@@ -351,3 +351,54 @@ class Dealer {
     };
   }
 }
+
+class VerifiedDealer {
+  final int id;
+  final String dealerPartyName;
+  final String? zone;
+  final String? district;
+  final String? area;
+  final String? contactNo1;
+  final String? contactNo2;
+  final String? contactPerson;
+  final double? creditLimit;
+  final int? creditDaysAllowed;
+
+  VerifiedDealer({
+    required this.id,
+    required this.dealerPartyName,
+    this.zone,
+    this.district,
+    this.area,
+    this.contactNo1,
+    this.contactNo2,
+    this.contactPerson,
+    this.creditLimit,
+    this.creditDaysAllowed,
+  });
+
+  factory VerifiedDealer.fromJson(Map<String, dynamic> json) {
+    double? parseDouble(dynamic val) {
+      if (val == null) return null;
+      return double.tryParse(val.toString());
+    }
+
+    int? parseInt(dynamic val) {
+      if (val == null) return null;
+      return int.tryParse(val.toString());
+    }
+
+    return VerifiedDealer(
+      id: parseInt(json['id']) ?? 0,
+      dealerPartyName: json['dealerPartyName'] ?? '',
+      zone: json['zone'],
+      district: json['district'],
+      area: json['area'],
+      contactNo1: json['contactNo1'],
+      contactNo2: json['contactNo2'],
+      contactPerson: json['contactPerson'],
+      creditLimit: parseDouble(json['creditLimit']),
+      creditDaysAllowed: parseInt(json['creditDaysAllowed']),
+    );
+  }
+}

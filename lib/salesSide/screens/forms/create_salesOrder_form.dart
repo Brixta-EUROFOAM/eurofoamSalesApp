@@ -1,17 +1,18 @@
 // lib/salesSide/screens/forms/sales_order_form.dart
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // REQUIRED for date formatting
+import 'package:intl/intl.dart';
 
 import '../../../api/api_service.dart';
 
 import '../../models/sales_order_model.dart';
 import '../../models/employee_model.dart';
 import '../../models/dealer_model.dart';
+import '../../models/destination_model.dart';
+import '../../models/outstanding_report_model.dart';
 import '../../../widgets/reusable_functions.dart';
 import '../salesOrderWidgets/sales_order_constants.dart';
 import '../salesOrderWidgets/sales_order_widgets.dart';
-import '../../models/destination_model.dart';
 
 class SalesOrderForm extends StatefulWidget {
   final Employee employee;
@@ -31,13 +32,14 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
   // ---------------------------
   // 🧠 STATE
   // ---------------------------
-  Dealer? _selectedDealer;
+  VerifiedDealer? _selectedDealer;
   String? _selectedUnit = "MT";
   String? _salesCategory;
   final _paymentModeController = TextEditingController(text: "BANK TRANSFER");
   DestinationModel? _selectedDestination;
-  
   DateTime? _deliveryDate; // Single source of truth for the date
+  List<OutstandingReport> _outstanding = [];
+  bool _isLoadingOutstanding = false;
 
   // ---------------------------
   // 📝 CONTROLLERS
@@ -100,18 +102,66 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
   Future<void> _selectDealer() async {
     await Future.delayed(Duration.zero);
 
-    final dealer = await openDealerSearch(context);
+    final dealer = await openVerifiedDealerSearch(context);
 
-    if (dealer != null) {
+    if (dealer == null) return;
+
+    // ✅ ALWAYS VALID (verified dealer only)
+    setState(() {
+      _selectedDealer = dealer;
+      _outstanding = [];
+
+      c["orderPartyName"]!.text = dealer.dealerPartyName;
+      
+      // 🛡️ Fallback: Try contactNo1, then contactNo2. 
+      c["partyPhoneNo"]!.text = (dealer.contactNo1?.isNotEmpty == true) 
+          ? dealer.contactNo1! 
+          : dealer.contactNo2 ?? '';
+          
+      c["partyArea"]!.text = dealer.area ?? '';
+
+      // 🛡️ Dropdown Fix: Match case-insensitively!
+      final incomingZone = dealer.zone?.trim() ?? '';
+      
+      // Find the exact option in your constants list regardless of uppercase/lowercase
+      final matchingZone = SalesOrderConstants.regionOptions.firstWhere(
+        (opt) => opt.toLowerCase() == incomingZone.toLowerCase(),
+        orElse: () => '', // Return empty if no match found
+      );
+
+      if (matchingZone.isNotEmpty) {
+        c["partyRegion"]!.text = matchingZone; // Uses the properly capitalized version
+      } else {
+        c["partyRegion"]!.text = ''; 
+        debugPrint("WARNING: DB Zone '$incomingZone' not found in options list!");
+      }
+
+      // Build the address string using the nicely formatted matchingZone (if found)
+      final displayZone = matchingZone.isNotEmpty ? matchingZone : incomingZone;
+      final addressParts = [dealer.area, dealer.district, displayZone]
+          .where((s) => s != null && s.toString().trim().isNotEmpty)
+          .join(', ');
+      
+      c["partyAddress"]!.text = addressParts;
+    });
+
+    // 🔥 FETCH OUTSTANDING
+    setState(() => _isLoadingOutstanding = true);
+
+    try {
+      final res = await _apiService.fetchOutstandingByVerifiedDealer(dealer.id);
+
+      if (!mounted) return;
+
       setState(() {
-        _selectedDealer = dealer;
-
-        c["orderPartyName"]!.text = dealer.name;
-        c["partyPhoneNo"]!.text = dealer.phoneNo;
-        c["partyArea"]!.text = dealer.area;
-        c["partyRegion"]!.text = dealer.region;
-        c["partyAddress"]!.text = dealer.address;
+        _outstanding = res;
       });
+    } catch (e) {
+      debugPrint("Outstanding fetch error: $e");
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingOutstanding = false);
+      }
     }
   }
 
@@ -134,7 +184,7 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
   // ---------------------------
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
-    
+
     if (_deliveryDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -151,8 +201,7 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
       final order = SalesOrder(
         id: "",
         userId: int.tryParse(widget.employee.id),
-        dealerId: _selectedDealer?.id,
-        verifiedDealerId: _selectedDealer?.verifiedDealerId,
+        verifiedDealerId: _selectedDealer?.id,
         orderDate: DateTime.now(),
 
         orderPartyName: c["orderPartyName"]!.text,
@@ -218,6 +267,8 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
   // ---------------------------
   @override
   Widget build(BuildContext context) {
+    final latest = _outstanding.isNotEmpty ? _outstanding.first : null;
+
     return Form(
       key: _formKey,
       child: SingleChildScrollView(
@@ -232,8 +283,34 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
 
             InkWell(
               onTap: _selectDealer,
-              child: _selector(_selectedDealer?.name ?? "Select Dealer"),
+              child: _selector(
+                _selectedDealer?.dealerPartyName ?? "Select Dealer",
+              ),
             ),
+
+            const SizedBox(height: 12),
+
+            if (_isLoadingOutstanding)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: CircularProgressIndicator(),
+                ),
+              ),
+
+            if (!_isLoadingOutstanding && latest != null)
+              _buildOutstandingCard(latest),
+
+            if (!_isLoadingOutstanding &&
+                latest == null &&
+                _selectedDealer != null)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8.0),
+                child: Text(
+                  "No outstanding data available",
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
 
             const SizedBox(height: 20),
 
@@ -369,7 +446,7 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
                     );
                   },
                 );
-                
+
                 if (picked != null && picked != _deliveryDate) {
                   setState(() {
                     _deliveryDate = picked;
@@ -377,7 +454,10 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
                 }
               },
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF9FAFB),
                   borderRadius: BorderRadius.circular(12),
@@ -388,7 +468,9 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
                     Text(
                       _deliveryDate == null
                           ? "Select Delivery Date"
-                          : DateFormat('EEEE, MMM d, yyyy').format(_deliveryDate!),
+                          : DateFormat(
+                              'EEEE, MMM d, yyyy',
+                            ).format(_deliveryDate!),
                       style: TextStyle(
                         color: _deliveryDate == null
                             ? Colors.grey.shade500
@@ -516,6 +598,47 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
           ],
         ),
       ),
+    );
+  }
+
+  // ===============================
+  // OUTSTANDING CARD
+  // ===============================
+  Widget _buildOutstandingCard(OutstandingReport o) {
+    final pending = o.pendingAmt ?? 0;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.black.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "Outstanding Summary",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          _metric("Pending Amount", pending, Colors.black),
+        ],
+      ),
+    );
+  }
+
+  Widget _metric(String label, double value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12)),
+        Text(
+          "₹ ${value.toStringAsFixed(0)}",
+          style: TextStyle(fontWeight: FontWeight.bold, color: color),
+        ),
+      ],
     );
   }
 
