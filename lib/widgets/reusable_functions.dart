@@ -329,7 +329,7 @@ class _VerifiedDealerSearchDialogState
           style: const TextStyle(fontWeight: FontWeight.w600),
         ),
         subtitle: Text(
-          "${dealer.area ?? ""}, ${dealer.zone ?? ""}",
+          "${dealer.district ?? ""}, ${dealer.zone ?? ""}",
           style: const TextStyle(color: Colors.grey),
         ),
         onTap: () => Navigator.pop(context, dealer),
