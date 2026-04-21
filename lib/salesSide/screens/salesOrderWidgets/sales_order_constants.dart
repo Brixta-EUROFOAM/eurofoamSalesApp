@@ -23,7 +23,7 @@ class SalesOrderConstants {
     "After Invoicing",
   ];
 
-  static const List<String> itemTypes = ["PPC", "OPC"];
+  static const List<String> itemTypes = ["PPC", "OPC", "PPC NFRS", "OPC NFRS"];
 
   static const List<String> salesCategories = ["Trade", "Non-Trade"];
 }

@@ -185,10 +185,10 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_deliveryDate == null) {
+    if (_deliveryDate == null) { // always have "Delivery Date" show as "DO Date"
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Please select a Delivery Date"),
+          content: Text("Select Estimated DO Date"),
           backgroundColor: Colors.orange,
         ),
       );
@@ -412,7 +412,7 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
             // 🟢 CLICKABLE DATE SELECTOR (POP-UP)
             // ------------------------------------------
             const Text(
-              "Delivery Date *",
+              "Estd. DO Date *",
               style: TextStyle(
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF111827),
@@ -467,7 +467,7 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
                   children: [
                     Text(
                       _deliveryDate == null
-                          ? "Select Delivery Date"
+                          ? "Select Estd. DO Date"
                           : DateFormat(
                               'EEEE, MMM d, yyyy',
                             ).format(_deliveryDate!),

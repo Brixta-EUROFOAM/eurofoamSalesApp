@@ -33,7 +33,7 @@ class SalesFlags {
     journey: true,
 
     createDvr: true,
-    addDestination: true,
+    addDestination: false,
     addDealer: true,
     competitionForm: false,
     salesOrders: true,
