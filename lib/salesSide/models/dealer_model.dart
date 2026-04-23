@@ -358,6 +358,7 @@ class VerifiedDealer {
   final String? zone;
   final String? district;
   final String? area;
+  final String? pinCode;
   final String? contactNo1;
   final String? contactNo2;
   final String? contactPerson;
@@ -370,6 +371,7 @@ class VerifiedDealer {
     this.zone,
     this.district,
     this.area,
+    this.pinCode,
     this.contactNo1,
     this.contactNo2,
     this.contactPerson,
@@ -394,8 +396,9 @@ class VerifiedDealer {
       zone: json['zone'],
       district: json['district'],
       area: json['area'],
-      contactNo1: json['contactNo1'],
-      contactNo2: json['contactNo2'],
+      pinCode: json['pinCode'],
+      contactNo1: json['contact_no1']?.toString() ?? json['contactNo1']?.toString(),
+      contactNo2: json['contact_no2']?.toString() ?? json['contactNo2']?.toString(),
       contactPerson: json['contactPerson'],
       creditLimit: parseDouble(json['creditLimit']),
       creditDaysAllowed: parseInt(json['creditDaysAllowed']),

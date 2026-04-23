@@ -120,6 +120,10 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
           
       c["partyArea"]!.text = dealer.area ?? '';
 
+      // Ensure the property matches exactly what is in your VerifiedDealer model 
+      // c["deliveryLocPincode"] ??= TextEditingController();
+      // c["deliveryLocPincode"]!.text = dealer.pinCode ?? '';
+
       // 🛡️ Dropdown Fix: Match case-insensitively!
       final incomingZone = dealer.zone?.trim() ?? '';
       
@@ -402,8 +406,9 @@ class _SalesOrderFormState extends State<SalesOrderForm> {
 
             SoInputField(
               controller: c["deliveryLocPincode"] ??= TextEditingController(),
-              label: "Pincode (Optional)",
+              label: "Delivery Location Pincode",
               keyboardType: TextInputType.number,
+              requiredField: true,
             ),
 
             const SizedBox(height: 10),
