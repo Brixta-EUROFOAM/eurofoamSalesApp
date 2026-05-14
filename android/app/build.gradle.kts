@@ -16,7 +16,7 @@ plugins {
 }
 
 android {
-    namespace = "com.salesmanapp.best"
+    namespace = "com.eurofoam.sales"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.1.13356709"
 
@@ -31,7 +31,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.salesmanapp.best"
+        applicationId = "com.eurofoam.sales"
         minSdk = maxOf(21, flutter.minSdkVersion) 
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

@@ -13,7 +13,7 @@
 <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
-        android:label="Best Work Force"
+        android:label="Eurofoam Work Force"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon"
         android:usesCleartextTraffic="true">
