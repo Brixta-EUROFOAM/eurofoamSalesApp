@@ -1,12 +1,17 @@
-// lib/screens/forms/add_DVR_form.dart
+// lib/screens/forms/create_DVR_form.dart
 
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // Import your models and utilities
+import '../../api/api_service.dart';
 import '../../models/dealer_model.dart';
+import '../../models/users_model.dart';
+import '../../models/dvr_model.dart';
 import '../../widgets/ReusableFunctions.dart';
 import 'dvrFormComponents/dvr_constants.dart';
 import 'dvrFormComponents/dvr_form_widgets.dart';
@@ -20,11 +25,14 @@ class AddDvrFormScreen extends StatefulWidget {
 
 class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
   final _formKey = GlobalKey<FormState>();
+  final ApiService _apiService = ApiService();
 
   // --- Core State Variables ---
+  UserModel? _currentUser;
+  bool _isInitializing = true;
   bool _isLoading = false;
   bool _isCapturingCheckIn = false;
-  
+
   // 1. Image & Location (Captured First)
   String? _capturedImagePath;
   LocationResult? _locationResult;
@@ -37,10 +45,30 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
   final TextEditingController _orderQtyController = TextEditingController();
   final TextEditingController _collectionController = TextEditingController();
   final TextEditingController _feedbackController = TextEditingController();
-  
+
   String? _selectedDealerType;
   List<String> _selectedBrands = [];
   DateTime? _expectedActivationDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUser();
+  }
+
+  Future<void> _loadUser() async {
+    try {
+      final storage = const FlutterSecureStorage();
+      final userJson = await storage.read(key: 'user_profile');
+      if (userJson != null) {
+        _currentUser = UserModel.fromJson(jsonDecode(userJson));
+      }
+    } catch (e) {
+      debugPrint("Error loading user profile: $e");
+    } finally {
+      if (mounted) setState(() => _isInitializing = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -72,7 +100,6 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
         _capturedImagePath = photo.path;
         _checkInTime = DateTime.now();
       });
-
     } catch (e) {
       _showError(e.toString().replaceAll('Exception: ', ''));
     } finally {
@@ -83,11 +110,10 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
   Future<void> _handleDealerSearch() async {
     HapticFeedback.selectionClick();
     final dealer = await openDealerSearch(context);
-    
+
     if (dealer != null && mounted) {
       setState(() {
         _selectedDealer = dealer;
-        // Auto-fill dealer type if your model supports it, otherwise leave for manual selection
       });
     }
   }
@@ -102,6 +128,10 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
       _showError('Please select a Dealer from the network.');
       return;
     }
+    if (_currentUser == null) {
+      _showError('Session error. Please login again.');
+      return;
+    }
 
     // 2. Form validation
     if (!_formKey.currentState!.validate()) {
@@ -112,18 +142,54 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // TODO: Implement your actual API / Local Database save logic here.
-      // E.g., await _apiService.uploadImageToR2(File(_capturedImagePath!));
-      // await _apiService.submitDvr(payload);
+      // 3. Upload image
+      String imageUrl;
+      try {
+        imageUrl = await _apiService.uploadPhoto(File(_capturedImagePath!));
+      } catch (e) {
+        _showError('Photo upload failed. Please try again.');
+        setState(() => _isLoading = false);
+        return;
+      }
 
-      // Simulating network delay for now
-      await Future.delayed(const Duration(seconds: 2));
+      // 4. Prepare DvrModel
+      final dvr = DvrModel(
+        id: "0", // Backend assigns this
+        userId: _currentUser!.id,
+        dealerId: _selectedDealer!.id,
+        dealerType: _selectedDealerType,
+        reportDate: DateTime.now(),
+        location: _locationResult!.address,
+        latitude: _locationResult!.latitude,
+        longitude: _locationResult!.longitude,
+        brandSelling: _selectedBrands,
+        nameOfParty: _selectedDealer!.dealerPartyName,
+        contactNoOfParty: _selectedDealer!.contactPersonNumber,
+        expectedActivationDate: _expectedActivationDate,
+        todayOrderQty: double.tryParse(_orderQtyController.text) ?? 0.0,
+        todayCollectionRupees:
+            double.tryParse(_collectionController.text) ?? 0.0,
+        feedbacks: _feedbackController.text,
+        checkInTime: _checkInTime,
+        checkOutTime: DateTime.now(),
+        inTimeImageUrl: imageUrl,
+      );
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('DVR Submitted Successfully!'), backgroundColor: Colors.green),
-        );
-        Navigator.pop(context); // Return to previous screen
+      // 5. Submit to API
+      final success = await _apiService.submitDailyVisitReport(dvr);
+
+      if (success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('DVR Submitted Successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context); // Return to previous screen
+        }
+      } else {
+        _showError('Failed to submit DVR.');
       }
     } catch (e) {
       _showError('Failed to submit DVR: $e');
@@ -143,12 +209,24 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isInitializing) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF0F172A)),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
         title: const Text(
           "New Visit Report",
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: -0.5, color: Colors.white),
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.5,
+            color: Colors.white,
+          ),
         ),
         backgroundColor: const Color(0xFF0F172A), // _DvrStyle.cardNavy
         foregroundColor: Colors.white,
@@ -162,45 +240,74 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // --- STEP 1: PHOTO & LOCATION CHECK-IN ---
-              const DvrFormSectionHeader(title: "1. Security & Location", icon: Icons.security_rounded),
+              const DvrFormSectionHeader(
+                title: "1. Security & Location",
+                icon: Icons.security_rounded,
+              ),
               _buildCheckInCard(),
 
               // Only show the rest of the form if check-in is complete
               if (_capturedImagePath != null && _locationResult != null) ...[
-                
                 // --- STEP 2: DEALER SELECTION ---
-                const DvrFormSectionHeader(title: "2. Dealer Identity", icon: Icons.storefront_rounded).animate().fadeIn(),
-                _buildDealerSelectionCard().animate().fadeIn(delay: 100.ms).slideY(begin: 0.1),
+                const DvrFormSectionHeader(
+                  title: "2. Dealer Identity",
+                  icon: Icons.storefront_rounded,
+                ).animate().fadeIn(),
+                _buildDealerSelectionCard()
+                    .animate()
+                    .fadeIn(delay: 100.ms)
+                    .slideY(begin: 0.1),
 
                 // --- STEP 3: VISIT DETAILS ---
-                const DvrFormSectionHeader(title: "3. Visit Metrics", icon: Icons.assignment_outlined).animate().fadeIn(delay: 200.ms),
-                _buildMetricsCard().animate().fadeIn(delay: 300.ms).slideY(begin: 0.1),
+                const DvrFormSectionHeader(
+                  title: "3. Visit Metrics",
+                  icon: Icons.assignment_outlined,
+                ).animate().fadeIn(delay: 200.ms),
+                _buildMetricsCard()
+                    .animate()
+                    .fadeIn(delay: 300.ms)
+                    .slideY(begin: 0.1),
 
                 const SizedBox(height: 40),
 
                 // --- SUBMIT BUTTON ---
                 ElevatedButton(
-                  onPressed: _isLoading ? null : _submitForm,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF10B981), // Accent Green
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 20),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    elevation: 4,
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 24, height: 24,
-                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
-                        )
-                      : const Text(
-                          "SUBMIT REPORT",
-                          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1.1),
+                      onPressed: _isLoading ? null : _submitForm,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(
+                          0xFF10B981,
+                        ), // Accent Green
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
                         ),
-                ).animate().fadeIn(delay: 400.ms).scaleXY(begin: 0.9, curve: Curves.easeOutBack),
-                
+                        elevation: 4,
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 3,
+                              ),
+                            )
+                          : const Text(
+                              "SUBMIT REPORT",
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                                letterSpacing: 1.1,
+                              ),
+                            ),
+                    )
+                    .animate()
+                    .fadeIn(delay: 400.ms)
+                    .scaleXY(begin: 0.9, curve: Curves.easeOutBack),
+
                 const SizedBox(height: 40),
-              ]
+              ],
             ],
           ),
         ),
@@ -211,14 +318,24 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
   // --- WIDGET BUILDERS ---
 
   Widget _buildCheckInCard() {
-    final bool isCheckedIn = _capturedImagePath != null && _locationResult != null;
+    final bool isCheckedIn =
+        _capturedImagePath != null && _locationResult != null;
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isCheckedIn ? Colors.green.shade200 : Colors.grey.shade200, width: 2),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        border: Border.all(
+          color: isCheckedIn ? Colors.green.shade200 : Colors.grey.shade200,
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(20),
       child: isCheckedIn
@@ -230,9 +347,16 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
                   children: [
                     const Text(
                       "Check-In Verified",
-                      style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16),
+                      style: TextStyle(
+                        color: Colors.green,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
-                    Icon(Icons.check_circle_rounded, color: Colors.green.shade600),
+                    Icon(
+                      Icons.check_circle_rounded,
+                      color: Colors.green.shade600,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -252,16 +376,31 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text("Time: ${_checkInTime?.toLocal().toString().split('.')[0] ?? ''}", style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                          Text(
+                            "Time: ${_checkInTime?.toLocal().toString().split('.')[0] ?? ''}",
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           const SizedBox(height: 4),
                           Text(
                             _locationResult!.address,
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
-                          Text("GPS: ${_locationResult!.latitude.toStringAsFixed(4)}, ${_locationResult!.longitude.toStringAsFixed(4)}", style: const TextStyle(fontSize: 11, color: Colors.blueGrey)),
+                          Text(
+                            "GPS: ${_locationResult!.latitude.toStringAsFixed(4)}, ${_locationResult!.longitude.toStringAsFixed(4)}",
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.blueGrey,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -274,14 +413,20 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
                     onPressed: _handleInitialCheckIn,
                     icon: const Icon(Icons.refresh_rounded, size: 18),
                     label: const Text("Retake Photo & Location"),
-                    style: TextButton.styleFrom(foregroundColor: Colors.grey.shade700),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.grey.shade700,
+                    ),
                   ),
-                )
+                ),
               ],
             )
           : Column(
               children: [
-                const Icon(Icons.camera_alt_outlined, size: 48, color: Colors.grey),
+                const Icon(
+                  Icons.camera_alt_outlined,
+                  size: 48,
+                  color: Colors.grey,
+                ),
                 const SizedBox(height: 16),
                 const Text(
                   "A live photo and GPS location are required to begin this visit report.",
@@ -292,16 +437,29 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: _isCapturingCheckIn ? null : _handleInitialCheckIn,
+                    onPressed: _isCapturingCheckIn
+                        ? null
+                        : _handleInitialCheckIn,
                     icon: _isCapturingCheckIn
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
                         : const Icon(Icons.location_on),
-                    label: Text(_isCapturingCheckIn ? "LOCATING..." : "START CHECK-IN"),
+                    label: Text(
+                      _isCapturingCheckIn ? "LOCATING..." : "START CHECK-IN",
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF0F172A),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
@@ -315,7 +473,13 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -323,7 +487,11 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
         children: [
           const Text(
             "Assigned Dealer",
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: Color(0xFF1E293B)),
+            style: TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              color: Color(0xFF1E293B),
+            ),
           ),
           const SizedBox(height: 8),
           InkWell(
@@ -334,7 +502,12 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFFF9FAFB),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _selectedDealer == null ? Colors.grey.shade300 : const Color(0xFF0F172A).withOpacity(0.3), width: _selectedDealer == null ? 1 : 1.5),
+                border: Border.all(
+                  color: _selectedDealer == null
+                      ? Colors.grey.shade300
+                      : const Color(0xFF0F172A).withOpacity(0.3),
+                  width: _selectedDealer == null ? 1 : 1.5,
+                ),
               ),
               child: Row(
                 children: [
@@ -343,17 +516,28 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _selectedDealer?.dealerPartyName ?? "Tap to search network...",
+                          _selectedDealer?.dealerPartyName ??
+                              "Tap to search network...",
                           style: TextStyle(
-                            color: _selectedDealer == null ? Colors.grey.shade600 : const Color(0xFF1E293B),
-                            fontWeight: _selectedDealer == null ? FontWeight.normal : FontWeight.w800,
+                            color: _selectedDealer == null
+                                ? Colors.grey.shade600
+                                : const Color(0xFF1E293B),
+                            fontWeight: _selectedDealer == null
+                                ? FontWeight.normal
+                                : FontWeight.w800,
                             fontSize: 15,
                           ),
                         ),
                         if (_selectedDealer != null) ...[
                           const SizedBox(height: 4),
-                          Text("${_selectedDealer!.area ?? ''}, ${_selectedDealer!.zone ?? ''}", style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-                        ]
+                          Text(
+                            "${_selectedDealer!.area ?? ''}, ${_selectedDealer!.zone ?? ''}",
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -372,7 +556,13 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       padding: const EdgeInsets.all(20),
       child: Column(
@@ -384,7 +574,7 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
             onChanged: (val) => setState(() => _selectedDealerType = val),
           ),
           const SizedBox(height: 20),
-          
+
           Row(
             children: [
               Expanded(
@@ -418,7 +608,8 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
             label: "Expected Activation Date",
             selectedDate: _expectedActivationDate,
             isRequired: false, // Optional based on your logic
-            onDateSelected: (date) => setState(() => _expectedActivationDate = date),
+            onDateSelected: (date) =>
+                setState(() => _expectedActivationDate = date),
           ),
           const SizedBox(height: 20),
 

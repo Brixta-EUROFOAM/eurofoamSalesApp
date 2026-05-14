@@ -241,7 +241,7 @@ class _DealerSearchDialogState extends State<DealerSearchDialog> {
   @override
   void initState() {
     super.initState();
-    _search(""); // Fetch initial generic list
+    _search(""); // Fetch initial generic list on load
   }
 
   void _search(String query) {
@@ -252,27 +252,12 @@ class _DealerSearchDialogState extends State<DealerSearchDialog> {
       setState(() => _isLoading = true);
 
       try {
-        // You will need to implement a search parameter in your ApiService.getDealers()
-        // e.g., await _api.getDealers(searchQuery: query.trim());
-
-        // For now, assuming getDealers() fetches all or takes a query
-        final results = await _api.getDealers();
-
-        // If your API doesn't handle the search query yet, filter locally as a fallback:
-        final cleanQuery = query.trim().toLowerCase();
-        final filteredResults = cleanQuery.isEmpty
-            ? results
-            : results
-                  .where(
-                    (d) =>
-                        d.dealerPartyName.toLowerCase().contains(cleanQuery) ||
-                        (d.zone?.toLowerCase().contains(cleanQuery) ?? false) ||
-                        (d.gstNo?.toLowerCase().contains(cleanQuery) ?? false),
-                  )
-                  .toList();
+        // Pass the query directly to the updated API service.
+        // The backend now handles ilike matching, pagination, and smart sorting!
+        final results = await _api.getDealers(searchQuery: query.trim());
 
         if (mounted) {
-          setState(() => _dealers = filteredResults);
+          setState(() => _dealers = results);
         }
       } catch (e) {
         debugPrint("Dealer search error: $e");

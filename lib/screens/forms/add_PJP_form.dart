@@ -1,12 +1,16 @@
 // lib/screens/forms/add_PJP_form.dart
 
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../api/api_service.dart';
 import '../../widgets/ReusableFunctions.dart';
+import '../../models/pjp_model.dart';
+import '../../models/users_model.dart';
 
 // --- Local Draft Model for Wizard State ---
 class PjpDraft {
@@ -28,6 +32,9 @@ class AddPjpFormScreen extends StatefulWidget {
 class _AddPjpFormScreenState extends State<AddPjpFormScreen> {
   final ApiService _apiService = ApiService();
 
+  UserModel? _currentUser;
+  bool _isInitializing = true;
+
   int _currentStep = 0;
   bool _isSubmitting = false;
 
@@ -45,6 +52,21 @@ class _AddPjpFormScreenState extends State<AddPjpFormScreen> {
   void initState() {
     super.initState();
     _pageController = PageController();
+    _loadUser();
+  }
+
+  Future<void> _loadUser() async {
+    try {
+      final storage = const FlutterSecureStorage();
+      final userJson = await storage.read(key: 'user_profile');
+      if (userJson != null) {
+        _currentUser = UserModel.fromJson(jsonDecode(userJson));
+      }
+    } catch (e) {
+      debugPrint("Error loading user profile: $e");
+    } finally {
+      if (mounted) setState(() => _isInitializing = false);
+    }
   }
 
   @override
@@ -95,38 +117,57 @@ class _AddPjpFormScreenState extends State<AddPjpFormScreen> {
   }
 
   Future<void> _submitBulkPjp() async {
+    if (_currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Session error. Please login again.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isSubmitting = true);
 
-    // Construct payload
-    List<Map<String, dynamic>> bulkPayload = [];
+    List<PjpModel> plansToSubmit = [];
 
     _plannedVisits.forEach((date, drafts) {
       for (var draft in drafts) {
-        bulkPayload.add({
-          "planDate": date.toIso8601String(),
-          "areaToBeVisited": draft.areaToBeVisited,
-          "dealerId": draft.dealerId,
-          "description": draft.descriptionController.text.trim(),
-          "status": "PENDING", // Enforced Default
-        });
+        plansToSubmit.add(
+          PjpModel(
+            id: "0", // Backend generates this
+            userId: _currentUser!.id,
+            createdById: _currentUser!.id, // Self-assigned
+            planDate: date,
+            areaToBeVisited: draft.areaToBeVisited,
+            dealerId: draft.dealerId,
+            description: draft.descriptionController.text.trim(),
+            status: "Pending", // Matches the default backend status
+          ),
+        );
       }
     });
 
     try {
-      // NOTE: You need to add this bulk endpoint/method to your api_service.dart
-      // e.g., await _apiService.submitBulkJourneyPlans(bulkPayload);
+      final success = await _apiService.submitBulkJourneyPlans(plansToSubmit);
 
-      // Simulating API call for now:
-      await Future.delayed(const Duration(seconds: 2));
-
-      if (mounted) {
+      if (success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Journey Plans Submitted!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          Navigator.pop(context, true); // Return true to trigger refresh
+        }
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Journey Plans Submitted!'),
-            backgroundColor: Colors.green,
+            content: Text('Failed to submit plans.'),
+            backgroundColor: Colors.red,
           ),
         );
-        Navigator.pop(context, true); // Return true to trigger refresh
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -141,6 +182,14 @@ class _AddPjpFormScreenState extends State<AddPjpFormScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isInitializing) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF0F172A)),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
@@ -608,7 +657,6 @@ class _AddPjpFormScreenState extends State<AddPjpFormScreen> {
           ),
         ),
         const SizedBox(height: 24),
-        // FIX: Wrap the sorted list in parentheses before calling .map()
         ...(_selectedDates.toList()..sort()).map((date) {
           final drafts = _plannedVisits[date]!;
           if (drafts.isEmpty) return const SizedBox.shrink();

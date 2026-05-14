@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import '../api/auth_service.dart';
 import '../models/users_model.dart';
-// import 'home_screen.dart'; // Import your next screen
+import 'bottomNavBar.dart'; // Implemented earlier
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -37,7 +37,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _errorMessage = null; // Clear previous errors
     });
 
-    // 2. Call Auth Service
+    // 2. Call Auth Service (This hits the Express backend and saves the JWT)
     final result = await _authService.login(
       _idController.text.trim(),
       _passwordController.text.trim(),
@@ -61,14 +61,13 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      // 4. Success - Navigate to Main App
+      // 4. Success - Navigate to Main App (BottomNavBar holds the Home Screen)
       setState(() => _isLoading = false);
       
-      // Navigate to your main screen (replace with your actual route)
-      // Navigator.pushReplacement(
-      //   context,
-      //   MaterialPageRoute(builder: (context) => const HomeScreen()),
-      // );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const BottomNavBar()),
+      );
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -102,7 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   // --- BRANDING HEADER ---
                   const Icon(
-                    Icons.business_center, // Replace with your Image.asset logo
+                    Icons.business_center, 
                     size: 80,
                     color: Colors.blueAccent,
                   ),

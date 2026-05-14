@@ -1,5 +1,6 @@
 // lib/screens/homeScreen.dart
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -47,13 +48,12 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       // 2. Fetch today's attendance status from API
-      // Note: Make sure getAttendanceHistory() in API service filters for TODAY
-      // For now, we assume it returns today's record if it exists
       final history = await _apiService.getAttendanceHistory();
       if (history.isNotEmpty) {
-        // Assuming the first record is today's
+        // Assuming the first record is today's (The API sorts by desc)
         final todayRecord = history.first;
         setState(() {
+          // If they have an inTime but NO outTime, they are currently checked in.
           _hasCheckedInToday = todayRecord.outTimeTimestamp == null;
           _checkInTime = todayRecord.inTimeTimestamp;
         });
@@ -83,33 +83,51 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      // 3. Build Model & Submit to API
-      // Note: You will need to implement image uploading in your ApiService (MultipartRequest)
+      // 3. Upload the photo to get the Supabase Public URL
+      String imageUrl;
+      try {
+        imageUrl = await _apiService.uploadPhoto(File(photo.path));
+      } catch (e) {
+        _showErrorSnackBar('Photo upload failed. Please try again.');
+        setState(() => _isCheckingIn = false);
+        return;
+      }
+
       // 4. Build Model & Submit to API
       final attendanceRecord = AttendanceModel(
-        id: "0", 
+        id: "0", // Backend will generate for IN, and auto-find active for OUT
         userId: _currentUser?.id ?? 0,
         attendanceDate: DateTime.now(),
         locationName: locationResult.address,
 
-        // --- FIX 1: Added missing required boolean arguments ---
+        // Image Booleans
         inTimeImageCaptured: !_hasCheckedInToday,
         outTimeImageCaptured: _hasCheckedInToday,
 
-        // --- FIX 2: Replaced 'null' with '0.0' for non-nullable doubles ---
+        // Assign the uploaded URL to the correct field
+        inTimeImageUrl: !_hasCheckedInToday ? imageUrl : null,
+        outTimeImageUrl: _hasCheckedInToday ? imageUrl : null,
+
+        // GPS Coordinates
         inTimeLatitude: !_hasCheckedInToday ? locationResult.latitude : 0.0,
         inTimeLongitude: !_hasCheckedInToday ? locationResult.longitude : 0.0,
         outTimeLatitude: _hasCheckedInToday ? locationResult.latitude : 0.0,
         outTimeLongitude: _hasCheckedInToday ? locationResult.longitude : 0.0,
 
-        // --- FIX 3: Replaced 'null' with 'DateTime.now()' for non-nullable DateTimes ---
+        // Timestamps
         inTimeTimestamp: !_hasCheckedInToday
             ? DateTime.now()
             : (_checkInTime ?? DateTime.now()),
         outTimeTimestamp: DateTime.now(),
       );
 
-      final success = await _apiService.markAttendance(attendanceRecord);
+      // 5. Call the correct API split route
+      bool success;
+      if (!_hasCheckedInToday) {
+        success = await _apiService.markAttendanceIn(attendanceRecord);
+      } else {
+        success = await _apiService.markAttendanceOut(attendanceRecord);
+      }
 
       if (success) {
         setState(() {

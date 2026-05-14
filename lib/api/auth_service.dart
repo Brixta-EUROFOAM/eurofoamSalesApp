@@ -7,8 +7,8 @@ import '../models/users_model.dart';
 
 class AuthService {
   // Use a centralized config file or .env for this in the future
-  static const String baseUrl = 'http://10.0.2.2:8000/api';
-  //static const String baseUrl = 'https://your-production-domain.com/api/salesApp';
+  //static const String baseUrl = 'http://10.0.2.2:8000/api'; //localhost
+  static const String baseUrl = 'http://122.176.219.242:55008/api/salesApp'; // brixta.site server
   
   final FlutterSecureStorage _storage = const FlutterSecureStorage();
 
