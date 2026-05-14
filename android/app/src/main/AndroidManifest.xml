@@ -15,7 +15,7 @@
     <application
         android:label="Eurofoam Work Force"
         android:name="${applicationName}"
-        android:icon="@mipmap/launcher_icon"
+        android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
 
     <service
