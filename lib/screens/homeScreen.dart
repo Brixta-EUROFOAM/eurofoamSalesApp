@@ -5,12 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import '../api/auth_service.dart';
 import '../api/api_service.dart';
 import '../models/users_model.dart';
 import '../models/attendance_model.dart';
 import '../widgets/ReusableFunctions.dart';
-import 'loginScreen.dart';
+import 'forms/create_DVR_form.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -20,110 +19,173 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final AuthService _authService = AuthService();
   final ApiService _apiService = ApiService();
 
   UserModel? _currentUser;
   bool _isLoading = true;
+
   bool _isCheckingIn = false;
+  bool _isCheckingOut = false;
 
   // Attendance State
   bool _hasCheckedInToday = false;
   DateTime? _checkInTime;
   String _currentAddress = "Fetching location...";
+  String _greeting = 'Good Morning';
+
+  // --- THEME PALETTE ---
+  final Color _bgLight = const Color(0xFFF3F4F6);
+  final Color _cardNavy = const Color(0xFF0F172A);
+  final Color _textDark = const Color(0xFF111827);
+  final Color _textGrey = const Color(0xFF6B7280);
+  final Color _surfaceWhite = Colors.white;
 
   @override
   void initState() {
     super.initState();
+    _setGreeting();
     _loadInitialData();
+  }
+
+  void _setGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) {
+      _greeting = 'Good Morning';
+    } else if (hour < 17) {
+      _greeting = 'Good Afternoon';
+    } else {
+      _greeting = 'Good Evening';
+    }
   }
 
   Future<void> _loadInitialData() async {
     try {
-      // 1. Load User Profile from Secure Storage
       final storage = const FlutterSecureStorage();
       final userJson = await storage.read(key: 'user_profile');
       if (userJson != null) {
         _currentUser = UserModel.fromJson(jsonDecode(userJson));
       }
 
-      // 2. Fetch today's attendance status from API
       final history = await _apiService.getAttendanceHistory();
       if (history.isNotEmpty) {
-        // Assuming the first record is today's (The API sorts by desc)
-        final todayRecord = history.first;
-        setState(() {
-          // If they have an inTime but NO outTime, they are currently checked in.
-          _hasCheckedInToday = todayRecord.outTimeTimestamp == null;
-          _checkInTime = todayRecord.inTimeTimestamp;
-        });
+        final latestRecord = history.first;
+
+        // --- DAILY RESET GUARD ---
+        // Ensure the record is actually from TODAY before marking as checked in
+        final isRecordFromToday =
+            latestRecord.inTimeTimestamp != null &&
+            DateUtils.isSameDay(latestRecord.inTimeTimestamp!, DateTime.now());
+
+        if (isRecordFromToday) {
+          if (mounted) {
+            setState(() {
+              _hasCheckedInToday = latestRecord.outTimeTimestamp == null;
+              _checkInTime = latestRecord.inTimeTimestamp;
+              if (latestRecord.locationName != null) {
+                _currentAddress = latestRecord.locationName!;
+              }
+            });
+          }
+        } else {
+          // It's a new day! Ensure they appear as NOT checked in.
+          if (mounted) {
+            setState(() {
+              _hasCheckedInToday = false;
+              _checkInTime = null;
+            });
+          }
+        }
       }
     } catch (e) {
-      print("Error loading initial data: $e");
+      debugPrint("Error loading initial data: $e");
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  /// Handles the complete Check-In / Check-Out flow
-  Future<void> _handleAttendanceToggle() async {
-    setState(() => _isCheckingIn = true);
 
+  Future<void> _handleCheckIn() async {
+    setState(() => _isCheckingIn = true);
+    await _processAttendance(isCheckIn: true);
+  }
+
+  Future<void> _handleCheckOut() async {
+    // --- 60 MINUTE GAP ENFORCEMENT ---
+    if (_checkInTime != null) {
+      final difference = DateTime.now().difference(_checkInTime!);
+      if (difference.inMinutes < 60) {
+        final minutesLeft = 60 - difference.inMinutes;
+
+        // Show a warning and stop the checkout process
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "Too early to check out! Wait $minutesLeft more minute(s).",
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            backgroundColor: Colors.orange.shade800,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+    }
+    // ---------------------------------
+
+    setState(() => _isCheckingOut = true);
+    await _processAttendance(isCheckIn: false);
+  }
+
+  Future<void> _processAttendance({required bool isCheckIn}) async {
     try {
-      // 1. Get Location & Address using the centralized utility
+      // 1. Get Location & Address
       final locationResult =
           await ReusableFunctions.getCurrentLocationAndAddress();
 
-      // 2. Open Camera for Selfie using the centralized utility
+      // 2. Open Camera for Selfie
       final photo = await ReusableFunctions.captureImage();
-
       if (photo == null) {
         _showErrorSnackBar('Attendance cancelled: Photo required.');
-        setState(() => _isCheckingIn = false);
         return;
       }
 
-      // 3. Upload the photo to get the Supabase Public URL
+      // 3. Upload Photo
       String imageUrl;
       try {
         imageUrl = await _apiService.uploadPhoto(File(photo.path));
       } catch (e) {
         _showErrorSnackBar('Photo upload failed. Please try again.');
-        setState(() => _isCheckingIn = false);
         return;
       }
 
-      // 4. Build Model & Submit to API
+      // 4. Build Model
       final attendanceRecord = AttendanceModel(
-        id: "0", // Backend will generate for IN, and auto-find active for OUT
+        id: "0",
         userId: _currentUser?.id ?? 0,
         attendanceDate: DateTime.now(),
         locationName: locationResult.address,
 
         // Image Booleans
-        inTimeImageCaptured: !_hasCheckedInToday,
-        outTimeImageCaptured: _hasCheckedInToday,
+        inTimeImageCaptured: isCheckIn,
+        outTimeImageCaptured: !isCheckIn,
 
-        // Assign the uploaded URL to the correct field
-        inTimeImageUrl: !_hasCheckedInToday ? imageUrl : null,
-        outTimeImageUrl: _hasCheckedInToday ? imageUrl : null,
+        inTimeImageUrl: isCheckIn ? imageUrl : null,
+        outTimeImageUrl: !isCheckIn ? imageUrl : null,
 
-        // GPS Coordinates
-        inTimeLatitude: !_hasCheckedInToday ? locationResult.latitude : 0.0,
-        inTimeLongitude: !_hasCheckedInToday ? locationResult.longitude : 0.0,
-        outTimeLatitude: _hasCheckedInToday ? locationResult.latitude : 0.0,
-        outTimeLongitude: _hasCheckedInToday ? locationResult.longitude : 0.0,
+        inTimeLatitude: isCheckIn ? locationResult.latitude : 0.0,
+        inTimeLongitude: isCheckIn ? locationResult.longitude : 0.0,
+        outTimeLatitude: !isCheckIn ? locationResult.latitude : 0.0,
+        outTimeLongitude: !isCheckIn ? locationResult.longitude : 0.0,
 
-        // Timestamps
-        inTimeTimestamp: !_hasCheckedInToday
+        inTimeTimestamp: isCheckIn
             ? DateTime.now()
             : (_checkInTime ?? DateTime.now()),
-        outTimeTimestamp: DateTime.now(),
+        outTimeTimestamp: !isCheckIn ? DateTime.now() : null,
       );
 
-      // 5. Call the correct API split route
+      // 5. Submit to API
       bool success;
-      if (!_hasCheckedInToday) {
+      if (isCheckIn) {
         success = await _apiService.markAttendanceIn(attendanceRecord);
       } else {
         success = await _apiService.markAttendanceOut(attendanceRecord);
@@ -131,18 +193,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (success) {
         setState(() {
-          if (!_hasCheckedInToday) {
+          if (isCheckIn) {
             _hasCheckedInToday = true;
             _checkInTime = DateTime.now();
             _currentAddress = locationResult.address;
           } else {
-            _hasCheckedInToday = false; // Checked out
+            _hasCheckedInToday = false;
           }
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              _hasCheckedInToday
+              isCheckIn
                   ? 'Checked In Successfully!'
                   : 'Checked Out Successfully!',
             ),
@@ -153,11 +215,13 @@ class _HomeScreenState extends State<HomeScreen> {
         _showErrorSnackBar('Failed to mark attendance on server.');
       }
     } catch (e) {
-      // This will safely catch the Permission exceptions thrown from ReusableFunctions
       _showErrorSnackBar(e.toString().replaceAll('Exception: ', ''));
     } finally {
       if (mounted) {
-        setState(() => _isCheckingIn = false);
+        setState(() {
+          _isCheckingIn = false;
+          _isCheckingOut = false;
+        });
       }
     }
   }
@@ -169,208 +233,204 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _logout() async {
-    await _authService.logout();
-    if (!mounted) return;
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-      (route) => false,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return Scaffold(
+        backgroundColor: _bgLight,
+        body: Center(child: CircularProgressIndicator(color: _cardNavy)),
+      );
     }
 
-    final String dateString = DateFormat(
-      'EEEE, MMMM d, yyyy',
-    ).format(DateTime.now());
+    final String displayName = _currentUser?.username ?? 'Salesman';
+    final String initial = displayName.isNotEmpty
+        ? displayName[0].toUpperCase()
+        : 'S';
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: _bgLight,
       appBar: AppBar(
-        title: const Text('Salesman Dashboard'),
-        backgroundColor: Colors.blueAccent,
-        foregroundColor: Colors.white,
+        backgroundColor: _bgLight,
         elevation: 0,
-      ),
-      drawer: _buildDrawer(),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        automaticallyImplyLeading:
+            false, // Ensures no back button or hamburger menu
+        toolbarHeight: 70,
+        title: Row(
           children: [
-            // Welcome Card
-            Text(
-              "Welcome back,",
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              _currentUser?.username ?? "Salesman",
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
+            CircleAvatar(
+              radius: 20,
+              backgroundColor: Colors.white,
+              child: Text(
+                initial,
+                style: TextStyle(color: _cardNavy, fontWeight: FontWeight.bold),
               ),
             ),
-            const SizedBox(height: 24),
-
-            // Attendance Card
-            Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _greeting,
+                    style: TextStyle(
+                      color: _textGrey,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  Text(
+                    displayName,
+                    style: TextStyle(
+                      color: _textDark,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          "Today's Attendance",
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          dateString,
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 32),
-
-                    // Status Indicator
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: _hasCheckedInToday
-                                ? Colors.green.shade50
-                                : Colors.orange.shade50,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _hasCheckedInToday ? Icons.how_to_reg : Icons.login,
-                            color: _hasCheckedInToday
-                                ? Colors.green
-                                : Colors.orange,
-                            size: 32,
-                          ),
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                "Status: ${_hasCheckedInToday ? 'Checked In' : 'Not Checked In'}",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              if (_hasCheckedInToday && _checkInTime != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Text(
-                                    "Since ${DateFormat('hh:mm a').format(_checkInTime!)}\n📍 $_currentAddress",
-                                    style: TextStyle(
-                                      color: Colors.grey[600],
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Main Action Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 54,
-                      child: ElevatedButton.icon(
-                        onPressed: _isCheckingIn
-                            ? null
-                            : _handleAttendanceToggle,
-                        icon: _isCheckingIn
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Icon(
-                                _hasCheckedInToday
-                                    ? Icons.logout
-                                    : Icons.camera_alt,
-                              ),
-                        label: Text(
-                          _hasCheckedInToday
-                              ? "Check Out"
-                              : "Check In with Photo",
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _hasCheckedInToday
-                              ? Colors.redAccent
-                              : Colors.blueAccent,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+            ),
+          ],
+        ),
+      ),
+      body: RefreshIndicator(
+        onRefresh: _loadInitialData,
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            20,
+            20,
+            MediaQuery.of(context).padding.bottom + 20,
+          ),
+          children: [
+            // --- HERO ATTENDANCE CARD ---
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: _cardNavy,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: _cardNavy.withOpacity(0.4),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0F172A), Color(0xFF1E3A8A)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
               ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        "Attendance Status",
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 14,
+                        ),
+                      ),
+                      Text(
+                        DateFormat('MMM d, yyyy').format(DateTime.now()),
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    _hasCheckedInToday ? "Checked In" : "Ready to Start?",
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.location_on,
+                        color: Colors.white.withOpacity(0.7),
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          _hasCheckedInToday && _checkInTime != null
+                              ? "Since ${DateFormat('hh:mm a').format(_checkInTime!)} • $_currentAddress"
+                              : 'Location: $_currentAddress',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.7),
+                            fontSize: 14,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildGlassButton(
+                          label: "CHECK IN",
+                          icon: Icons.login,
+                          loading: _isCheckingIn,
+                          active: !_hasCheckedInToday,
+                          onTap: _hasCheckedInToday ? null : _handleCheckIn,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildGlassButton(
+                          label: "CHECK OUT",
+                          icon: Icons.logout,
+                          loading: _isCheckingOut,
+                          active: _hasCheckedInToday,
+                          onTap: !_hasCheckedInToday ? null : _handleCheckOut,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
 
-            const SizedBox(height: 24),
-            const Text(
+            const SizedBox(height: 32),
+
+            Text(
               "Quick Actions",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: _textDark,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 16),
 
-            // Grid for quick actions
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              childAspectRatio: 1.1,
-              children: [
-                _buildActionCard(
-                  "Create DVR",
-                  Icons.assignment_add,
-                  Colors.blue,
-                  () {
-                    // Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateDvrScreen()));
-                  },
-                ),
-              ],
+            // --- SALES OPS CARDS ---
+            // --- SALES OPS CARDS ---
+            _buildFintechCard(
+              title: "Create DVR",
+              subtitle: "Submit your Daily Visit Report",
+              icon: Icons.assignment_add,
+              iconColor: Colors.blueAccent,
+              iconBg: const Color(0xFFEFF6FF),
+              onTap: () {
+                // This routes directly to the DVR form
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddDvrFormScreen()),
+                );
+              },
             ),
           ],
         ),
@@ -378,120 +438,114 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildActionCard(
-    String title,
-    IconData icon,
-    MaterialColor color,
-    VoidCallback onTap,
-  ) {
+  Widget _buildGlassButton({
+    required String label,
+    required IconData icon,
+    required bool loading,
+    required bool active,
+    required VoidCallback? onTap,
+  }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade200),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          color: active ? Colors.white : Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: color.shade50,
-                shape: BoxShape.circle,
+        child: loading
+            ? Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    color: active ? _cardNavy : Colors.white,
+                    strokeWidth: 2,
+                  ),
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: 18,
+                    color: active ? _cardNavy : Colors.white,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: active ? _cardNavy : Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
-              child: Icon(icon, color: color.shade600, size: 32),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
 
-  Widget _buildDrawer() {
-    return Drawer(
-      child: Column(
-        children: [
-          UserAccountsDrawerHeader(
-            decoration: const BoxDecoration(color: Colors.blueAccent),
-            accountName: Text(
-              _currentUser?.username ?? 'Salesman',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+  Widget _buildFintechCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _surfaceWhite,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.08),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
             ),
-            accountEmail: Text(_currentUser?.email ?? ''),
-            currentAccountPicture: const CircleAvatar(
-              backgroundColor: Colors.white,
-              child: Icon(Icons.person, size: 40, color: Colors.blueAccent),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: iconBg,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(icon, color: iconColor, size: 26),
             ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.home),
-                  title: const Text('Home'),
-                  onTap: () => Navigator.pop(context),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.assignment),
-                  title: const Text('Daily Visit Reports (DVR)'),
-                  onTap: () {
-                    // Navigate to DVR List/Form
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.map),
-                  title: const Text('Permanent Journey Plan (PJP)'),
-                  onTap: () {
-                    // Navigate to PJP
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.store),
-                  title: const Text('Dealers Network'),
-                  onTap: () {
-                    // Navigate to Dealers
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.event_note),
-                  title: const Text('Leave Management'),
-                  onTap: () {
-                    // Navigate to Leaves
-                  },
-                ),
-              ],
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      color: _textDark,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: _textGrey, fontSize: 13),
+                  ),
+                ],
+              ),
             ),
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.logout, color: Colors.red),
-            title: const Text(
-              'Logout',
-              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
-            ),
-            onTap: _logout,
-          ),
-          const SizedBox(height: 16),
-        ],
+            const Icon(Icons.chevron_right, color: Colors.grey),
+          ],
+        ),
       ),
     );
   }

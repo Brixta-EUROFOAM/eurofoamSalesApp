@@ -82,14 +82,27 @@ class ReusableFunctions {
       );
     }
 
-    // 2. Fetch High-Accuracy Position
-    final Position position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
+    // 2. Fetch High-Accuracy Position WITH TIMEOUT
+    Position? position;
+    try {
+      position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10), // <-- Stops the freeze!
+      );
+    } catch (e) {
+      // If it times out or fails, try getting the last known position
+      position = await Geolocator.getLastKnownPosition();
+    }
+
+    if (position == null) {
+      throw Exception(
+        'Could not fetch location lock. Please open Google Maps for 5 seconds and try again.',
+      );
+    }
 
     // 3. Aggressive Reverse Geocoding (Filtering out Plus Codes)
     String finalAddress =
-        "Lat: ${position.latitude}, Lng: ${position.longitude}";
+        "Lat: ${position.latitude.toStringAsFixed(4)}, Lng: ${position.longitude.toStringAsFixed(4)}";
 
     try {
       List<Placemark> placemarks = await placemarkFromCoordinates(
@@ -100,7 +113,6 @@ class ReusableFunctions {
       if (placemarks.isNotEmpty) {
         final place = placemarks.first;
 
-        // List of potential address components in order of granularity
         List<String?> components = [
           place.name,
           place.subLocality,
@@ -110,17 +122,14 @@ class ReusableFunctions {
           place.postalCode,
         ];
 
-        // Aggressive Filter: Remove nulls, empties, and Google Plus Codes (which usually contain a '+')
         final validComponents = components.where((c) {
           if (c == null || c.trim().isEmpty) return false;
-          // Filter out generic unnamed roads or plus codes (e.g., "5XWQC+4G")
           if (c.contains('+') || c.toLowerCase().contains('unnamed')) {
             return false;
           }
           return true;
         }).toList();
 
-        // Deduplicate values (sometimes name and subLocality are the same)
         final uniqueComponents = validComponents.toSet().toList();
 
         if (uniqueComponents.isNotEmpty) {
@@ -128,8 +137,7 @@ class ReusableFunctions {
         }
       }
     } catch (e) {
-      print("Geocoding failed: $e");
-      // Silently fallback to the Lat/Lng string initialized above
+      debugPrint("Geocoding failed: $e");
     }
 
     return LocationResult(

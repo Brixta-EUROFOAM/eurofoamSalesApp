@@ -56,9 +56,9 @@ class _BottomNavBarState extends State<BottomNavBar> {
               label: 'Home',
             ),
             NavigationDestination(
-              icon: Icon(Icons.map_outlined, color: Colors.grey),
-              selectedIcon: Icon(Icons.map_rounded, color: Colors.blueAccent),
-              label: 'Journey Plan',
+              icon: Icon(Icons.calendar_month_outlined, color: Colors.grey),
+              selectedIcon: Icon(Icons.calendar_month_rounded, color: Colors.blueAccent),
+              label: 'PJP',
             ),
             NavigationDestination(
               icon: Icon(Icons.person_outline, color: Colors.grey),

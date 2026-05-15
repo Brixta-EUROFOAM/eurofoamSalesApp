@@ -15,8 +15,8 @@ enum HttpMethod { get, post, put, patch, delete }
 
 class ApiService {
   // Base URL for Sales App routes
-  //static const String baseUrl = 'http://10.0.2.2:8000/api'; //localhost
-  static const String baseUrl = 'http://122.176.219.242:55008/api/salesApp'; // brixta.site server
+  static const String baseUrl = 'http://10.0.2.2:8000/api/salesApp'; //localhost
+  //static const String baseUrl = 'http://122.176.219.242:55008/api/salesApp'; // brixta.site server
 
   // Base URL specifically for the photo upload route
   static const String uploadUrl =
