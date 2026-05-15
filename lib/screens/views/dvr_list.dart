@@ -305,33 +305,45 @@ class _DvrListScreenState extends State<DvrListScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          type.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w900,
-                            color: color,
-                            letterSpacing: 0.5,
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            type.toUpperCase(),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                              color: color,
+                              letterSpacing: 0.5,
+                            ),
                           ),
                         ),
                       ),
-                      Text(
-                        dateStr,
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: _textGrey.withOpacity(0.7),
+
+                      const SizedBox(width: 8),
+
+                      Flexible(
+                        child: Text(
+                          dateStr,
+                          textAlign: TextAlign.right,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _textGrey.withOpacity(0.7),
+                          ),
                         ),
                       ),
                     ],
@@ -371,14 +383,14 @@ class _DvrListScreenState extends State<DvrListScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  // Premium Stat Pills
-                  Row(
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
                       _miniStatPill(
                         Icons.shopping_cart_rounded,
-                        "${r.todayOrderQty ?? 0} MT/KG",
+                        "${r.todayOrderQty ?? 0} KG",
                       ),
-                      const SizedBox(width: 8),
                       _miniStatPill(
                         Icons.account_balance_wallet_rounded,
                         "₹${r.todayCollectionRupees ?? 0}",
@@ -678,7 +690,7 @@ class DvrDetailScreen extends StatelessWidget {
     }
 
     return SizedBox(
-      height: 150,
+      height: 175,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: images.length,

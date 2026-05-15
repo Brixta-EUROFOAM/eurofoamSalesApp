@@ -86,7 +86,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       // Run API requests in parallel for speed
       final results = await Future.wait([
-        _apiService.getDailyVisitReports().catchError((_) => <DvrModel>[]),
+        // _apiService.getDailyVisitReports().catchError((_) => <DvrModel>[]),
+        _apiService.getDailyVisitReports().catchError((e) {
+          debugPrint("🚨 DVR FETCH ERROR: $e");
+          return <DvrModel>[];
+        }),
         _apiService.getJourneyPlans().catchError((_) => <PjpModel>[]),
         _apiService.getAttendanceHistory().catchError(
           (_) => <AttendanceModel>[],

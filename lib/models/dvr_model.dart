@@ -69,16 +69,22 @@ class DvrModel {
       dealerType: json['dealerType'],
       visitType: json['visitType'],
       location: json['location'],
-      latitude: (json['latitude'] as num?)?.toDouble(),
-      longitude: (json['longitude'] as num?)?.toDouble(),
+      
+      // BULLETPROOF NUMBER PARSING
+      latitude: json['latitude'] != null ? double.tryParse(json['latitude'].toString()) : null,
+      longitude: json['longitude'] != null ? double.tryParse(json['longitude'].toString()) : null,
+      
       brandSelling: (json['brandSelling'] as List?)?.map((e) => e.toString()).toList(),
       nameOfParty: json['nameOfParty'],
       contactNoOfParty: json['contactNoOfParty'],
       expectedActivationDate: json['expectedActivationDate'] != null ? DateTime.parse(json['expectedActivationDate']) : null,
-      currentDealerOutstandingAmt: (json['currentDealerOutstandingAmt'] as num?)?.toDouble(),
-      todayOrderQty: (json['todayOrderQty'] as num?)?.toDouble(),
-      todayCollectionRupees: (json['todayCollectionRupees'] as num?)?.toDouble(),
-      overdueAmount: (json['overdueAmount'] as num?)?.toDouble(),
+      
+      // BULLETPROOF NUMBER PARSING
+      currentDealerOutstandingAmt: json['currentDealerOutstandingAmt'] != null ? double.tryParse(json['currentDealerOutstandingAmt'].toString()) : null,
+      todayOrderQty: json['todayOrderQty'] != null ? double.tryParse(json['todayOrderQty'].toString()) : null,
+      todayCollectionRupees: json['todayCollectionRupees'] != null ? double.tryParse(json['todayCollectionRupees'].toString()) : null,
+      overdueAmount: json['overdueAmount'] != null ? double.tryParse(json['overdueAmount'].toString()) : null,
+      
       feedbacks: json['feedbacks'],
       checkInTime: json['checkInTime'] != null ? DateTime.parse(json['checkInTime']).toLocal() : null,
       checkOutTime: json['checkOutTime'] != null ? DateTime.parse(json['checkOutTime']).toLocal() : null,

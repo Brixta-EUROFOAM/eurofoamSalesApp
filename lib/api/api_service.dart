@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'auth_service.dart';
 
@@ -251,12 +252,14 @@ class ApiService {
   /// ---------------------------------------------------------
   /// ATTENDANCE
   /// ---------------------------------------------------------
-  Future<List<AttendanceModel>> getAttendanceHistory() async {
+  Future<List<AttendanceModel>> getAttendanceHistory({bool todayOnly = false}) async {
     try {
-      final response = await _handleRequest(HttpMethod.get, '/attendance');
+      final endpoint = todayOnly ? '/attendance?today=true' : '/attendance';
+      final response = await _handleRequest(HttpMethod.get, endpoint);
       final List data = response['data'] ?? [];
       return data.map((json) => AttendanceModel.fromJson(json)).toList();
     } catch (e) {
+      debugPrint("Attendance GET Error: $e");
       return [];
     }
   }
