@@ -1,4 +1,5 @@
 // lib/models/dealer_model.dart
+
 class DealerModel {
   final int id;
   final String dealerPartyName;
@@ -12,6 +13,10 @@ class DealerModel {
   final String? area;
   final String? state;
   final String? pinCode;
+  final double? latitude;
+  final double? longitude;
+  final String? address;
+  final bool? isVerified;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -28,6 +33,10 @@ class DealerModel {
     this.area,
     this.state,
     this.pinCode,
+    this.latitude,
+    this.longitude,
+    this.address,
+    this.isVerified,
     this.createdAt,
     this.updatedAt,
   });
@@ -46,14 +55,25 @@ class DealerModel {
       area: json['area'],
       state: json['state'],
       pinCode: json['pinCode'],
-      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
-      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
+      latitude: json['latitude'] != null
+          ? double.tryParse(json['latitude'].toString())
+          : null,
+      longitude: json['longitude'] != null
+          ? double.tryParse(json['longitude'].toString())
+          : null,
+      address: json['address'],
+      isVerified: json['isVerified'],
+      createdAt: json['createdAt'] != null
+          ? DateTime.parse(json['createdAt'])
+          : null,
+      updatedAt: json['updatedAt'] != null
+          ? DateTime.parse(json['updatedAt'])
+          : null,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
       'dealerPartyName': dealerPartyName,
       'contactPersonName': contactPersonName,
       'contactPersonNumber': contactPersonNumber,
@@ -65,8 +85,11 @@ class DealerModel {
       'area': area,
       'state': state,
       'pinCode': pinCode,
-      'createdAt': createdAt?.toIso8601String(),
-      'updatedAt': updatedAt?.toIso8601String(),
+      'latitude': latitude,
+      'longitude': longitude,
+      'address': address,
+      'isVerified': isVerified,
+    
     };
   }
 }

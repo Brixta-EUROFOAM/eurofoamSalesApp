@@ -18,7 +18,7 @@ class DvrConstants {
   ];
 
   static const List<String> units = [
-    "KG"
+    "Pieces", "Bundle"
   ];
 
   static const List<String> zones = [

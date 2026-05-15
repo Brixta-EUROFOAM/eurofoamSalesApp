@@ -10,6 +10,7 @@ import '../models/users_model.dart';
 import '../models/attendance_model.dart';
 import '../widgets/ReusableFunctions.dart';
 import 'forms/create_DVR_form.dart';
+import 'forms/add_dealer_form.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -102,7 +103,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
 
   Future<void> _handleCheckIn() async {
     setState(() => _isCheckingIn = true);
@@ -417,7 +417,6 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 16),
 
             // --- SALES OPS CARDS ---
-            // --- SALES OPS CARDS ---
             _buildFintechCard(
               title: "Create DVR",
               subtitle: "Submit your Daily Visit Report",
@@ -429,6 +428,21 @@ class _HomeScreenState extends State<HomeScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (_) => const AddDvrFormScreen()),
+                );
+              },
+            ),
+
+            const SizedBox(height: 14),
+            _buildFintechCard(
+              title: "Add Dealer",
+              subtitle: "Register a new dealer/business",
+              icon: Icons.storefront,
+              iconColor: Colors.indigo,
+              iconBg: const Color(0xFFEEF2FF),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AddDealerForm()),
                 );
               },
             ),
