@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "693511508762",
+    "project_id": "eurofoam-5a36a",
+    "storage_bucket": "eurofoam-5a36a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:693511508762:android:a63f98bf4af8d72ae292a3",
+        "android_client_info": {
+          "package_name": "com.eurofoam.sales"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDuDQKQRpZqsch-G4xDE8e2mTMLu0EF1yw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
