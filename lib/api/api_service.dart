@@ -156,6 +156,20 @@ class ApiService {
     }
   }
 
+  Future<bool> updateDealer(int id, Map<String, dynamic> updates) async {
+    try {
+      await _handleRequest(
+        HttpMethod.patch,
+        '/dealers/$id',
+        body: updates,
+      );
+      return true;
+    } catch (e) {
+      debugPrint("Dealer Update Error: $e");
+      return false;
+    }
+  }
+
   /// ---------------------------------------------------------
   /// DAILY VISIT REPORTS (DVR)
   /// ---------------------------------------------------------

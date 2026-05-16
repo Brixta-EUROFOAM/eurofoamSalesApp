@@ -1,22 +1,30 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_core/firebase_core.dart'; 
 
 import 'api/auth_service.dart';
 import 'screens/loginScreen.dart';
 import 'screens/bottomNavBar.dart';
+import 'services/update_service.dart'; 
+
+// 1. DEFINE GLOBAL KEY FOR NAVIGATOR
+final GlobalKey<NavigatorState> globalNavigatorKey = GlobalKey<NavigatorState>();
 
 void main() async {
-  // 1. Ensure Flutter bindings are initialized before calling async code
+  // Ensure Flutter bindings are initialized before calling async code
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Initialize Firebase (Required for Remote Config in UpdateService)
+  await Firebase.initializeApp();
 
-  // 2. Lock the app to Portrait orientation (prevents form UI breakage on rotation)
+  // Lock the app to Portrait orientation (prevents form UI breakage on rotation)
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  // 3. Set Android system navigation bar color to match the app
+  // Set Android system navigation bar color to match the app
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -26,11 +34,14 @@ void main() async {
     ),
   );
 
-  // 4. Check Authentication State
+  // Trigger the update check in the background (Non-blocking)
+  UpdateService.checkVersion();
+
+  // Check Authentication State
   final authService = AuthService();
   final bool isLoggedIn = await authService.isLoggedIn();
 
-  // 5. Run the App
+  // Run the App
   runApp(SalesApp(initialRouteIsHome: isLoggedIn));
 }
 
@@ -44,6 +55,9 @@ class SalesApp extends StatelessWidget {
     return MaterialApp(
       title: 'Eurofoam Work Force',
       debugShowCheckedModeBanner: false,
+      
+      // --- 2. ASSIGN THE GLOBAL NAVIGATOR KEY HERE ---
+      navigatorKey: globalNavigatorKey, 
       
       // --- GLOBAL APP THEME ---
       theme: ThemeData(

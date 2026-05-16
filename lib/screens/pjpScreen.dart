@@ -8,6 +8,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../api/api_service.dart';
 import '../models/pjp_model.dart';
 import 'forms/add_PJP_form.dart';
+import 'forms/add_Unplanned_PJP_form.dart';
 
 class PjpScreen extends StatefulWidget {
   const PjpScreen({Key? key}) : super(key: key);
@@ -35,6 +36,7 @@ class _PjpScreenState extends State<PjpScreen> with WidgetsBindingObserver {
   final Color _accentBlue = const Color(0xFF3B82F6);
   final Color _pendingOrange = const Color(0xFFF59E0B);
   final Color _dangerRed = const Color(0xFFEF4444);
+  final Color _unplannedPurple = const Color(0xFF8B5CF6);
 
   @override
   void initState() {
@@ -102,16 +104,89 @@ class _PjpScreenState extends State<PjpScreen> with WidgetsBindingObserver {
     if (result == true) _fetchPjps();
   }
 
+  Future<void> _openAddUnplannedPjpWizard() async {
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AddUnplannedPjpFormScreen()),
+    );
+    if (result == true) {
+      // Force UI to today's date so they see their new visit
+      setState(() => _selectedDate = DateTime.now());
+      _fetchPjps();
+    }
+  }
+
+  void _showAddPjpOptions() {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                "Create Visit Plan",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _cardNavy.withOpacity(0.1),
+                  child: Icon(Icons.calendar_month, color: _cardNavy),
+                ),
+                title: const Text(
+                  "Plan Weekly PJP",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text("Schedule visits for multiple days"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openAddPjpWizard();
+                },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: _unplannedPurple.withOpacity(0.1),
+                  child: Icon(Icons.flash_on, color: _unplannedPurple),
+                ),
+                title: const Text(
+                  "Add Unplanned Visit",
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: const Text("Directly add an ad-hoc visit for today"),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _openAddUnplannedPjpWizard(); 
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Color _getStatusColor(String status) {
     switch (status.toUpperCase()) {
       case 'PENDING':
         return _pendingOrange;
       case 'COMPLETED':
-        return _accentGreen;
-      case 'APPROVED':
         return _accentBlue;
+      case 'APPROVED':
+      case 'VERIFIED':
+        return _accentGreen;
       case 'REJECTED':
         return _dangerRed;
+      case 'UNPLANNED': 
+        return _unplannedPurple;
       default:
         return _textGrey;
     }
@@ -172,7 +247,7 @@ class _PjpScreenState extends State<PjpScreen> with WidgetsBindingObserver {
           Padding(
             padding: const EdgeInsets.only(right: 20.0, top: 10),
             child: InkWell(
-              onTap: _openAddPjpWizard,
+              onTap: _showAddPjpOptions,
               borderRadius: BorderRadius.circular(30),
               child: Container(
                 padding: const EdgeInsets.symmetric(

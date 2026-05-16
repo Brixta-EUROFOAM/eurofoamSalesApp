@@ -47,7 +47,11 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
   final TextEditingController _feedbackController = TextEditingController();
 
   final TextEditingController _nameOfPartyController = TextEditingController();
+  
+  // Optional Update Controllers
+  final TextEditingController _contactPersonNameController = TextEditingController();
   final TextEditingController _contactNoController = TextEditingController();
+  final TextEditingController _areaController = TextEditingController();
 
   String? _selectedDealerType;
   List<String> _selectedBrands = [];
@@ -79,7 +83,9 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
     _collectionController.dispose();
     _feedbackController.dispose();
     _nameOfPartyController.dispose();
+    _contactPersonNameController.dispose();
     _contactNoController.dispose();
+    _areaController.dispose();
     super.dispose();
   }
 
@@ -122,12 +128,13 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
 
         // AUTO-FILL LOGIC: Populate the controllers but leave them editable
         _nameOfPartyController.text = dealer.dealerPartyName;
+        _contactPersonNameController.text = dealer.contactPersonName ?? '';
         _contactNoController.text = dealer.contactPersonNumber ?? '';
+        _areaController.text = dealer.area ?? '';
       });
     }
   }
 
-  // --- THE NEW CHECK-OUT & SUBMIT FLOW ---
   // --- THE NEW CHECK-OUT & SUBMIT FLOW ---
   Future<void> _submitForm() async {
     // 1. Pre-validation checks
@@ -140,17 +147,46 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
       return;
     }
 
-    // REMOVED THE STRICT DEALER CHECK HERE!
-
-    // 2. Form validation (This will now catch the Name and Phone Number)
+    // 2. Form validation
     if (!_formKey.currentState!.validate()) {
       _showError('Please fill in all required fields correctly.');
       return;
     }
 
-    // 3. CAPTURE CHECK-OUT PHOTO & LOCATION
     setState(() => _isLoading = true);
 
+    // 3. DEALER PATCH REQUEST (Auto-updates dealer database if selected)
+    if (_selectedDealer != null) {
+      Map<String, dynamic> dealerUpdates = {};
+
+      if (_contactPersonNameController.text.trim().isNotEmpty) {
+        dealerUpdates['contactPersonName'] = _contactPersonNameController.text.trim();
+      }
+      if (_contactNoController.text.trim().isNotEmpty) {
+        dealerUpdates['contactPersonNumber'] = _contactNoController.text.trim();
+      }
+      if (_areaController.text.trim().isNotEmpty) {
+        dealerUpdates['area'] = _areaController.text.trim();
+      }
+      
+      // Auto-grab the GPS and address from the Initial Check-In
+      if (_locationResult != null) {
+        dealerUpdates['latitude'] = _locationResult!.latitude;
+        dealerUpdates['longitude'] = _locationResult!.longitude;
+        dealerUpdates['address'] = _locationResult!.address;
+      }
+
+      if (dealerUpdates.isNotEmpty) {
+        try {
+          await _apiService.updateDealer(_selectedDealer!.id, dealerUpdates);
+        } catch (e) {
+          debugPrint("Failed to patch dealer: $e");
+          // Proceed anyway; failure to update the dealer shouldn't block the DVR submission
+        }
+      }
+    }
+
+    // 4. CAPTURE CHECK-OUT PHOTO
     File? checkOutPhotoFile;
 
     try {
@@ -164,26 +200,21 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
       }
       checkOutPhotoFile = File(photo.path);
     } catch (e) {
-      _showError(
-        'Checkout Capture Failed: ${e.toString().replaceAll('Exception: ', '')}',
-      );
+      _showError('Checkout Capture Failed: ${e.toString().replaceAll('Exception: ', '')}');
       setState(() => _isLoading = false);
       return;
     }
 
-    // 4. UPLOAD IMAGES & SUBMIT TO API
+    // 5. UPLOAD IMAGES & SUBMIT TO API
     try {
-      String inImageUrl = await _apiService.uploadPhoto(
-        File(_capturedImagePath!),
-      );
-      String outImageUrl = await _apiService.uploadPhoto(checkOutPhotoFile!);
+      String inImageUrl = await _apiService.uploadPhoto(File(_capturedImagePath!));
+      String outImageUrl = await _apiService.uploadPhoto(checkOutPhotoFile);
 
       // Prepare DvrModel
       final dvr = DvrModel(
         id: "0",
         userId: _currentUser!.id,
-        dealerId: _selectedDealer
-            ?.id, // 👇 CHANGED TO ?: Safely passes null if they typed it manually
+        dealerId: _selectedDealer?.id,
         dealerType: _selectedDealerType,
         reportDate: DateTime.now(),
         location: _locationResult!.address,
@@ -191,14 +222,12 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
         longitude: _locationResult!.longitude,
         brandSelling: _selectedBrands,
 
-        // These are now the source of truth
         nameOfParty: _nameOfPartyController.text,
         contactNoOfParty: _contactNoController.text,
 
         expectedActivationDate: _expectedActivationDate,
         todayOrderQty: double.tryParse(_orderQtyController.text) ?? 0.0,
-        todayCollectionRupees:
-            double.tryParse(_collectionController.text) ?? 0.0,
+        todayCollectionRupees: double.tryParse(_collectionController.text) ?? 0.0,
         feedbacks: _feedbackController.text,
         checkInTime: _checkInTime,
         checkOutTime: DateTime.now(),
@@ -303,42 +332,37 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
 
                 // --- CHECK-OUT & SUBMIT BUTTON ---
                 ElevatedButton.icon(
-                      onPressed: _isLoading ? null : _submitForm,
-                      icon: _isLoading
-                          ? const SizedBox.shrink()
-                          : const Icon(Icons.camera_alt, color: Colors.white),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(
-                          0xFF10B981,
-                        ), // Accent Green
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 20),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
+                  onPressed: _isLoading ? null : _submitForm,
+                  icon: _isLoading
+                      ? const SizedBox.shrink()
+                      : const Icon(Icons.camera_alt, color: Colors.white),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981), // Accent Green
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 4,
+                  ),
+                  label: _isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 3,
+                          ),
+                        )
+                      : const Text(
+                          "CAPTURE CHECK-OUT & SUBMIT",
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 16,
+                            letterSpacing: 1.1,
+                          ),
                         ),
-                        elevation: 4,
-                      ),
-                      label: _isLoading
-                          ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 3,
-                              ),
-                            )
-                          : const Text(
-                              "CAPTURE CHECK-OUT & SUBMIT",
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 16,
-                                letterSpacing: 1.1,
-                              ),
-                            ),
-                    )
-                    .animate()
-                    .fadeIn(delay: 400.ms)
-                    .scaleXY(begin: 0.9, curve: Curves.easeOutBack),
+                ).animate().fadeIn(delay: 400.ms).scaleXY(begin: 0.9, curve: Curves.easeOutBack),
 
                 const SizedBox(height: 40),
               ],
@@ -352,8 +376,7 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
   // --- WIDGET BUILDERS ---
 
   Widget _buildCheckInCard() {
-    final bool isCheckedIn =
-        _capturedImagePath != null && _locationResult != null;
+    final bool isCheckedIn = _capturedImagePath != null && _locationResult != null;
 
     return Container(
       decoration: BoxDecoration(
@@ -471,9 +494,7 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: _isCapturingCheckIn
-                        ? null
-                        : _handleInitialCheckIn,
+                    onPressed: _isCapturingCheckIn ? null : _handleInitialCheckIn,
                     icon: _isCapturingCheckIn
                         ? const SizedBox(
                             width: 20,
@@ -550,8 +571,7 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _selectedDealer?.dealerPartyName ??
-                              "Tap to search network...",
+                          _selectedDealer?.dealerPartyName ?? "Tap to search network...",
                           style: TextStyle(
                             color: _selectedDealer == null
                                 ? Colors.grey.shade600
@@ -600,24 +620,54 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
       ),
       padding: const EdgeInsets.all(20),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // --- AUTO-FILLED BUT EDITABLE FIELDS ---
+          // --- REQUIRED DVR FIELD ---
           DvrInputField(
             controller: _nameOfPartyController,
             label: "Party / Dealer Name",
             isRequired: true,
           ),
-          const SizedBox(height: 20),
+          
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Divider(height: 1, thickness: 1),
+          ),
+          
+          const Text(
+            "Dealer Database Updates (Optional)",
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+          ),
+          const SizedBox(height: 16),
+
+          // --- OPTIONAL FIELDS (Used to PATCH the dealer details) ---
+          DvrInputField(
+            controller: _contactPersonNameController,
+            label: "Contact Person Name",
+            isRequired: false, // Made optional for the user
+          ),
+          const SizedBox(height: 16),
 
           DvrInputField(
             controller: _contactNoController,
             label: "Contact Number",
-            isRequired: true,
+            isRequired: false, // Made optional for the user
             keyboardType: TextInputType.phone,
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          
+          DvrInputField(
+            controller: _areaController,
+            label: "Area / Locality",
+            isRequired: false, // Made optional for the user
+          ),
 
-          // ---------------------------------------
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Divider(height: 1, thickness: 1),
+          ),
+
+          // --- STANDARD DVR FIELDS ---
           DvrDropdownField(
             label: "Dealer Type",
             value: _selectedDealerType,
@@ -659,8 +709,7 @@ class _AddDvrFormScreenState extends State<AddDvrFormScreen> {
             label: "Expected Activation Date",
             selectedDate: _expectedActivationDate,
             isRequired: false,
-            onDateSelected: (date) =>
-                setState(() => _expectedActivationDate = date),
+            onDateSelected: (date) => setState(() => _expectedActivationDate = date),
           ),
           const SizedBox(height: 20),
 
