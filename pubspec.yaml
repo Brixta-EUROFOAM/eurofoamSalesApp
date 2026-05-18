@@ -1,7 +1,7 @@
 name: eurofoamsalesapp
 description: "Salesman Salesman App for Eurofoam"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ^3.9.2
@@ -75,3 +75,9 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/icons/EUROFOAM.png"
+  min_sdk_android: 21
